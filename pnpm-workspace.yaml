@@ -1,3 +1,28 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# esbuild: widely-used bundler, native binary postinstall (needed by vite's
+# transform pipeline). spawn-sync: small child-process helper pulled in
+# transitively. Both are common, low-risk postinstall scripts — approved.
+allowBuilds:
+  esbuild: true
+  spawn-sync: true
+
+# wxt@0.20.27's own vite-node pick (naturally resolved to vite-node@6.0.0,
+# which hard-depends on vite@^8.0.0) ended up paired at runtime with a
+# DIFFERENT, older vite@5.4.21 instance from elsewhere in the tree. That
+# mismatched pair breaks `wxt prepare`/`wxt build` with "Failed to parse URL
+# from entrypoints/background.ts": WXT's internal "download" plugin (used
+# for `import 'url:...'`) registers its `load` hook with a `filter`, and the
+# older vite's PluginContainer doesn't enforce that filter, so the hook
+# fires for every module (including plain local entrypoints) and tries to
+# `fetch()` the file's absolute path as if it were a URL.
+# Fix: force a single, mutually-compatible vite-node@5 / vite@7 pairing
+# (vite-node@5.x requires vite ^7.2.0+) for wxt's whole subtree so only one
+# vite instance is ever in play there.
+overrides:
+  "wxt>vite-node": "5.3.0"
+  "wxt>vite": "7.3.6"
+  "@wxt-dev/module-react>vite-node": "5.3.0"
+  "@wxt-dev/module-react>vite": "7.3.6"

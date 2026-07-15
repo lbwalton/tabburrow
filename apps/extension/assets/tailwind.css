@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+/* This app's own entrypoints — not always covered by Tailwind's automatic
+   source detection from a nested assets/ dir, so declared explicitly. */
+@source "../entrypoints";
+
+/* @tabburrow/ui ships source-only components styled with Tailwind
+   arbitrary-value classes (bg-[var(--surface)], etc). Those classes are
+   never generated unless the package's source is registered as a content
+   source too — see packages/ui/README.md. pnpm symlinks the package into
+   this app's own node_modules, so the path below resolves through that
+   symlink; verified against the built output (see task report). */
+@source "../node_modules/@tabburrow/ui/src";
+
+@import "@tabburrow/ui/tokens.css";
+
+@theme {
+  --color-ground: var(--bg-ground);
+  --color-well: var(--bg-well);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+}

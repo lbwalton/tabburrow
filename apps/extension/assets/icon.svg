@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Burrow arch: a hollow tunnel-entrance mark. Outer arch (rounded top,
+       flat sides) minus a smaller concentric arch, via evenodd fill, leaves
+       a hollow "doorway" silhouette. Flat fills only, no gradients, no text;
+       these are the two brand accent hexes used verbatim as a brand asset. -->
+  <path
+    fill-rule="evenodd"
+    clip-rule="evenodd"
+    fill="#F97316"
+    d="M24,112 L24,64 A40,40 0 0 1 104,64 L104,112 Z M40,112 L40,80 A24,24 0 0 1 88,80 L88,112 Z"
+  />
+  <rect x="12" y="116" width="104" height="10" rx="5" fill="#D9A441" />
+</svg>
