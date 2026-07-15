@@ -1,16 +1,26 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { Collection, TabInfo } from "@tabburrow/core";
 import { createCollection, getDB, getMeta, listCollections, saveTabs, setMeta } from "@tabburrow/core";
-import { Button, Kbd } from "@tabburrow/ui";
+import { Button, Input, Kbd } from "@tabburrow/ui";
 import { closeTabsByUrl, faviconFor, getAllTabs, getCurrentTab, getHighlightedTabs } from "../../lib/tabs";
 import { initialPopupState, popupReducer } from "../../lib/popupState";
 import type { PopupState, SaveAction } from "../../lib/popupState";
+import type { SearchResults } from "../../lib/search";
+import { searchAll } from "../../lib/search";
+import { nextHighlight, resolveHighlight } from "../../lib/searchNav";
+import { dashboardCollectionUrl } from "../../lib/dashboard";
+import { formatHost } from "../../lib/links";
 import { SaveBar } from "./SaveBar";
 import { CollectionPicker } from "./CollectionPicker";
 import { RecentList } from "./RecentList";
 
 const LAST_USED_KEY = "lastUsedCollectionId";
+const EMPTY_SEARCH_RESULTS: SearchResults = { collections: [], links: [] };
+const SEARCH_DEBOUNCE_MS = 150;
+/** Compact popup body: show at most this many combined results (dashboard's overlay shows the full up-to-20 `searchAll` returns; the popup trims further to stay pocket-sized). */
+const POPUP_SEARCH_LIMIT = 8;
 
 function openDashboard() {
   chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
@@ -37,6 +47,35 @@ export function App() {
   const [selectedTabs, setSelectedTabs] = useState<TabInfo[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResults>(EMPTY_SEARCH_RESULTS);
+  const [searchHighlight, setSearchHighlight] = useState(-1);
+
+  // Debounced query -> results, same shape as the dashboard SearchOverlay's
+  // (see its docstring): the cleanup both clears the pending timer and
+  // flags an in-flight `searchAll` stale, so a fast second keystroke can't
+  // have its result overwritten by an earlier, slower one landing after it.
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      setSearchResults(EMPTY_SEARCH_RESULTS);
+      setSearchHighlight(-1);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void searchAll(searchQuery).then((r) => {
+        if (cancelled) return;
+        setSearchResults(r);
+        setSearchHighlight(r.collections.length + r.links.length > 0 ? 0 : -1);
+      });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [searchQuery]);
 
   // Snapshot the current window's tabs + last-used target once, on open. The
   // popup is a fresh document every time it opens, so a one-shot fetch is
@@ -180,6 +219,52 @@ export function App() {
     }
   }
 
+  // Compact display: trim `searchResults` (already ranked + capped at 20 by
+  // `searchAll`) down to POPUP_SEARCH_LIMIT combined, collections first —
+  // this is also the split `resolveHighlight`/`nextHighlight` navigate
+  // against below, so keyboard nav never lands on a row that isn't shown.
+  const shownCollections = searchResults.collections.slice(0, POPUP_SEARCH_LIMIT);
+  const shownLinks = searchResults.links.slice(0, Math.max(0, POPUP_SEARCH_LIMIT - shownCollections.length));
+  const shownTotal = shownCollections.length + shownLinks.length;
+  const searching = searchQuery.trim().length > 0;
+
+  function activateSearchResult(index: number) {
+    const target = resolveHighlight(index, shownCollections.length);
+    if (!target) return;
+    if (target.kind === "collection") {
+      const c = shownCollections[target.index];
+      if (!c) return;
+      chrome.tabs.create({ url: dashboardCollectionUrl(c.id) });
+      return;
+    }
+    const l = shownLinks[target.index];
+    if (!l) return;
+    // Explicitly active (unlike the dashboard's background-tab opens): the
+    // popup is expected to auto-close once the new tab gains focus.
+    chrome.tabs.create({ url: l.url, active: true });
+  }
+
+  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setSearchHighlight((h) => nextHighlight(h, "ArrowDown", shownTotal));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setSearchHighlight((h) => nextHighlight(h, "ArrowUp", shownTotal));
+    } else if (event.key === "Enter") {
+      if (shownTotal === 0) return;
+      event.preventDefault();
+      activateSearchResult(searchHighlight);
+    } else if (event.key === "Escape" && searchQuery) {
+      // Clearing the query is the whole job — the view switch back to the
+      // idle SaveBar below is purely a function of `searching`.
+      event.preventDefault();
+      setSearchQuery("");
+    }
+  }
+
+  const searchActiveId = searchHighlight >= 0 ? `popup-search-option-${searchHighlight}` : undefined;
+
   return (
     <div
       className="flex w-[360px] flex-col gap-4 bg-[var(--bg-ground)] px-4 py-4"
@@ -238,34 +323,117 @@ export function App() {
         />
       ) : (
         <>
-          <SaveBar
-            onSaveCurrent={() => handleSaveClick("current")}
-            onSaveAll={() => handleSaveClick("all")}
-            onSaveSelected={() => handleSaveClick("selected")}
-            allCount={allTabs?.length ?? 0}
-            showSelected={(selectedTabs?.length ?? 0) >= 2}
-            disabled={busy || !dataLoaded}
+          <Input
+            type="text"
+            role="combobox"
+            aria-expanded={searching}
+            aria-controls="popup-search-listbox"
+            aria-activedescendant={searchActiveId}
+            aria-label="Search collections and links"
+            placeholder="Search collections and links…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
           />
 
-          <div className="flex items-center justify-between gap-2 text-sm text-[var(--text-2)]">
-            <span className="truncate">
-              Saving to:{" "}
-              <span className="text-[var(--text)]">{target ? target.name : "Choose a collection"}</span>
-            </span>
-            <Button
-              ref={changeTargetRef}
-              size="sm"
-              variant="ghost"
-              onClick={() => dispatch({ type: "CHANGE_TARGET_CLICK" })}
-              disabled={busy || !collectionsLoaded}
+          {searching ? (
+            <div
+              id="popup-search-listbox"
+              role="listbox"
+              aria-label="Search results"
+              className="flex max-h-72 flex-col gap-2 overflow-y-auto"
             >
-              Change
-            </Button>
-          </div>
+              {shownCollections.length > 0 ? (
+                <PopupResultGroup label="Collections">
+                  {shownCollections.map((c, i) => (
+                    <PopupResultRow
+                      key={c.id}
+                      id={`popup-search-option-${i}`}
+                      highlighted={searchHighlight === i}
+                      onActivate={() => activateSearchResult(i)}
+                    >
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: c.accent ?? "var(--text-2)" }}
+                      />
+                      <span className="truncate">{c.name}</span>
+                    </PopupResultRow>
+                  ))}
+                </PopupResultGroup>
+              ) : null}
 
-          {actionError ? <p className="text-xs text-[var(--accent-2)]">{actionError}</p> : null}
+              {shownLinks.length > 0 ? (
+                <PopupResultGroup label="Links">
+                  {shownLinks.map((l, i) => {
+                    const flatIndex = shownCollections.length + i;
+                    return (
+                      <PopupResultRow
+                        key={l.id}
+                        id={`popup-search-option-${flatIndex}`}
+                        highlighted={searchHighlight === flatIndex}
+                        onActivate={() => activateSearchResult(flatIndex)}
+                      >
+                        <img
+                          src={l.faviconUrl ?? faviconFor(l.url)}
+                          alt=""
+                          width={14}
+                          height={14}
+                          className="shrink-0 rounded-[3px]"
+                          onError={(e) => {
+                            e.currentTarget.style.visibility = "hidden";
+                          }}
+                        />
+                        <span className="min-w-0 flex-1 truncate">{l.title}</span>
+                        <span
+                          className="shrink-0 truncate text-xs text-[var(--text-2)]"
+                          style={{ fontFamily: "var(--font-mono)" }}
+                        >
+                          {formatHost(l.url)}
+                        </span>
+                      </PopupResultRow>
+                    );
+                  })}
+                </PopupResultGroup>
+              ) : null}
 
-          <RecentList collections={collections ?? []} />
+              {shownTotal === 0 ? (
+                <p className="px-1 py-2 text-xs text-[var(--text-2)]">
+                  No results for &ldquo;{searchQuery.trim()}&rdquo;.
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <SaveBar
+                onSaveCurrent={() => handleSaveClick("current")}
+                onSaveAll={() => handleSaveClick("all")}
+                onSaveSelected={() => handleSaveClick("selected")}
+                allCount={allTabs?.length ?? 0}
+                showSelected={(selectedTabs?.length ?? 0) >= 2}
+                disabled={busy || !dataLoaded}
+              />
+
+              <div className="flex items-center justify-between gap-2 text-sm text-[var(--text-2)]">
+                <span className="truncate">
+                  Saving to:{" "}
+                  <span className="text-[var(--text)]">{target ? target.name : "Choose a collection"}</span>
+                </span>
+                <Button
+                  ref={changeTargetRef}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => dispatch({ type: "CHANGE_TARGET_CLICK" })}
+                  disabled={busy || !collectionsLoaded}
+                >
+                  Change
+                </Button>
+              </div>
+
+              {actionError ? <p className="text-xs text-[var(--accent-2)]">{actionError}</p> : null}
+
+              <RecentList collections={collections ?? []} />
+            </>
+          )}
         </>
       )}
 
@@ -274,17 +442,65 @@ export function App() {
           Open dashboard
         </Button>
         <span className="flex items-center gap-1 text-xs text-[var(--text-2)]">
-          <Kbd>Enter</Kbd>
-          <span>save</span>
-          {/* Esc only does anything while the picker is open — only advertise it then. */}
-          {state.view === "picker" ? (
+          {searching ? (
             <>
+              <Kbd>Enter</Kbd>
+              <span>open</span>
               <Kbd>Esc</Kbd>
-              <span>back</span>
+              <span>clear</span>
             </>
-          ) : null}
+          ) : (
+            <>
+              <Kbd>Enter</Kbd>
+              <span>save</span>
+              {/* Esc only does anything while the picker is open — only advertise it then. */}
+              {state.view === "picker" ? (
+                <>
+                  <Kbd>Esc</Kbd>
+                  <span>back</span>
+                </>
+              ) : null}
+            </>
+          )}
         </span>
       </footer>
     </div>
+  );
+}
+
+function PopupResultGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <h2 className="px-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-2)]">{label}</h2>
+      <div className="flex flex-col gap-0.5">{children}</div>
+    </div>
+  );
+}
+
+function PopupResultRow({
+  id,
+  highlighted,
+  onActivate,
+  children,
+}: {
+  id: string;
+  highlighted: boolean;
+  onActivate: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      id={id}
+      type="button"
+      role="option"
+      aria-selected={highlighted}
+      onClick={onActivate}
+      style={{ boxShadow: highlighted ? "2px 0 0 var(--accent) inset" : undefined }}
+      className={`flex w-full items-center gap-2 rounded-[var(--radius-card)] px-2 py-1.5 text-left text-sm ${
+        highlighted ? "bg-[var(--surface-hover)] text-[var(--text)]" : "text-[var(--text)] hover:bg-[var(--surface-hover)]"
+      }`}
+    >
+      {children}
+    </button>
   );
 }

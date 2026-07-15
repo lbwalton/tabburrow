@@ -34,6 +34,7 @@ import { moveItem, neighborsAfterMove, nextLocalOrder } from "../../lib/reorder"
 import { useRoute } from "./useRoute";
 import { Rail } from "./Rail";
 import { DashboardMain } from "./DashboardMain";
+import { SearchOverlay } from "./SearchOverlay";
 
 interface PendingDelete {
   id: string;
@@ -255,6 +256,7 @@ export function App() {
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div className="flex h-screen bg-[var(--bg-ground)]">
+        <SearchOverlay onError={handleLinkError} />
         <Rail
           collections={collections}
           order={railOrder}
