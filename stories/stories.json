@@ -24,7 +24,7 @@
     "id": "T3",
     "title": "core \u2014 fractional indexing (TDD)",
     "phase": 0,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "positionBetween returns keys strictly between a and b",
       "1000 sequential inserts stay ordered and keys remain < 40 chars",
