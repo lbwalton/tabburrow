@@ -121,7 +121,7 @@
     "id": "T11",
     "title": "Search",
     "phase": 1,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "Fuzzy match: gthb finds github links",
       "Result click (link \u2192 opens URL; collection \u2192 routes to it)",
