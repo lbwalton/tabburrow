@@ -10,6 +10,26 @@ export interface SearchResults {
 /** Max results returned TOTAL (collections + links combined), after score-ranking both kinds on one shared scale. */
 export const MAX_SEARCH_RESULTS = 20;
 
+/**
+ * Whether a search surface should show its "No results" message right now.
+ * Search is debounced + async, so on every fresh keystroke the RESULTS
+ * state still belongs to the previous query (or is empty on a first
+ * search) — a zero `total` in that window means "don't know yet", not "no
+ * results", and rendering the message then flashes a false negative for
+ * the debounce-plus-query duration. `settledQuery` is the exact query
+ * string whose `searchAll` response last landed (callers reset it to ""
+ * alongside their results state): only when it equals the live `query`
+ * does a zero total genuinely mean no results.
+ *
+ * Returns "no-results" when the message should show, "none" otherwise
+ * (empty/whitespace query, still pending, or there ARE results).
+ */
+export function emptyStateFor(query: string, settledQuery: string, total: number): "none" | "no-results" {
+  if (!query.trim()) return "none";
+  if (query !== settledQuery) return "none"; // pending: results are stale or absent, not "none found"
+  return total === 0 ? "no-results" : "none";
+}
+
 // A link's title/collection's name is the strongest signal a match is
 // actually what the user meant; url and tag matches are real but weaker
 // signals, so their raw fuzzysort score is discounted before entering the

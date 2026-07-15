@@ -19,12 +19,15 @@ export type HighlightTarget = { kind: "collection"; index: number } | { kind: "l
  * either key. Any other key, or `count <= 0` (no results to highlight at
  * all), returns unchanged — `count <= 0` always normalizes to -1 regardless
  * of what `current` was, since a shrinking result set (e.g. the user typed
- * another character) can leave a stale in-range `current` behind.
+ * another character) can leave a stale `current` behind. The same shrinkage
+ * can also leave `current` PAST the new end while `count` is still positive,
+ * so both arrow branches clamp into `[0, count - 1]` before moving — the
+ * returned index is always valid for the current `count`.
  */
 export function nextHighlight(current: number, key: string, count: number): number {
   if (count <= 0) return -1;
   if (key === "ArrowDown") return current < 0 ? 0 : Math.min(current + 1, count - 1);
-  if (key === "ArrowUp") return current < 0 ? 0 : Math.max(current - 1, 0);
+  if (key === "ArrowUp") return current < 0 ? 0 : Math.max(Math.min(current, count - 1) - 1, 0);
   return current;
 }
 

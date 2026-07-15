@@ -8,7 +8,7 @@ import { closeTabsByUrl, faviconFor, getAllTabs, getCurrentTab, getHighlightedTa
 import { initialPopupState, popupReducer } from "../../lib/popupState";
 import type { PopupState, SaveAction } from "../../lib/popupState";
 import type { SearchResults } from "../../lib/search";
-import { searchAll } from "../../lib/search";
+import { emptyStateFor, searchAll } from "../../lib/search";
 import { nextHighlight, resolveHighlight } from "../../lib/searchNav";
 import { dashboardCollectionUrl } from "../../lib/dashboard";
 import { formatHost } from "../../lib/links";
@@ -50,6 +50,10 @@ export function App() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResults>(EMPTY_SEARCH_RESULTS);
+  // The exact query whose searchAll response last landed — see
+  // `emptyStateFor` (lib/search.ts): until it equals `searchQuery`,
+  // `searchResults` is stale/pending and "No results" must not render.
+  const [searchSettledQuery, setSearchSettledQuery] = useState("");
   const [searchHighlight, setSearchHighlight] = useState(-1);
 
   // Debounced query -> results, same shape as the dashboard SearchOverlay's
@@ -60,6 +64,7 @@ export function App() {
     const trimmed = searchQuery.trim();
     if (!trimmed) {
       setSearchResults(EMPTY_SEARCH_RESULTS);
+      setSearchSettledQuery("");
       setSearchHighlight(-1);
       return;
     }
@@ -68,6 +73,7 @@ export function App() {
       void searchAll(searchQuery).then((r) => {
         if (cancelled) return;
         setSearchResults(r);
+        setSearchSettledQuery(searchQuery);
         setSearchHighlight(r.collections.length + r.links.length > 0 ? 0 : -1);
       });
     }, SEARCH_DEBOUNCE_MS);
@@ -396,7 +402,7 @@ export function App() {
                 </PopupResultGroup>
               ) : null}
 
-              {shownTotal === 0 ? (
+              {emptyStateFor(searchQuery, searchSettledQuery, shownTotal) === "no-results" ? (
                 <p className="px-1 py-2 text-xs text-[var(--text-2)]">
                   No results for &ldquo;{searchQuery.trim()}&rdquo;.
                 </p>
@@ -494,6 +500,10 @@ function PopupResultRow({
       type="button"
       role="option"
       aria-selected={highlighted}
+      // Options are virtually highlighted via the input's
+      // aria-activedescendant (combobox pattern) — real DOM focus stays on
+      // the input. Without this, Tab lands on a row and arrow-key nav dies.
+      tabIndex={-1}
       onClick={onActivate}
       style={{ boxShadow: highlighted ? "2px 0 0 var(--accent) inset" : undefined }}
       className={`flex w-full items-center gap-2 rounded-[var(--radius-card)] px-2 py-1.5 text-left text-sm ${

@@ -26,6 +26,18 @@ describe("nextHighlight", () => {
     expect(nextHighlight(0, "ArrowUp", 5)).toBe(0);
   });
 
+  it("ArrowUp from an out-of-range current clamps into range first, then retreats", () => {
+    // A shrinking result set (the user typed another character) can leave a
+    // stale in-range-yesterday current behind: clamp to the last valid index
+    // (count - 1) BEFORE retreating, so the result is never >= count.
+    expect(nextHighlight(19, "ArrowUp", 3)).toBe(1); // min(19, 2) = 2, retreat -> 1
+    expect(nextHighlight(3, "ArrowUp", 3)).toBe(1); // just past the end: min(3, 2) = 2, retreat -> 1
+  });
+
+  it("ArrowUp from the last valid index retreats normally (the clamp is a no-op in range)", () => {
+    expect(nextHighlight(2, "ArrowUp", 3)).toBe(1);
+  });
+
   it("any other key leaves the index unchanged", () => {
     expect(nextHighlight(2, "Enter", 5)).toBe(2);
     expect(nextHighlight(2, "a", 5)).toBe(2);

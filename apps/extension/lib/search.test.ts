@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Collection, Link } from "@tabburrow/core";
-import { MAX_SEARCH_RESULTS, rankSearch } from "./search";
+import { MAX_SEARCH_RESULTS, emptyStateFor, rankSearch } from "./search";
 
 function coll(id: string, name: string): Collection {
   return {
@@ -134,5 +134,28 @@ describe("rankSearch", () => {
     const b = coll("b", "Same Name");
     const result = rankSearch([a, b], [], "same");
     expect(result.collections.map((c) => c.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("emptyStateFor", () => {
+  it("shows nothing for an empty or whitespace-only query", () => {
+    expect(emptyStateFor("", "", 0)).toBe("none");
+    expect(emptyStateFor("   ", "", 0)).toBe("none");
+  });
+
+  it("shows nothing while the query is still pending (search hasn't settled for it yet)", () => {
+    // Fresh keystroke: results state is still whatever the PREVIOUS query
+    // produced (or empty on a first search) — a zero total here means
+    // "don't know yet", never "no results".
+    expect(emptyStateFor("gthb", "", 0)).toBe("none"); // first search, nothing settled
+    expect(emptyStateFor("gthb", "gth", 0)).toBe("none"); // older query settled, this one hasn't
+  });
+
+  it("shows no-results only once the CURRENT query has settled with zero hits", () => {
+    expect(emptyStateFor("gthb", "gthb", 0)).toBe("no-results");
+  });
+
+  it("shows nothing when the settled query has hits", () => {
+    expect(emptyStateFor("gthb", "gthb", 3)).toBe("none");
   });
 });

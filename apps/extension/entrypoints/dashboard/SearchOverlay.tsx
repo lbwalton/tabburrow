@@ -3,7 +3,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import type { Collection, Link } from "@tabburrow/core";
 import { Dialog, Input, Kbd } from "@tabburrow/ui";
 import type { SearchResults } from "../../lib/search";
-import { searchAll } from "../../lib/search";
+import { emptyStateFor, searchAll } from "../../lib/search";
 import { nextHighlight, resolveHighlight } from "../../lib/searchNav";
 import { openFailureMessage, openLinks } from "../../lib/restore";
 import { collectionHash } from "../../lib/dashboard";
@@ -44,6 +44,10 @@ export function SearchOverlay({ onError }: SearchOverlayProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResults>(EMPTY_RESULTS);
+  // The exact query string whose searchAll response last landed. Until it
+  // equals `query`, `results` is stale/pending — `emptyStateFor` uses this
+  // to suppress a false "No results" flash during the debounce+query window.
+  const [settledQuery, setSettledQuery] = useState("");
   const [highlight, setHighlight] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -87,6 +91,7 @@ export function SearchOverlay({ onError }: SearchOverlayProps) {
     if (!open) {
       setQuery("");
       setResults(EMPTY_RESULTS);
+      setSettledQuery("");
       setHighlight(-1);
     }
   }, [open]);
@@ -99,6 +104,7 @@ export function SearchOverlay({ onError }: SearchOverlayProps) {
     const trimmed = query.trim();
     if (!trimmed) {
       setResults(EMPTY_RESULTS);
+      setSettledQuery("");
       setHighlight(-1);
       return;
     }
@@ -107,6 +113,7 @@ export function SearchOverlay({ onError }: SearchOverlayProps) {
       void searchAll(query).then((r) => {
         if (cancelled) return;
         setResults(r);
+        setSettledQuery(query);
         setHighlight(r.collections.length + r.links.length > 0 ? 0 : -1);
       });
     }, DEBOUNCE_MS);
@@ -222,7 +229,7 @@ export function SearchOverlay({ onError }: SearchOverlayProps) {
             </ResultGroup>
           ) : null}
 
-          {query.trim() && total === 0 ? (
+          {emptyStateFor(query, settledQuery, total) === "no-results" ? (
             <p className="px-1 py-2 text-sm text-[var(--text-2)]">No results for &ldquo;{query.trim()}&rdquo;.</p>
           ) : null}
         </div>
@@ -257,6 +264,10 @@ function OptionRow({
       type="button"
       role="option"
       aria-selected={highlighted}
+      // Options are virtually highlighted via the input's
+      // aria-activedescendant (combobox pattern) — real DOM focus stays on
+      // the input. Without this, Tab lands on a row and arrow-key nav dies.
+      tabIndex={-1}
       onClick={onActivate}
       style={{ boxShadow: highlighted ? "2px 0 0 var(--accent) inset" : undefined }}
       className={`flex w-full items-center gap-2 rounded-[4px] px-2 py-1.5 text-left text-sm ${
