@@ -2,7 +2,7 @@ import "fake-indexeddb/auto";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { BurrowDB } from "../src/db";
 import type { Collection, Link, PendingOp } from "../src/types";
-import { createCollection, softDeleteCollection } from "../src/repo/collections";
+import { createCollection, renameCollection, softDeleteCollection } from "../src/repo/collections";
 import { saveTabs, softDeleteLinks } from "../src/repo/links";
 import { getMeta, setMeta } from "../src/repo/meta";
 import { mergeRow } from "../src/sync/merge";
@@ -229,6 +229,87 @@ describe("SyncEngine.syncOnce — flush", () => {
     expect(result.pushed).toBe(1200);
     expect(transport.pushCollectionsCalls).toHaveLength(3);
     expect(transport.pushCollectionsCalls.map((batch) => batch.length)).toEqual([500, 500, 200]);
+  });
+
+  it("lost-update window: an edit made while its row's push is in flight keeps its pendingOp and re-pushes next cycle", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000);
+    const c = await createCollection("C", undefined, db);
+
+    const transport = createFakeTransport();
+    let resolvePush!: () => void;
+    const pushGate = new Promise<void>((resolve) => {
+      resolvePush = resolve;
+    });
+    let pushStarted!: () => void;
+    const pushStartedPromise = new Promise<void>((resolve) => {
+      pushStarted = resolve;
+    });
+    transport.pushCollections = async (batch) => {
+      transport.pushCollectionsCalls.push(batch);
+      pushStarted();
+      await pushGate;
+    };
+    const engine = new SyncEngine(db, transport);
+
+    const firstSync = engine.syncOnce();
+    await pushStartedPromise;
+
+    // Edit while the push round-trip is in flight. The op queue DEDUPES by
+    // (table,rowId), so this does NOT enqueue a second op — the op the flush
+    // is about to delete is the ONLY thing covering this edit. Deleting it
+    // unconditionally would lose the edit until some future unrelated write.
+    vi.setSystemTime(2_000);
+    await renameCollection(c.id, "Edited during push", db);
+
+    resolvePush();
+    await firstSync;
+
+    // The wire carried the t=1000 snapshot; the op must survive the flush.
+    expect(transport.pushCollectionsCalls[0]![0]!.name).toBe("C");
+    expect(await opsFor("collections", c.id)).toHaveLength(1);
+
+    // The next cycle uploads the newer edit, and only then clears the op.
+    const second = await engine.syncOnce();
+    expect(second.pushed).toBe(1);
+    expect(transport.pushCollectionsCalls).toHaveLength(2);
+    expect(transport.pushCollectionsCalls[1]![0]!.name).toBe("Edited during push");
+    expect(await opsFor("collections", c.id)).toHaveLength(0);
+  });
+
+  it("multi-batch partial failure: push call 1 succeeds, call 2 throws → batch-1 ops deleted, batch-2/3 ops retained, cursor unmoved", async () => {
+    const rows: Collection[] = [];
+    const ops: Omit<PendingOp, "id">[] = [];
+    for (let i = 0; i < 1200; i++) {
+      const c = makeCollection({ name: `C${i}` });
+      rows.push(c);
+      ops.push({ table: "collections", rowId: c.id, queuedAt: Date.now() });
+    }
+    await db.collections.bulkAdd(rows);
+    await db.pendingOps.bulkAdd(ops as PendingOp[]);
+
+    const transport = createFakeTransport();
+    let pushCalls = 0;
+    transport.pushCollections = async (batch) => {
+      pushCalls++;
+      if (pushCalls === 2) throw new Error("push failed on batch 2");
+      transport.pushCollectionsCalls.push(batch);
+    };
+    const engine = new SyncEngine(db, transport);
+
+    await expect(engine.syncOnce()).rejects.toThrow("push failed on batch 2");
+
+    // Batch 1 (500 rows) was pushed and its ops flushed; batches 2 and 3
+    // (700 rows) keep their ops queued for retry; the cursor never moved
+    // and the pull phase never ran.
+    expect(transport.pushCollectionsCalls).toHaveLength(1);
+    const remaining = await db.pendingOps.toArray();
+    expect(remaining).toHaveLength(700);
+    const remainingIds = new Set(remaining.map((op) => op.rowId));
+    expect(rows.slice(0, 500).some((r) => remainingIds.has(r.id))).toBe(false);
+    expect(rows.slice(500).every((r) => remainingIds.has(r.id))).toBe(true);
+    expect(await getMeta("syncCursor", db)).toBeNull();
+    expect(transport.pullCalls).toHaveLength(0);
   });
 
   it("failed push leaves pendingOps intact and the cursor unmoved", async () => {
@@ -493,6 +574,91 @@ describe("SyncEngine.initialUpload", () => {
     expect(transport.pullCalls).toEqual([0]);
     expect(await db.collections.get(remote.id)).toEqual(remote);
     expect(await getMeta("syncCursor", db)).toBe("777");
+  });
+
+  it("lost-update window: an edit made during initialUpload's push keeps its pendingOp for the next sync", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000);
+    const c = await createCollection("C", undefined, db); // enqueues the op that must survive
+
+    const transport = createFakeTransport();
+    let resolvePush!: () => void;
+    const pushGate = new Promise<void>((resolve) => {
+      resolvePush = resolve;
+    });
+    let pushStarted!: () => void;
+    const pushStartedPromise = new Promise<void>((resolve) => {
+      pushStarted = resolve;
+    });
+    transport.pushCollections = async (batch) => {
+      transport.pushCollectionsCalls.push(batch);
+      pushStarted();
+      await pushGate;
+    };
+    const engine = new SyncEngine(db, transport);
+
+    const boot = engine.initialUpload();
+    await pushStartedPromise;
+
+    // Same dedupe trap as the flush case: this rename does NOT enqueue a new
+    // op, so initialUpload's covered-ops clearing must notice the row moved
+    // past the pushed snapshot and leave the op queued.
+    vi.setSystemTime(2_000);
+    await renameCollection(c.id, "Edited during bootstrap", db);
+
+    resolvePush();
+    expect(await boot).toBe(1);
+
+    expect(transport.pushCollectionsCalls[0]![0]!.name).toBe("C");
+    expect(await opsFor("collections", c.id)).toHaveLength(1);
+
+    const sync = await engine.syncOnce();
+    expect(sync.pushed).toBe(1);
+    expect(transport.pushCollectionsCalls[1]![0]!.name).toBe("Edited during bootstrap");
+    expect(await opsFor("collections", c.id)).toHaveLength(0);
+  });
+
+  it("syncOnce called during an in-flight initialUpload is serialized after it (shared overlap guard)", async () => {
+    await createCollection("C", undefined, db); // gives the bootstrap one row to push
+
+    const transport = createFakeTransport();
+    transport.pullResponse = { collections: [], links: [], serverNow: 777 };
+    let resolvePush!: () => void;
+    const pushGate = new Promise<void>((resolve) => {
+      resolvePush = resolve;
+    });
+    let pushStarted!: () => void;
+    const pushStartedPromise = new Promise<void>((resolve) => {
+      pushStarted = resolve;
+    });
+    let gatedCalls = 0;
+    transport.pushCollections = async (batch) => {
+      transport.pushCollectionsCalls.push(batch);
+      if (++gatedCalls === 1) {
+        pushStarted();
+        await pushGate; // hold ONLY the bootstrap's push open
+      }
+    };
+    const engine = new SyncEngine(db, transport);
+
+    const boot = engine.initialUpload();
+    await pushStartedPromise; // bootstrap's push is now in flight
+
+    const sync = engine.syncOnce();
+    // Give an (incorrectly) concurrent sync cycle every chance to run.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(transport.pushCollectionsCalls).toHaveLength(1); // sync's flush has NOT started
+    expect(transport.pullCalls).toHaveLength(0); // nor has any pull
+
+    resolvePush();
+    expect(await boot).toBe(1);
+    const result = await sync;
+
+    // Bootstrap already covered the row's op, so the serialized sync had
+    // nothing left to push — and it pulled from the cursor bootstrap set.
+    expect(result.pushed).toBe(0);
+    expect(transport.pushCollectionsCalls).toHaveLength(1);
+    expect(transport.pullCalls).toEqual([0, 777]);
   });
 
   it("returns 0 and still pulls when there is nothing local to push", async () => {
