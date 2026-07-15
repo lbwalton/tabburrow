@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { HTMLAttributes, ReactNode } from "react";
 import { cx } from "../lib/cx";
 
@@ -15,9 +16,14 @@ const variantClasses: Record<CardVariant, string> = {
   paper: "bg-[var(--paper)] text-[var(--ink)] border-[var(--paper-line)]",
 };
 
-export function Card({ variant = "surface", arch = true, className, style, children, ...rest }: CardProps) {
+/** `forwardRef`'d so callers can attach a DOM ref directly (e.g. dnd-kit's `setNodeRef` on a draggable card). */
+export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
+  { variant = "surface", arch = true, className, style, children, ...rest },
+  ref
+) {
   return (
     <div
+      ref={ref}
       className={cx("border p-4", variantClasses[variant], className)}
       style={{
         borderRadius: arch ? "var(--radius-arch)" : "var(--radius-card)",
@@ -29,4 +35,4 @@ export function Card({ variant = "surface", arch = true, className, style, child
       {children}
     </div>
   );
-}
+});

@@ -1,87 +1,31 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import type { DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { useMemo, useState } from "react";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type { Collection } from "@tabburrow/core";
-import { getDB, moveCollection } from "@tabburrow/core";
 import { Button, Input } from "@tabburrow/ui";
-import { moveItem, neighborsAfterMove, nextLocalOrder } from "../../lib/reorder";
 import { friendlyCreateError } from "../../lib/collections";
 import { CollectionRow } from "./CollectionRow";
 
 export interface RailProps {
   collections: Collection[];
+  /** The order to render rows in — the dashboard's optimistic drag order when a reorder is in flight, otherwise the live (persisted) order. Owned by `App` (see its docstring) since the single lifted `DndContext`'s `onDragEnd` needs to update it directly. */
+  order: string[];
   linkCounts: Map<string, number>;
   selectedId: string | null;
   onCreateCollection: (name: string) => Promise<Collection>;
   onDeleteCollection: (collection: Collection) => void;
-  /** Called when a drag's moveCollection write rejects (the rail has already rolled back to the live order). */
-  onReorderFailed: () => void;
 }
 
 /**
  * Left rail: wordmark, the draggable collections list, and a "New
- * collection" affordance pinned to the bottom. Drag reordering keeps a
- * local optimistic order (`localOrder`) during the async `moveCollection`
- * write so the row lands in its new spot instantly and doesn't snap back
- * and then forward once the live query catches up (see reorder.ts for the
- * pure neighbor/array-move math this drives).
+ * collection" affordance pinned to the bottom. The `DndContext` (and its
+ * sensors, and the optimistic drag-order state) live in `App.tsx` — a single
+ * context has to span the rail AND the link grid so a card can be dropped on
+ * a row (see `App`'s docstring) — this component just renders `order` inside
+ * a `SortableContext`.
  */
-export function Rail({
-  collections,
-  linkCounts,
-  selectedId,
-  onCreateCollection,
-  onDeleteCollection,
-  onReorderFailed,
-}: RailProps) {
-  const db = getDB();
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
-  const liveOrder = useMemo(() => collections.map((c) => c.id), [collections]);
-  const [localOrder, setLocalOrder] = useState<string[] | null>(null);
-
-  // Reconcile the optimistic override against every live-query emission:
-  // confirmed order or a changed collection set both drop it (see
-  // nextLocalOrder's docstring). The functional update returns the SAME
-  // reference while the write is still in flight, so React bails out and
-  // this can't loop.
-  useEffect(() => {
-    setLocalOrder((current) => nextLocalOrder(current, { type: "live-update", liveOrder }));
-  }, [liveOrder]);
-
-  const order = localOrder ?? liveOrder;
+export function Rail({ collections, order, linkCounts, selectedId, onCreateCollection, onDeleteCollection }: RailProps) {
   const byId = useMemo(() => new Map(collections.map((c) => [c.id, c])), [collections]);
   const ordered = order.map((id) => byId.get(id)).filter((c): c is Collection => !!c);
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const current = localOrder ?? liveOrder;
-    const fromIndex = current.indexOf(String(active.id));
-    const toIndex = current.indexOf(String(over.id));
-    if (fromIndex === -1 || toIndex === -1) return;
-    const nextOrder = moveItem(current, fromIndex, toIndex);
-    setLocalOrder(nextOrder);
-    const { beforeId, afterId } = neighborsAfterMove(nextOrder, String(active.id));
-    moveCollection(String(active.id), beforeId, afterId, db).catch(() => {
-      // The write never landed (Dexie transaction abort, positionBetween
-      // throw): roll the rail back to the live order instead of leaving an
-      // unpersisted order on screen forever, and let App surface a toast.
-      setLocalOrder((current) => nextLocalOrder(current, { type: "write-failed" }));
-      onReorderFailed();
-    });
-  }
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -118,21 +62,19 @@ export function Rail({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={order} strategy={verticalListSortingStrategy}>
-            <ul className="flex flex-col gap-0.5">
-              {ordered.map((collection) => (
-                <CollectionRow
-                  key={collection.id}
-                  collection={collection}
-                  selected={collection.id === selectedId}
-                  linkCount={linkCounts.get(collection.id) ?? 0}
-                  onDelete={() => onDeleteCollection(collection)}
-                />
-              ))}
-            </ul>
-          </SortableContext>
-        </DndContext>
+        <SortableContext items={order} strategy={verticalListSortingStrategy}>
+          <ul className="flex flex-col gap-0.5">
+            {ordered.map((collection) => (
+              <CollectionRow
+                key={collection.id}
+                collection={collection}
+                selected={collection.id === selectedId}
+                linkCount={linkCounts.get(collection.id) ?? 0}
+                onDelete={() => onDeleteCollection(collection)}
+              />
+            ))}
+          </ul>
+        </SortableContext>
       </div>
 
       <div className="border-t border-[var(--line)] p-2">

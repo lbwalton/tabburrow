@@ -1,21 +1,40 @@
-import { useLiveQuery } from "dexie-react-hooks";
 import type { ReactNode } from "react";
-import type { Collection } from "@tabburrow/core";
-import { getDB, listLinks, renameCollection } from "@tabburrow/core";
+import type { Collection, Link } from "@tabburrow/core";
+import { getDB, renameCollection } from "@tabburrow/core";
 import { Button, EmptyState } from "@tabburrow/ui";
 import type { ResolvedRoute } from "../../lib/route";
 import { collectionHash } from "../../lib/dashboard";
+import type { SortMode } from "../../lib/links";
 import { BurrowIllustration } from "./BurrowIllustration";
 import { useInlineRename } from "./useInlineRename";
+import { LinkGrid } from "./LinkGrid";
+import { SortMenu } from "./SortMenu";
 
 export interface DashboardMainProps {
   route: ResolvedRoute;
   collections: Collection[];
+  /** The active collection's links (position-ordered), lifted to `App` so the single `DndContext`'s `onDragEnd` can reach the same optimistic order this renders with. Empty/stale when no collection route is active. */
+  links: Link[];
+  linksLoaded: boolean;
+  linkOrder: string[];
+  sortMode: SortMode;
+  onSortModeChange: (mode: SortMode) => void;
+  onLinkError: (message: string) => void;
   onCreateFirstCollection: () => void;
 }
 
 /** The dashboard's main area: routes to a collection panel, a sessions/settings placeholder, or one of the empty states. */
-export function DashboardMain({ route, collections, onCreateFirstCollection }: DashboardMainProps) {
+export function DashboardMain({
+  route,
+  collections,
+  links,
+  linksLoaded,
+  linkOrder,
+  sortMode,
+  onSortModeChange,
+  onLinkError,
+  onCreateFirstCollection,
+}: DashboardMainProps) {
   if (route.kind === "sessions") {
     return (
       <Centered>
@@ -79,16 +98,46 @@ export function DashboardMain({ route, collections, onCreateFirstCollection }: D
   // the impossible case, not an expected path.
   if (!collection) return null;
 
-  return <CollectionPanel collection={collection} />;
+  return (
+    <CollectionPanel
+      collection={collection}
+      collections={collections}
+      links={links}
+      linksLoaded={linksLoaded}
+      linkOrder={linkOrder}
+      sortMode={sortMode}
+      onSortModeChange={onSortModeChange}
+      onLinkError={onLinkError}
+    />
+  );
 }
 
 function Centered({ children }: { children: ReactNode }) {
   return <div className="flex h-full items-center justify-center">{children}</div>;
 }
 
-function CollectionPanel({ collection }: { collection: Collection }) {
+interface CollectionPanelProps {
+  collection: Collection;
+  collections: Collection[];
+  links: Link[];
+  linksLoaded: boolean;
+  linkOrder: string[];
+  sortMode: SortMode;
+  onSortModeChange: (mode: SortMode) => void;
+  onLinkError: (message: string) => void;
+}
+
+function CollectionPanel({
+  collection,
+  collections,
+  links,
+  linksLoaded,
+  linkOrder,
+  sortMode,
+  onSortModeChange,
+  onLinkError,
+}: CollectionPanelProps) {
   const db = getDB();
-  const links = useLiveQuery(() => listLinks(collection.id, db), [collection.id]);
   const rename = useInlineRename({
     value: collection.name,
     onCommit: (name) => void renameCollection(collection.id, name, db),
@@ -96,44 +145,50 @@ function CollectionPanel({ collection }: { collection: Collection }) {
 
   return (
     <div className="flex h-full flex-col px-8 py-8">
-      <header className="mb-6 flex items-baseline gap-3">
-        {rename.editing ? (
-          <input
-            ref={rename.inputRef}
-            value={rename.draft}
-            onChange={(e) => rename.setDraft(e.target.value)}
-            {...rename.inputHandlers}
-            className="border-b border-[var(--line-hi)] bg-transparent text-3xl font-bold text-[var(--text)] outline-none"
-            style={{ fontFamily: "var(--font-display)" }}
-          />
-        ) : (
-          <h1
-            onDoubleClick={rename.start}
-            title="Double-click to rename"
-            className="text-3xl font-bold text-[var(--text)]"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            {collection.name}
-          </h1>
-        )}
-        <span className="text-xs text-[var(--text-2)]" style={{ fontFamily: "var(--font-mono)" }}>
-          {links === undefined ? "" : `${links.length} ${links.length === 1 ? "link" : "links"}`}
-        </span>
+      <header className="mb-6 flex items-baseline justify-between gap-3">
+        <div className="flex items-baseline gap-3">
+          {rename.editing ? (
+            <input
+              ref={rename.inputRef}
+              value={rename.draft}
+              onChange={(e) => rename.setDraft(e.target.value)}
+              {...rename.inputHandlers}
+              className="border-b border-[var(--line-hi)] bg-transparent text-3xl font-bold text-[var(--text)] outline-none"
+              style={{ fontFamily: "var(--font-display)" }}
+            />
+          ) : (
+            <h1
+              onDoubleClick={rename.start}
+              title="Double-click to rename"
+              className="text-3xl font-bold text-[var(--text)]"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              {collection.name}
+            </h1>
+          )}
+          <span className="text-xs text-[var(--text-2)]" style={{ fontFamily: "var(--font-mono)" }}>
+            {linksLoaded ? `${links.length} ${links.length === 1 ? "link" : "links"}` : ""}
+          </span>
+        </div>
+        {linksLoaded && links.length > 0 ? <SortMenu value={sortMode} onChange={onSortModeChange} /> : null}
       </header>
 
       <div className="flex-1">
-        {links === undefined ? null : links.length === 0 ? (
+        {!linksLoaded ? null : links.length === 0 ? (
           <EmptyState
             title="No links yet"
             description="Save some tabs from the popup to see them here."
             illustration={<BurrowIllustration />}
           />
         ) : (
-          // TEMP (T8 placeholder): T9 replaces this line with the real link
-          // grid (favicon cards, drag reorder, multi-select, bulk actions).
-          <p className="text-sm text-[var(--text-2)]">
-            {links.length} saved {links.length === 1 ? "link" : "links"} — grid view lands in T9.
-          </p>
+          <LinkGrid
+            collectionId={collection.id}
+            links={links}
+            order={linkOrder}
+            sortMode={sortMode}
+            collections={collections}
+            onLinkError={onLinkError}
+          />
         )}
       </div>
     </div>

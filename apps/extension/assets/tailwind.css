@@ -24,3 +24,17 @@
   --color-accent: var(--accent);
   --color-accent-2: var(--accent-2);
 }
+
+/* The link grid's bulk-action bar mounts only while 1+ cards are selected
+   (LinkGrid.tsx) — @starting-style animates that mount as a "slide up from
+   the bottom" instead of an instant pop-in, without a JS mount-transition
+   trick. Chrome (this is a Chrome-extension-only surface) has shipped
+   @starting-style since M117, well within any realistic install base. */
+.bulk-bar {
+  transition: transform 200ms ease, opacity 200ms ease;
+
+  @starting-style {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+}

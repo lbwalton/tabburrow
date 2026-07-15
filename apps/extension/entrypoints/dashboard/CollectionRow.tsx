@@ -24,9 +24,14 @@ export interface CollectionRowProps {
  */
 export function CollectionRow({ collection, selected, linkCount, onDelete }: CollectionRowProps) {
   const db = getDB();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver, active } = useSortable({
     id: collection.id,
+    data: { type: "collection" },
   });
+  // A row only lights up as a drop target for a LINK card drag (dropping a
+  // collection row on another collection row is the existing reorder path,
+  // not a "move" — it shouldn't get the same affordance).
+  const linkDropHighlighted = isOver && active?.data.current?.type === "link";
   const rename = useInlineRename({
     value: collection.name,
     onCommit: (name) => void renameCollection(collection.id, name, db),
@@ -51,6 +56,7 @@ export function CollectionRow({ collection, selected, linkCount, onDelete }: Col
         borderRadius: selected ? "var(--radius-arch)" : "var(--radius-card)",
         borderLeft: `3px solid ${selected ? borderAccent : "transparent"}`,
         background: selected ? "var(--surface)" : undefined,
+        boxShadow: linkDropHighlighted ? "0 0 0 2px var(--accent) inset" : undefined,
       }}
       className={`group flex items-center gap-1.5 py-1.5 pl-1.5 pr-2 ${selected ? "" : "hover:bg-[var(--surface-hover)]"}`}
     >
