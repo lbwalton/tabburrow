@@ -12,7 +12,7 @@ import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrate
 import type { Collection } from "@tabburrow/core";
 import { getDB, moveCollection } from "@tabburrow/core";
 import { Button, Input } from "@tabburrow/ui";
-import { arraysEqual, moveItem, neighborsAfterMove, sameIdSet } from "../../lib/reorder";
+import { moveItem, neighborsAfterMove, nextLocalOrder } from "../../lib/reorder";
 import { friendlyCreateError } from "../../lib/collections";
 import { CollectionRow } from "./CollectionRow";
 
@@ -22,6 +22,8 @@ export interface RailProps {
   selectedId: string | null;
   onCreateCollection: (name: string) => Promise<Collection>;
   onDeleteCollection: (collection: Collection) => void;
+  /** Called when a drag's moveCollection write rejects (the rail has already rolled back to the live order). */
+  onReorderFailed: () => void;
 }
 
 /**
@@ -32,7 +34,14 @@ export interface RailProps {
  * and then forward once the live query catches up (see reorder.ts for the
  * pure neighbor/array-move math this drives).
  */
-export function Rail({ collections, linkCounts, selectedId, onCreateCollection, onDeleteCollection }: RailProps) {
+export function Rail({
+  collections,
+  linkCounts,
+  selectedId,
+  onCreateCollection,
+  onDeleteCollection,
+  onReorderFailed,
+}: RailProps) {
   const db = getDB();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -42,15 +51,14 @@ export function Rail({ collections, linkCounts, selectedId, onCreateCollection, 
   const liveOrder = useMemo(() => collections.map((c) => c.id), [collections]);
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
 
-  // Reconcile once the live query confirms the write (order matches) or
-  // invalidate immediately if the collection SET changed underneath the
-  // drag (an add/delete elsewhere) — either way, drop the stale override.
+  // Reconcile the optimistic override against every live-query emission:
+  // confirmed order or a changed collection set both drop it (see
+  // nextLocalOrder's docstring). The functional update returns the SAME
+  // reference while the write is still in flight, so React bails out and
+  // this can't loop.
   useEffect(() => {
-    if (!localOrder) return;
-    if (!sameIdSet(localOrder, liveOrder) || arraysEqual(localOrder, liveOrder)) {
-      setLocalOrder(null);
-    }
-  }, [liveOrder, localOrder]);
+    setLocalOrder((current) => nextLocalOrder(current, { type: "live-update", liveOrder }));
+  }, [liveOrder]);
 
   const order = localOrder ?? liveOrder;
   const byId = useMemo(() => new Map(collections.map((c) => [c.id, c])), [collections]);
@@ -66,7 +74,13 @@ export function Rail({ collections, linkCounts, selectedId, onCreateCollection, 
     const nextOrder = moveItem(current, fromIndex, toIndex);
     setLocalOrder(nextOrder);
     const { beforeId, afterId } = neighborsAfterMove(nextOrder, String(active.id));
-    void moveCollection(String(active.id), beforeId, afterId, db);
+    moveCollection(String(active.id), beforeId, afterId, db).catch(() => {
+      // The write never landed (Dexie transaction abort, positionBetween
+      // throw): roll the rail back to the live order instead of leaving an
+      // unpersisted order on screen forever, and let App surface a toast.
+      setLocalOrder((current) => nextLocalOrder(current, { type: "write-failed" }));
+      onReorderFailed();
+    });
   }
 
   const [creating, setCreating] = useState(false);

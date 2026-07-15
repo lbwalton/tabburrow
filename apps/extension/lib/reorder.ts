@@ -65,3 +65,32 @@ export function sameIdSet(a: string[], b: string[]): boolean {
   const bSet = new Set(b);
   return a.every((id) => bSet.has(id));
 }
+
+/** An event the rail's optimistic-order state must react to. */
+export type ReorderEvent =
+  | { type: "live-update"; liveOrder: string[] }
+  | { type: "write-failed" };
+
+/**
+ * The single decision function behind the rail's optimistic drag order:
+ * given the current override (`localOrder`, `null` when inactive) and an
+ * event, what should the override become?
+ *
+ * - `write-failed` (the `moveCollection` promise rejected): drop the
+ *   override so the rail reverts to the live (persisted) order — otherwise
+ *   a Dexie transaction abort would leave an unpersisted order on screen
+ *   forever.
+ * - `live-update` with the same order: the write is confirmed; drop it.
+ * - `live-update` with the same id set but a different order: the write is
+ *   still in flight; keep waiting. Returns the SAME array reference so a
+ *   React `setState(fn)` caller bails out without a re-render.
+ * - `live-update` with a different id set: an add/delete landed underneath
+ *   the drag; the override is stale, drop it.
+ */
+export function nextLocalOrder(localOrder: string[] | null, event: ReorderEvent): string[] | null {
+  if (localOrder === null) return null;
+  if (event.type === "write-failed") return null;
+  if (!sameIdSet(localOrder, event.liveOrder)) return null;
+  if (arraysEqual(localOrder, event.liveOrder)) return null;
+  return localOrder;
+}

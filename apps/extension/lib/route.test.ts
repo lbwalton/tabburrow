@@ -26,6 +26,11 @@ describe("parseHash", () => {
     expect(parseHash("#/c/abc%20123")).toEqual({ kind: "collection", id: "abc 123" });
   });
 
+  it("treats malformed percent-encoding as root instead of throwing", () => {
+    expect(parseHash("#/c/%zz")).toEqual({ kind: "root" });
+    expect(parseHash("#/c/abc%")).toEqual({ kind: "root" });
+  });
+
   it("works without a leading #", () => {
     expect(parseHash("/c/abc-123")).toEqual({ kind: "collection", id: "abc-123" });
   });

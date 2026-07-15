@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { arraysEqual, moveItem, neighborsAfterMove, sameIdSet } from "./reorder";
+import { arraysEqual, moveItem, neighborsAfterMove, nextLocalOrder, sameIdSet } from "./reorder";
 
 describe("moveItem", () => {
   it("moves an item forward", () => {
@@ -66,5 +66,31 @@ describe("sameIdSet", () => {
   it("is false when an id was added or removed", () => {
     expect(sameIdSet(["a", "b"], ["a", "b", "c"])).toBe(false);
     expect(sameIdSet(["a", "b", "c"], ["a", "b"])).toBe(false);
+  });
+});
+
+describe("nextLocalOrder", () => {
+  const optimistic = ["b", "a", "c"];
+
+  it("stays null when no optimistic override is active, whatever the event", () => {
+    expect(nextLocalOrder(null, { type: "live-update", liveOrder: ["a", "b"] })).toBeNull();
+    expect(nextLocalOrder(null, { type: "write-failed" })).toBeNull();
+  });
+
+  it("drops the override on write failure (revert to the live order)", () => {
+    expect(nextLocalOrder(optimistic, { type: "write-failed" })).toBeNull();
+  });
+
+  it("drops the override once the live query confirms the same order", () => {
+    expect(nextLocalOrder(optimistic, { type: "live-update", liveOrder: ["b", "a", "c"] })).toBeNull();
+  });
+
+  it("keeps the override (same reference, so React can bail out) while the live order lags with the same id set", () => {
+    expect(nextLocalOrder(optimistic, { type: "live-update", liveOrder: ["a", "b", "c"] })).toBe(optimistic);
+  });
+
+  it("drops the override when the collection set itself changed underneath the drag", () => {
+    expect(nextLocalOrder(optimistic, { type: "live-update", liveOrder: ["a", "b", "c", "d"] })).toBeNull();
+    expect(nextLocalOrder(optimistic, { type: "live-update", liveOrder: ["a", "b"] })).toBeNull();
   });
 });

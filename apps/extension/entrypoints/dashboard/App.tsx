@@ -29,6 +29,9 @@ export function App() {
   const linkCounts = useLiveQuery(() => countLinksByCollection(db), []) ?? EMPTY_COUNTS;
 
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  // Timestamp doubles as the Toast key so a second failure during the
+  // first toast's window restarts it rather than being swallowed.
+  const [reorderError, setReorderError] = useState<number | null>(null);
 
   async function handleCreateCollection(name: string): Promise<Collection> {
     const created = await createCollection(name, undefined, db);
@@ -67,11 +70,20 @@ export function App() {
         selectedId={route.kind === "collection" ? route.id : null}
         onCreateCollection={handleCreateCollection}
         onDeleteCollection={handleDeleteCollection}
+        onReorderFailed={() => setReorderError(Date.now())}
       />
       <main className="min-w-0 flex-1 overflow-y-auto">
         <DashboardMain route={route} collections={collections} onCreateFirstCollection={handleCreateFirstCollection} />
       </main>
-      <div className="fixed bottom-6 right-6 z-50">
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2">
+        {reorderError !== null ? (
+          <Toast
+            key={reorderError}
+            message="Couldn't save that order. Try again."
+            durationMs={4000}
+            onDismiss={() => setReorderError(null)}
+          />
+        ) : null}
         {pendingDelete ? (
           <Toast
             key={pendingDelete.id}

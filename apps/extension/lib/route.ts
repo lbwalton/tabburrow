@@ -27,7 +27,16 @@ export function parseHash(hash: string): ParsedRoute {
   if (trimmed === "/sessions") return { kind: "sessions" };
   if (trimmed === "/settings") return { kind: "settings" };
   const match = COLLECTION_HASH.exec(trimmed);
-  if (match) return { kind: "collection", id: decodeURIComponent(match[1]!) };
+  if (match) {
+    try {
+      return { kind: "collection", id: decodeURIComponent(match[1]!) };
+    } catch {
+      // Malformed percent-encoding (e.g. "#/c/%zz") — a hand-mangled URL.
+      // Treat it as no route at all rather than letting the URIError take
+      // down the whole dashboard render.
+      return { kind: "root" };
+    }
+  }
   return { kind: "root" };
 }
 
