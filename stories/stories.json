@@ -11,9 +11,9 @@
   },
   {
     "id": "T2",
-    "title": "core package — types + Dexie database",
+    "title": "core package \u2014 types + Dexie database",
     "phase": 0,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "db.test.ts passes",
       "Collection and Link types export correctly",
@@ -22,7 +22,7 @@
   },
   {
     "id": "T3",
-    "title": "core — fractional indexing (TDD)",
+    "title": "core \u2014 fractional indexing (TDD)",
     "phase": 0,
     "status": "pending",
     "acceptance": [
@@ -33,7 +33,7 @@
   },
   {
     "id": "T4",
-    "title": "core — repositories (TDD)",
+    "title": "core \u2014 repositories (TDD)",
     "phase": 0,
     "status": "pending",
     "acceptance": [
@@ -47,7 +47,7 @@
   },
   {
     "id": "T5",
-    "title": "ui package — Deep Green tokens + primitives",
+    "title": "ui package \u2014 Deep Green tokens + primitives",
     "phase": 0,
     "status": "pending",
     "acceptance": [
@@ -69,13 +69,13 @@
   },
   {
     "id": "T7",
-    "title": "Popup — save flows",
+    "title": "Popup \u2014 save flows",
     "phase": 1,
     "status": "pending",
     "acceptance": [
       "One click saves current tab into Last Used collection (2 clicks cold: pick target once, remembered after)",
       "All tabs saves every http(s) tab of the window; confirmation shows correct count; optional close button works and never fires on its own",
-      "Highlight 3 tabs → Selected saves exactly those 3",
+      "Highlight 3 tabs \u2192 Selected saves exactly those 3",
       "New-collection inline creation works from the picker",
       "Recent collections list (5 most recently updated) opens dashboard focused on that collection",
       "Popup is fully keyboard navigable; visible focus rings"
@@ -83,7 +83,7 @@
   },
   {
     "id": "T8",
-    "title": "Dashboard shell — rail + collections",
+    "title": "Dashboard shell \u2014 rail + collections",
     "phase": 1,
     "status": "pending",
     "acceptance": [
@@ -94,13 +94,13 @@
   },
   {
     "id": "T9",
-    "title": "Dashboard — link grid + drag and drop",
+    "title": "Dashboard \u2014 link grid + drag and drop",
     "phase": 1,
     "status": "pending",
     "acceptance": [
       "Reorder within a collection sticks after reload",
       "Drag a card onto another collection in the rail moves it",
-      "Bulk select 3 → Move to another collection → all 3 move",
+      "Bulk select 3 \u2192 Move to another collection \u2192 all 3 move",
       "Edit title/note/tags persists",
       "Sort by name/date works; switching back to manual restores drag order"
     ]
@@ -112,9 +112,9 @@
     "status": "pending",
     "acceptance": [
       "Restore-all on a 20-link collection asks first, then opens all 20",
-      "Restore-all ≤15 opens immediately",
+      "Restore-all \u226415 opens immediately",
       "Card click opens correct URL in new tab",
-      "Delete links → Undo restores them with positions intact"
+      "Delete links \u2192 Undo restores them with positions intact"
     ]
   },
   {
@@ -124,19 +124,19 @@
     "status": "pending",
     "acceptance": [
       "Fuzzy match: gthb finds github links",
-      "Result click (link → opens URL; collection → routes to it)",
+      "Result click (link \u2192 opens URL; collection \u2192 routes to it)",
       "Keyboard-only flow works end to end in overlay"
     ]
   },
   {
     "id": "T12",
-    "title": "Sessions — snapshots and crash restore",
+    "title": "Sessions \u2014 snapshots and crash restore",
     "phase": 1,
     "status": "pending",
     "acceptance": [
       "Manual snapshot captures every open window/tab; restore recreates them in new windows (pinned preserved)",
       "Auto snapshots appear at 5-minute marks; never more than 10 autos kept",
-      "Kill Chrome (force quit) → reopen → dashboard offers crash restore; accepting restores the pre-crash tabs"
+      "Kill Chrome (force quit) \u2192 reopen \u2192 dashboard offers crash restore; accepting restores the pre-crash tabs"
     ]
   },
   {
@@ -153,14 +153,14 @@
   },
   {
     "id": "T14",
-    "title": "QA pass 1 — extension-core bug bash",
+    "title": "QA pass 1 \u2014 extension-core bug bash",
     "phase": 1,
     "status": "pending",
     "acceptance": [
       "200-link collection scroll perf acceptable",
       "non-http tabs excluded gracefully",
       "popup opens under 300ms",
-      "zoom 80–125% works",
+      "zoom 80\u2013125% works",
       "window resize handled",
       "double-click spam on save handled"
     ]
@@ -190,7 +190,7 @@
   },
   {
     "id": "T17",
-    "title": "core — sync engine (TDD)",
+    "title": "core \u2014 sync engine (TDD)",
     "phase": 2,
     "status": "pending",
     "acceptance": [
@@ -235,7 +235,7 @@
     "phase": 2,
     "status": "pending",
     "acceptance": [
-      "20 mixed tabs (dev docs, recipes, YouTube, shopping) → plausible 3–5 groups; apply produces exactly previewed result",
+      "20 mixed tabs (dev docs, recipes, YouTube, shopping) \u2192 plausible 3\u20135 groups; apply produces exactly previewed result",
       "Cancel changes nothing",
       "Quota counter decrements in UI after each run; 402 shows upgrade state, not error dump",
       "Nothing is ever auto-applied"
@@ -248,7 +248,7 @@
     "status": "pending",
     "acceptance": [
       "Shared slug renders; unshared/unknown slug 404s",
-      "Page scores ≥95 on Lighthouse a11y locally, renders beautifully at mobile width",
+      "Page scores \u226595 on Lighthouse a11y locally, renders beautifully at mobile width",
       "OG image shows in a social-card debugger"
     ]
   },
@@ -258,8 +258,8 @@
     "phase": 3,
     "status": "pending",
     "acceptance": [
-      "Share → URL opens the live page with current links",
-      "Stop sharing → same URL 404s within one sync cycle",
+      "Share \u2192 URL opens the live page with current links",
+      "Stop sharing \u2192 same URL 404s within one sync cycle",
       "Free user sees PRO upsell, not the toggle"
     ]
   },
@@ -269,8 +269,8 @@
     "phase": 3,
     "status": "pending",
     "acceptance": [
-      "Free user clicks Upgrade → completes 4242 checkout → webhook flips plan → extension shows PRO and sync starts",
-      "Cancel in portal → webhook downgrades → extension shows free state with graceful banner; local data untouched",
+      "Free user clicks Upgrade \u2192 completes 4242 checkout \u2192 webhook flips plan \u2192 extension shows PRO and sync starts",
+      "Cancel in portal \u2192 webhook downgrades \u2192 extension shows free state with graceful banner; local data untouched",
       "Webhook rejects bad signatures (401)"
     ]
   },
@@ -281,7 +281,7 @@
     "status": "pending",
     "acceptance": [
       "seo-geo-aeo skill checklist complete (robots.txt with AI crawlers, sitemap, llms.txt, JSON-LD SoftwareApplication + FAQPage, per-page metadata, semantic HTML, Ask AI block)",
-      "Lighthouse ≥90 across categories locally",
+      "Lighthouse \u226590 across categories locally",
       "every page renders correctly at mobile/desktop and both light/dark themes"
     ]
   },
@@ -302,7 +302,7 @@
     "phase": 3,
     "status": "pending",
     "acceptance": [
-      "every AC from Tasks 6–25 verified end to end",
+      "every AC from Tasks 6\u201325 verified end to end",
       "all defects logged to stories/fixes.json",
       "all defects marked fixed and re-verified"
     ]
