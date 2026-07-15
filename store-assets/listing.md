@@ -3,15 +3,16 @@
 Status: draft, not yet submitted. Screenshots and the promo tile image are
 deferred to T25b (the extension needs to be driven live for capture); this
 file specifies what to shoot and the exact spec for each asset. Character
-counts below were verified with a script — see [Verification](#verification).
+counts below were verified with a script; see [Verification](#verification).
 
 ## Title
 
 ```
-TabBurrow — Tab & Bookmark Manager
+TabBurrow: Tab & Bookmark Manager
 ```
 
-34 characters (limit: 45).
+33 characters (limit: 45). This is also the extension's manifest name
+(`apps/extension/wxt.config.ts`); keep the two identical.
 
 ## Summary
 
@@ -29,7 +30,7 @@ Save any tab in one click. Local-first, no account needed. AI organize and sync 
 
 ```
 TabBurrow is an open-source, local-first tab and bookmark manager. Save a
-tab, a selection of tabs, or a whole window in one click — no signup, no
+tab, a selection of tabs, or a whole window in one click; no signup, no
 account wall. Everything lives in your browser from the first save.
 
 WHY TABBURROW
@@ -39,11 +40,11 @@ WHY TABBURROW
   choose if and when to sign in.
 
 • AI auto-organize, with a preview. One click groups and tags your tabs by
-  intent. You see exactly what moves where before anything changes —
+  intent. You see exactly what moves where before anything changes;
   nothing is ever applied automatically. (PRO, launching with v1.0.)
 
-• Open source, AGPL-3.0. Every part of TabBurrow — the popup, the
-  dashboard, the sync engine, the AI organize function — is public on
+• Open source, AGPL-3.0. Every part of TabBurrow (the popup, the
+  dashboard, the sync engine, the AI organize function) is public on
   GitHub. Audit it, fork it, or self-host it on your own infrastructure.
 
 • Distinctive, editorial design. Built to feel like a place your tabs
@@ -60,7 +61,7 @@ WHAT YOU CAN DO TODAY
   manual snapshots, so a Chrome crash or an accidental window close never
   costs you your tabs.
 - Import your existing Chrome bookmarks, and export everything to JSON at
-  any time — your data is never locked in.
+  any time; your data is never locked in.
 - Keyboard shortcuts for saving and opening the dashboard without touching
   the mouse.
 - Switch between a dark "burrow" theme and a light "paper" theme.
@@ -68,11 +69,11 @@ WHAT YOU CAN DO TODAY
 FREE VS PRO
 
 Local saving, organizing, sessions, search, and import/export are free,
-unlimited, forever — no trial, no nag screens. PRO ($4/month or
+unlimited, forever: no trial, no nag screens. PRO ($4/month or
 $29/year) adds cloud sync across devices, shareable collection pages, and
 unlimited AI organize (free accounts get 30 AI organize runs a month).
 Prefer to run your own backend? Self-host the entire stack, including AI
-organize with your own API key, for $0 — see the self-hosting guide on
+organize with your own API key, for $0; see the self-hosting guide on
 GitHub.
 
 PRIVACY
@@ -83,7 +84,7 @@ page content. TabBurrow runs no ads, uses no ad trackers, and does not
 sell your data. Full privacy policy and source code are linked from the
 GitHub repository.
 
-Built in the open — every commit is public, every acceptance criterion is
+Built in the open: every commit is public, every acceptance criterion is
 checked before it ships.
 ```
 
@@ -95,30 +96,30 @@ handful of realistic collections (dev docs, recipes, shopping, one
 video/reading collection) so the screens don't look empty or staged with
 lorem-ipsum data.
 
-1. **Popup save** — the toolbar popup open over a real tab, mid-save
+1. **Popup save**: the toolbar popup open over a real tab, mid-save
    flow (collection picker visible, "Last Used" default highlighted).
    Staging: pick a page with a recognizable favicon/title so the shot
    reads at a glance; use the dark "burrow" theme.
-2. **Dashboard grid** — the full-page dashboard with the rail showing
+2. **Dashboard grid**: the full-page dashboard with the rail showing
    4–6 collections and the main grid showing one populated collection
    (8–12 link cards with favicons, titles, a couple of notes/tags
    visible). Staging: pick a collection name and cover image that reads
    well at thumbnail size in the store listing.
-3. **AI organize preview** — the "Organize with AI" preview diff showing
+3. **AI organize preview**: the "Organize with AI" preview diff showing
    suggested groups before confirmation. Staging: **blocked until T19
-   (ai-organize Edge Function) and T20 (AI organize UI) land** — this
+   (ai-organize Edge Function) and T20 (AI organize UI) land**; this
    flow doesn't exist in the running extension yet. Once it does, run it
    against a deliberately messy 15–20 tab mix so the "before" clutter
    and "after" grouping read clearly in one frame.
-4. **Sessions pane** — the sessions section of the left rail, showing a
+4. **Sessions pane**: the sessions section of the left rail, showing a
    mix of auto and manual snapshots with timestamps/names, plus the
    restore action visible. Staging: trigger at least one manual named
    snapshot ("Before demo") alongside the auto ones so both types are
    visible in frame.
-5. **Share page** — a public collection share page as seen by a visitor
+5. **Share page**: a public collection share page as seen by a visitor
    (not signed in), showing the link cards and the "Made with TabBurrow"
    banner. Staging: **blocked until T21 (share pages) and T22 (share
-   controls) land** — no share page exists yet. Once it does, shoot it
+   controls) land**; no share page exists yet. Once it does, shoot it
    at the same 1280×800 crop as the others for visual consistency across
    the listing, even though the page itself is responsive.
 
@@ -137,10 +138,10 @@ Spec:
   center-aligned.
 - The burrow-arch motif (rounded "entrance" arch, same shape language as
   the card corners and the marketing hero) as the dominant graphic
-  element — no stock art, no clip-art squirrel unless it can be done in
+  element; no stock art, no clip-art squirrel unless it can be done in
   the brand's own illustration style.
 - Orange accent (`#F97316`) used sparingly as a highlight (e.g. one
-  "tucked in" tab icon or the arch outline), not as a large fill — keep
+  "tucked in" tab icon or the arch outline), not as a large fill; keep
   it a warm accent, not the dominant color.
 - No screenshot content crammed into the tile; it should read at
   thumbnail size in a search results grid, not as a mini-dashboard.
@@ -157,11 +158,11 @@ Character counts verified with:
 
 ```sh
 python3 - <<'EOF'
-title = "TabBurrow — Tab & Bookmark Manager"
+title = "TabBurrow: Tab & Bookmark Manager"
 summary = "Save any tab in one click. Local-first, no account needed. AI organize and sync when you want them."
 print("title:", len(title), "/ 45")
 print("summary:", len(summary), "/ 132")
 EOF
 ```
 
-Output: `title: 34 / 45`, `summary: 99 / 132`. Both under limit.
+Output: `title: 33 / 45`, `summary: 99 / 132`. Both under limit.

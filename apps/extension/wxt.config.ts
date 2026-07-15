@@ -8,7 +8,7 @@ export default defineConfig({
     plugins: [tailwindcss()],
   }),
   manifest: {
-    name: "TabBurrow — Tab & Bookmark Manager",
+    name: "TabBurrow: Tab & Bookmark Manager",
     permissions: ["tabs", "storage", "favicon", "identity", "alarms"],
     host_permissions: [], // Supabase URL added in Task 15
     commands: {

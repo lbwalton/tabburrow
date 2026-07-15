@@ -9,7 +9,7 @@ body:
         Before opening a request, a quick check of
         [`stories/stories.json`](../../stories/stories.json) and the
         [design spec](../../docs/specs/2026-07-15-tabburrow-design.md) is
-        worth it — it might already be planned or explicitly out of scope
+        worth it; it might already be planned or explicitly out of scope
         for v1 (section 14).
 
   - type: textarea
@@ -24,7 +24,7 @@ body:
     id: solution
     attributes:
       label: Proposed solution
-      description: What would you like to see happen? Rough is fine — this doesn't need to be a full spec.
+      description: What would you like to see happen? Rough is fine; this doesn't need to be a full spec.
     validations:
       required: true
 

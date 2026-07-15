@@ -1,7 +1,7 @@
 # Self-hosting TabBurrow
 
 TabBurrow's local features (save, organize, sessions, search, import/export)
-need nothing but the extension itself — no account, no backend, no
+need nothing but the extension itself: no account, no backend, no
 environment variables. This guide is for the PRO tier: cloud sync, AI
 organize, sharing, and billing, running entirely on your own Supabase
 project and your own API keys.
@@ -12,7 +12,7 @@ The steps below describe the intended self-hosting path and are written
 against the schema and functions as designed in
 [`docs/specs/2026-07-15-tabburrow-design.md`](docs/specs/2026-07-15-tabburrow-design.md#5-data-model).
 **The "Database schema" section below is verified against the schema in
-`supabase/migrations/` — that directory does not exist in the repo yet
+`supabase/migrations/`; that directory does not exist in the repo yet
 (it lands in T15). Once it does, re-verify this section's commands against
 the actual migration files before relying on it**; until then, treat this
 guide as a preview of the workflow, not a tested runbook.
@@ -29,7 +29,7 @@ guide as a preview of the workflow, not a tested runbook.
 ## 1. Create a Supabase project
 
 1. Sign up at [supabase.com](https://supabase.com) (free tier is enough
-   for personal use — see [Costs](#costs) below).
+   for personal use; see [Costs](#costs) below).
 2. Create a new project and note its **Project URL** and **anon public
    key** from Project Settings → API. You'll also need the **service
    role key** for the Edge Functions (never expose this one to the
@@ -50,7 +50,7 @@ guide as a preview of the workflow, not a tested runbook.
 ## 2. Run the database migrations
 
 Source of truth: [`supabase/migrations/`](supabase/migrations/) in this
-repo — **not there yet as of this writing; lands in story T15** (see the
+repo, **not there yet as of this writing; lands in story T15** (see the
 status note above). Once it does, push every migration to your project:
 
 ```sh
@@ -70,7 +70,7 @@ supabase db lint
 ## 3. Deploy the Edge Functions
 
 The backend logic ships as Supabase Edge Functions in
-[`supabase/functions/`](supabase/functions/) — also not in the repo yet
+[`supabase/functions/`](supabase/functions/), also not in the repo yet
 (lands alongside T15/T19/T22/T23):
 
 | Function | Does |
@@ -90,7 +90,7 @@ supabase functions deploy share-resolve
 ```
 
 (If you don't need sharing or billing for personal use, you can skip
-`checkout-session`, `stripe-webhook`, and `share-resolve` — sync and AI
+`checkout-session`, `stripe-webhook`, and `share-resolve`; sync and AI
 organize don't depend on them.)
 
 ## 4. Set secrets
@@ -134,10 +134,10 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
 **Honest status:** as of this writing, none of these variables are read
-by `apps/extension` yet — the extension has no build-time env
+by `apps/extension` yet; the extension has no build-time env
 injection point for `SUPABASE_URL`/`SUPABASE_ANON_KEY` because sync and
 auth (stories T15–T18) haven't landed. **A local build needs no env at
-all** — `pnpm --filter extension build` works out of the box, entirely
+all**: `pnpm --filter extension build` works out of the box, entirely
 offline. `apps/web` currently reads only `NEXT_PUBLIC_SITE_URL` (used for
 canonical URLs and JSON-LD, see `apps/web/lib/site-config.ts`); it does
 not yet call Supabase either.
@@ -145,10 +145,10 @@ not yet call Supabase either.
 Once sync/auth/AI/sharing land, this section will document exactly which
 `.env` file each variable belongs in (extension vs. `apps/web`) and how
 each is injected (WXT's `import.meta.env.WXT_*` convention for the
-extension, Next's `NEXT_PUBLIC_*` convention for the web app) — check back
+extension, Next's `NEXT_PUBLIC_*` convention for the web app); check back
 here, or watch `stories/stories.json` for T16/T18/T19/T21/T22/T23 landing.
 
-For now, the build itself doesn't need any of it — an `.env` file with
+For now, the build itself doesn't need any of it; an `.env` file with
 your keys filled in has no effect on the extension yet, since nothing
 reads it:
 
@@ -172,7 +172,7 @@ what you plug in once T16/T18/T19 land.
 - **Supabase free tier** covers personal use comfortably: 500 MB database,
   50,000 monthly active users, 5 GB egress, and 500,000 Edge Function
   invocations included before usage-based billing kicks in. Free projects
-  pause after a week of inactivity and are capped at 2 per account —
+  pause after a week of inactivity and are capped at 2 per account,
   fine for one personal TabBurrow instance. (Verified against
   [supabase.com/pricing](https://supabase.com/pricing), checked
   2026-07-15; re-check before relying on these numbers, they change.)

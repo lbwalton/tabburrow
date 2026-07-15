@@ -1,7 +1,7 @@
 # Contributing to TabBurrow
 
 Thanks for wanting to work on TabBurrow. This is a small, actively-building
-open-source project — expect fast iteration and a build tracker
+open-source project; expect fast iteration and a build tracker
 (`stories/stories.json`) that's more honest than polished. Here's how to
 get productive quickly.
 
@@ -15,7 +15,7 @@ cd tabburrow
 pnpm install
 ```
 
-That's it for the local extension — no environment variables, no backend,
+That's it for the local extension: no environment variables, no backend,
 no account. If you're working on cloud sync, AI organize, sharing, or
 billing, see [SELF_HOSTING.md](SELF_HOSTING.md) for your own Supabase
 project.
@@ -55,9 +55,9 @@ enable Developer mode → **Load unpacked** → select
 
 ## Test commands
 
-- `pnpm --filter core test` — Vitest, pure logic (fractional indexing,
+- `pnpm --filter core test`: Vitest, pure logic (fractional indexing,
   repositories, sync/merge engine).
-- `pnpm --filter extension test` — Vitest, extension `lib/` logic
+- `pnpm --filter extension test`: Vitest, extension `lib/` logic
   (popup state, search, drag-reorder, importers, sessions, etc.).
 - `apps/web` and `packages/ui` don't have a test suite yet; `pnpm -r test`
   runs whichever packages have a `test` script and skips the rest.
@@ -67,14 +67,14 @@ enable Developer mode → **Load unpacked** → select
 TDD-first for anything that isn't a thin UI wrapper: pure logic lives in
 a `lib/` (extension) or `src/` (core) module with its own test file, and
 the tests are written to describe behavior, not implementation. React
-components stay thin — they call into tested `lib/` functions rather than
+components stay thin; they call into tested `lib/` functions rather than
 holding business logic themselves. If you're adding a feature with real
 logic (parsing, merging, ordering, metering, anything with edge cases),
 add a test file alongside it.
 
 Every story lands as its own commit (see the commit conventions below),
 and every non-trivial change gets a self-review pass before it's
-considered done — read your own diff like a reviewer would before opening
+considered done; read your own diff like a reviewer would before opening
 a PR.
 
 ## Commit conventions
@@ -104,11 +104,11 @@ docs: TabBurrow implementation plan (26 tasks, 4 phases)
 
 ## Pull requests
 
-- One logical change per PR — a story, a bug fix, a doc update. Avoid
+- One logical change per PR: a story, a bug fix, a doc update. Avoid
   bundling unrelated changes.
 - Fill out the PR template: what changed, why, and how you tested it.
 - Make sure `pnpm -r typecheck` and `pnpm -r test` pass locally before
-  opening the PR — CI runs the same checks plus both app builds and will
+  opening the PR; CI runs the same checks plus both app builds and will
   block merge on failure.
 - If you're changing behavior a user would notice, say so in plain
   language in the PR description, not just in code comments.
@@ -116,7 +116,7 @@ docs: TabBurrow implementation plan (26 tasks, 4 phases)
 
 ## Reporting bugs / requesting features
 
-Use the issue templates — they ask for exactly what's needed to
+Use the issue templates; they ask for exactly what's needed to
 reproduce a bug or evaluate a feature request without back-and-forth.
 
 ## Code of conduct
@@ -124,12 +124,12 @@ reproduce a bug or evaluate a feature request without back-and-forth.
 Be kind, be direct, assume good faith. Disagree about code, not about
 people. Harassment, discrimination, or personal attacks aren't tolerated
 and will get you removed from the project. If something's off, open an
-issue or contact the maintainer directly — see the contact info in the
+issue or contact the maintainer directly; see the contact info in the
 repo's GitHub profile.
 
 ## License note
 
 TabBurrow is licensed under [AGPL-3.0](LICENSE). By contributing, you
-agree that your contributions are licensed under the same terms — this
+agree that your contributions are licensed under the same terms; this
 keeps the whole project, including everyone's contributions, genuinely
 open source.
