@@ -17,6 +17,7 @@ import {
   getMeta,
   listCollections,
   listLinks,
+  listSnapshots,
   moveCollection,
   moveLink,
   moveLinkToEnd,
@@ -31,10 +32,12 @@ import { resolveDragEnd } from "../../lib/dnd";
 import { parseSortMode, sortMetaKey } from "../../lib/links";
 import type { SortMode } from "../../lib/links";
 import { moveItem, neighborsAfterMove, nextLocalOrder } from "../../lib/reorder";
+import { restoreFailureMessage, restoreSnapshot, shouldOfferCrashRestore } from "../../lib/sessions";
 import { useRoute } from "./useRoute";
 import { Rail } from "./Rail";
 import { DashboardMain } from "./DashboardMain";
 import { SearchOverlay } from "./SearchOverlay";
+import { CrashRestoreBanner } from "./CrashRestoreBanner";
 
 interface PendingDelete {
   id: string;
@@ -142,6 +145,7 @@ export function App() {
   // silently drops the first batch's undo (it stays deleted) rather than
   // stacking multiple pending-undo toasts of the same kind.
   const [pendingLinkDelete, setPendingLinkDelete] = useState<PendingLinkDelete | null>(null);
+  const [crashRestoring, setCrashRestoring] = useState(false);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -245,6 +249,56 @@ export function App() {
     setPendingLinkDelete(null);
   }
 
+  // --- Crash-restore banner ---
+  // `crashDetected` is written by background.ts's chrome.runtime.onStartup
+  // handler when the PREVIOUS browser session never reached a clean
+  // chrome.windows.onRemoved shutdown (see lib/sessions.ts's docstring on
+  // shouldOfferCrashRestore for the full story). `snapshotsForCrashCheck`
+  // reuses the same listSnapshots the Sessions pane itself calls — an
+  // independent useLiveQuery subscription, not a shared one, but at this
+  // app's scale that's the same "just scan the whole table" precedent
+  // countLinksByCollection already set.
+  const crashDetectedRaw = useLiveQuery(() => getMeta("crashDetected", db), [db]);
+  const snapshotsForCrashCheck = useLiveQuery(() => listSnapshots(db), [db]);
+  const newestAutoSnapshot = useMemo(
+    () => snapshotsForCrashCheck?.find((s) => s.kind === "auto") ?? null,
+    [snapshotsForCrashCheck],
+  );
+  const showCrashBanner = shouldOfferCrashRestore({
+    sessionMarkedRunning: crashDetectedRaw === "1",
+    hasAutoSnapshot: newestAutoSnapshot !== null,
+  });
+
+  // A crash WAS flagged but there's no auto snapshot to offer (e.g. it got
+  // pruned/deleted since) — clear the stale flag silently instead of ever
+  // showing a banner with nothing to restore. Waits for both live queries'
+  // first emission so this can't fire on the loading-state false negative
+  // (crashDetectedRaw/snapshotsForCrashCheck both start `undefined`).
+  useEffect(() => {
+    if (crashDetectedRaw !== "1") return;
+    if (snapshotsForCrashCheck === undefined) return;
+    if (newestAutoSnapshot !== null) return;
+    void setMeta("crashDetected", "0", db);
+  }, [crashDetectedRaw, snapshotsForCrashCheck, newestAutoSnapshot, db]);
+
+  function handleCrashDismiss() {
+    void setMeta("crashDetected", "0", db);
+  }
+
+  async function handleCrashRestore() {
+    if (crashRestoring || !newestAutoSnapshot) return;
+    setCrashRestoring(true);
+    try {
+      const result = await restoreSnapshot(newestAutoSnapshot.windows);
+      if (result.failed > 0) setLinkOpError({ id: Date.now(), message: restoreFailureMessage(result.failed) });
+    } finally {
+      setCrashRestoring(false);
+      // Both actions clear the flag, win or lose — a failed restore attempt
+      // still shouldn't leave the banner reappearing for the same crash.
+      void setMeta("crashDetected", "0", db);
+    }
+  }
+
   // Gate the whole shell on the first live-query emission: rendering the
   // rail/empty-state before we actually know whether any collections exist
   // would flash the wrong state for an instant (the "no flicker" rule
@@ -265,19 +319,26 @@ export function App() {
           onCreateCollection={handleCreateCollection}
           onDeleteCollection={handleDeleteCollection}
         />
-        <main className="min-w-0 flex-1 overflow-y-auto">
-          <DashboardMain
-            route={route}
-            collections={collections}
-            links={links}
-            linksLoaded={linksLoaded}
-            linkOrder={linkOrder}
-            sortMode={sortMode}
-            onSortModeChange={handleSortModeChange}
-            onLinkError={handleLinkError}
-            onLinksDeleted={handleLinksDeleted}
-            onCreateFirstCollection={handleCreateFirstCollection}
-          />
+        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+          {showCrashBanner ? (
+            <div className="px-8 pt-6">
+              <CrashRestoreBanner busy={crashRestoring} onRestore={handleCrashRestore} onDismiss={handleCrashDismiss} />
+            </div>
+          ) : null}
+          <div className="min-h-0 flex-1">
+            <DashboardMain
+              route={route}
+              collections={collections}
+              links={links}
+              linksLoaded={linksLoaded}
+              linkOrder={linkOrder}
+              sortMode={sortMode}
+              onSortModeChange={handleSortModeChange}
+              onLinkError={handleLinkError}
+              onLinksDeleted={handleLinksDeleted}
+              onCreateFirstCollection={handleCreateFirstCollection}
+            />
+          </div>
         </main>
         <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2">
           {reorderError !== null ? (

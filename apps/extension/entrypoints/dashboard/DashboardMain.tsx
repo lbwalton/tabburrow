@@ -10,6 +10,7 @@ import { useInlineRename } from "./useInlineRename";
 import { LinkGrid } from "./LinkGrid";
 import { SortMenu } from "./SortMenu";
 import { RestoreAllButton } from "./RestoreAllButton";
+import { SessionsPane } from "./SessionsPane";
 
 export interface DashboardMainProps {
   route: ResolvedRoute;
@@ -26,7 +27,7 @@ export interface DashboardMainProps {
   onCreateFirstCollection: () => void;
 }
 
-/** The dashboard's main area: routes to a collection panel, a sessions/settings placeholder, or one of the empty states. */
+/** The dashboard's main area: routes to a collection panel, the sessions pane, a settings placeholder, or one of the empty states. */
 export function DashboardMain({
   route,
   collections,
@@ -40,15 +41,7 @@ export function DashboardMain({
   onCreateFirstCollection,
 }: DashboardMainProps) {
   if (route.kind === "sessions") {
-    return (
-      <Centered>
-        <EmptyState
-          title="Sessions"
-          description="Window snapshots and crash restore land in a later task."
-          illustration={<BurrowIllustration />}
-        />
-      </Centered>
-    );
+    return <SessionsPane onError={onLinkError} />;
   }
 
   if (route.kind === "settings") {
