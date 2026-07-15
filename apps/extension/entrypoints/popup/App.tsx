@@ -67,8 +67,15 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [state.view]);
 
+  // useLiveQuery resolves asynchronously (starts `undefined`); until its
+  // first emission lands, `target` below can't be trusted — without this,
+  // a warm popup (valid lastUsedCollectionId) could momentarily look cold
+  // if the meta fetch happens to resolve before the live query does, and
+  // a click in that window would wrongly send the user to the picker.
+  const collectionsLoaded = collections !== undefined;
+  const dataLoaded = targetLoaded && collectionsLoaded;
   const target = targetId ? collections?.find((c) => c.id === targetId) ?? null : null;
-  const hasTarget = targetLoaded && target !== null;
+  const hasTarget = dataLoaded && target !== null;
 
   const performSave = useCallback(
     async (action: SaveAction, collection: Collection) => {
@@ -174,7 +181,7 @@ export function App() {
             onSaveSelected={() => handleSaveClick("selected")}
             allCount={allTabs?.length ?? 0}
             showSelected={(selectedTabs?.length ?? 0) >= 2}
-            disabled={busy || !targetLoaded}
+            disabled={busy || !dataLoaded}
           />
 
           <div className="flex items-center justify-between gap-2 text-sm text-[var(--text-2)]">
@@ -186,7 +193,7 @@ export function App() {
               size="sm"
               variant="ghost"
               onClick={() => dispatch({ type: "CHANGE_TARGET_CLICK" })}
-              disabled={busy}
+              disabled={busy || !collectionsLoaded}
             >
               Change
             </Button>
