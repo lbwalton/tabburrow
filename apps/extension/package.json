@@ -11,11 +11,15 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "typecheck": "wxt prepare && tsc --noEmit",
+    "test": "vitest run",
     "postinstall": "wxt prepare",
     "make-icons": "node scripts/make-icons.mjs"
   },
   "dependencies": {
+    "@tabburrow/core": "workspace:*",
     "@tabburrow/ui": "workspace:*",
+    "dexie": "^4.0.8",
+    "dexie-react-hooks": "^4.4.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -28,6 +32,7 @@
     "sharp": "^0.35.3",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.5.0",
+    "vitest": "^2.1.0",
     "wxt": "^0.20.27"
   }
 }
