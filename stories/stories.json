@@ -192,7 +192,7 @@
     "id": "T17",
     "title": "core \u2014 sync engine (TDD)",
     "phase": 2,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "local newer wins over remote in LWW merge",
       "remote newer overwrites local",
