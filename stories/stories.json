@@ -60,7 +60,7 @@
     "id": "T6",
     "title": "WXT scaffold + manifest",
     "phase": 1,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "Extension loads in Chrome with no manifest errors",
       "Popup opens showing a styled TabBurrow placeholder on ground #16241E",
