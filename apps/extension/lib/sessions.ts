@@ -1,5 +1,16 @@
 import type { SessionWindow } from "@tabburrow/core";
-import { isHttpUrl, titleForTab } from "./tabs";
+import { isHttpUrl, toTabInfo } from "./tabs";
+
+// --- Crash-detection meta keys/values, shared between background.ts (the
+// writer) and the dashboard App.tsx (the reader) so the two never drift on
+// a raw string literal — see background.ts's docstrings for the full state
+// machine these drive. ---
+export const SESSION_STATE_META_KEY = "sessionState";
+export const CRASH_DETECTED_META_KEY = "crashDetected";
+export const SESSION_STATE_RUNNING = "running";
+export const SESSION_STATE_ENDED_CLEAN = "endedClean";
+export const CRASH_FLAG_SET = "1";
+export const CRASH_FLAG_CLEAR = "0";
 
 /**
  * Window-capture and session-restore helpers, plus the pure decisions
@@ -16,10 +27,11 @@ import { isHttpUrl, titleForTab } from "./tabs";
 
 /**
  * Snapshots every open browser window: http(s) tabs only (same filter as
- * `lib/tabs.ts`'s `getAllTabs`), titles fall back to hostname via
- * `titleForTab`, pinned state is preserved. A window left with zero http(s)
- * tabs after filtering (e.g. all chrome:// pages) is dropped entirely
- * rather than recorded as an empty `SessionWindow`.
+ * `lib/tabs.ts`'s `getAllTabs`), url/title via the same `toTabInfo` mapping
+ * `getAllTabs` uses (titles fall back to hostname), pinned state added on
+ * top. A window left with zero http(s) tabs after filtering (e.g. all
+ * chrome:// pages) is dropped entirely rather than recorded as an empty
+ * `SessionWindow`.
  */
 export async function captureAllWindows(): Promise<SessionWindow[]> {
   const chromeWindows = await chrome.windows.getAll({ populate: true });
@@ -27,11 +39,7 @@ export async function captureAllWindows(): Promise<SessionWindow[]> {
   for (const win of chromeWindows) {
     const tabs = (win.tabs ?? [])
       .filter((tab) => isHttpUrl(tab.url))
-      .map((tab) => ({
-        url: tab.url!,
-        title: titleForTab(tab),
-        pinned: tab.pinned,
-      }));
+      .map((tab) => ({ ...toTabInfo(tab), pinned: tab.pinned }));
     if (tabs.length > 0) windows.push({ tabs });
   }
   return windows;

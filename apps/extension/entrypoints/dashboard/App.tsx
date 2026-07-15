@@ -10,7 +10,7 @@ import {
 } from "@dnd-kit/core";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import type { Collection } from "@tabburrow/core";
+import type { Collection, SessionSnapshot } from "@tabburrow/core";
 import {
   createCollection,
   getDB,
@@ -32,7 +32,13 @@ import { resolveDragEnd } from "../../lib/dnd";
 import { parseSortMode, sortMetaKey } from "../../lib/links";
 import type { SortMode } from "../../lib/links";
 import { moveItem, neighborsAfterMove, nextLocalOrder } from "../../lib/reorder";
-import { restoreFailureMessage, restoreSnapshot, shouldOfferCrashRestore } from "../../lib/sessions";
+import {
+  CRASH_DETECTED_META_KEY,
+  CRASH_FLAG_CLEAR,
+  restoreFailureMessage,
+  restoreSnapshot,
+  shouldOfferCrashRestore,
+} from "../../lib/sessions";
 import { useRoute } from "./useRoute";
 import { Rail } from "./Rail";
 import { DashboardMain } from "./DashboardMain";
@@ -258,7 +264,7 @@ export function App() {
   // independent useLiveQuery subscription, not a shared one, but at this
   // app's scale that's the same "just scan the whole table" precedent
   // countLinksByCollection already set.
-  const crashDetectedRaw = useLiveQuery(() => getMeta("crashDetected", db), [db]);
+  const crashDetectedRaw = useLiveQuery(() => getMeta(CRASH_DETECTED_META_KEY, db), [db]);
   const snapshotsForCrashCheck = useLiveQuery(() => listSnapshots(db), [db]);
   const newestAutoSnapshot = useMemo(
     () => snapshotsForCrashCheck?.find((s) => s.kind === "auto") ?? null,
@@ -269,6 +275,22 @@ export function App() {
     hasAutoSnapshot: newestAutoSnapshot !== null,
   });
 
+  // Pins the EXACT snapshot the banner offers the moment it first appears,
+  // instead of re-deriving "the newest auto" live on every render. Without
+  // this, a user who leaves the banner up past the next 5-minute
+  // auto-snapshot alarm would have "Restore last session" silently
+  // retarget itself to whatever background.ts just saved (the CURRENT,
+  // post-crash window set) instead of the pre-crash one the banner
+  // originally promised. Cleared back to null once the flag itself clears.
+  const [crashRestoreTarget, setCrashRestoreTarget] = useState<SessionSnapshot | null>(null);
+  useEffect(() => {
+    if (showCrashBanner && !crashRestoreTarget) {
+      setCrashRestoreTarget(newestAutoSnapshot);
+    } else if (!showCrashBanner && crashRestoreTarget) {
+      setCrashRestoreTarget(null);
+    }
+  }, [showCrashBanner, newestAutoSnapshot, crashRestoreTarget]);
+
   // A crash WAS flagged but there's no auto snapshot to offer (e.g. it got
   // pruned/deleted since) — clear the stale flag silently instead of ever
   // showing a banner with nothing to restore. Waits for both live queries'
@@ -278,24 +300,24 @@ export function App() {
     if (crashDetectedRaw !== "1") return;
     if (snapshotsForCrashCheck === undefined) return;
     if (newestAutoSnapshot !== null) return;
-    void setMeta("crashDetected", "0", db);
+    void setMeta(CRASH_DETECTED_META_KEY, CRASH_FLAG_CLEAR, db);
   }, [crashDetectedRaw, snapshotsForCrashCheck, newestAutoSnapshot, db]);
 
   function handleCrashDismiss() {
-    void setMeta("crashDetected", "0", db);
+    void setMeta(CRASH_DETECTED_META_KEY, CRASH_FLAG_CLEAR, db);
   }
 
   async function handleCrashRestore() {
-    if (crashRestoring || !newestAutoSnapshot) return;
+    if (crashRestoring || !crashRestoreTarget) return;
     setCrashRestoring(true);
     try {
-      const result = await restoreSnapshot(newestAutoSnapshot.windows);
+      const result = await restoreSnapshot(crashRestoreTarget.windows);
       if (result.failed > 0) setLinkOpError({ id: Date.now(), message: restoreFailureMessage(result.failed) });
     } finally {
       setCrashRestoring(false);
       // Both actions clear the flag, win or lose — a failed restore attempt
       // still shouldn't leave the banner reappearing for the same crash.
-      void setMeta("crashDetected", "0", db);
+      void setMeta(CRASH_DETECTED_META_KEY, CRASH_FLAG_CLEAR, db);
     }
   }
 
