@@ -32,7 +32,7 @@ export async function saveTabs(
     }
     let lastPosition = maxPosition(existing);
     const now = Date.now();
-    const result: Link[] = [];
+    const resultUrls: string[] = [];
 
     for (const tab of tabs) {
       const match = byUrl.get(tab.url);
@@ -41,9 +41,7 @@ export async function saveTabs(
         if (tab.faviconUrl !== undefined) patch.faviconUrl = tab.faviconUrl;
         await db.links.update(match.id, patch);
         await enqueueOp(db, "links", match.id);
-        const updated: Link = { ...match, ...patch };
-        byUrl.set(tab.url, updated);
-        result.push(updated);
+        byUrl.set(tab.url, { ...match, ...patch });
       } else {
         lastPosition = positionBetween(lastPosition, null);
         const link: Link = {
@@ -62,11 +60,15 @@ export async function saveTabs(
         await db.links.add(link);
         await enqueueOp(db, "links", link.id);
         byUrl.set(tab.url, link);
-        result.push(link);
       }
+      resultUrls.push(tab.url);
     }
 
-    return result;
+    // Resolve the returned array only AFTER the whole batch has been
+    // applied, so a URL appearing more than once in `tabs` yields the FINAL
+    // persisted row state in every one of its slots, not a stale snapshot
+    // captured before a later duplicate updated the row again.
+    return resultUrls.map((url) => byUrl.get(url)!);
   });
 }
 
@@ -76,14 +78,17 @@ export async function updateLink(
   db: BurrowDB = getDB(),
 ): Promise<void> {
   return db.transaction("rw", db.links, db.pendingOps, async () => {
-    await db.links.update(id, { ...patch, updatedAt: Date.now() });
-    await enqueueOp(db, "links", id);
+    // Dexie's update() resolves to the number of modified rows (0 when the
+    // id doesn't exist) — only enqueue an op when a row actually changed.
+    const modified = await db.links.update(id, { ...patch, updatedAt: Date.now() });
+    if (modified > 0) await enqueueOp(db, "links", id);
   });
 }
 
 /**
  * Repositions a link between its new neighbors (looked up the same way as
  * `moveCollection`), optionally moving it into another collection first.
+ * Throws if the moved link does not exist.
  */
 export async function moveLink(
   id: string,
@@ -93,10 +98,14 @@ export async function moveLink(
   db: BurrowDB = getDB(),
 ): Promise<void> {
   return db.transaction("rw", db.links, db.pendingOps, async () => {
-    const [before, after] = await Promise.all([
+    const [row, before, after] = await Promise.all([
+      db.links.get(id),
       beforeId ? db.links.get(beforeId) : undefined,
       afterId ? db.links.get(afterId) : undefined,
     ]);
+    if (!row) {
+      throw new Error(`moveLink: no link with id "${id}"`);
+    }
     const position = positionBetween(before?.position ?? null, after?.position ?? null);
     await db.links.update(id, { collectionId: toCollectionId, position, updatedAt: Date.now() });
     await enqueueOp(db, "links", id);
@@ -107,8 +116,8 @@ export async function softDeleteLinks(ids: string[], db: BurrowDB = getDB()): Pr
   return db.transaction("rw", db.links, db.pendingOps, async () => {
     const now = Date.now();
     for (const id of ids) {
-      await db.links.update(id, { deletedAt: now, updatedAt: now });
-      await enqueueOp(db, "links", id);
+      const modified = await db.links.update(id, { deletedAt: now, updatedAt: now });
+      if (modified > 0) await enqueueOp(db, "links", id);
     }
   });
 }
@@ -117,8 +126,8 @@ export async function restoreLinks(ids: string[], db: BurrowDB = getDB()): Promi
   return db.transaction("rw", db.links, db.pendingOps, async () => {
     const now = Date.now();
     for (const id of ids) {
-      await db.links.update(id, { deletedAt: null, updatedAt: now });
-      await enqueueOp(db, "links", id);
+      const modified = await db.links.update(id, { deletedAt: null, updatedAt: now });
+      if (modified > 0) await enqueueOp(db, "links", id);
     }
   });
 }

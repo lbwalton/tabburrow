@@ -293,6 +293,58 @@ describe("links repo", () => {
     expect(listed[0]!.id).toBe(second!.id);
   });
 
+  it("saveTabs collapses duplicate URLs within ONE batch: every returned slot reflects the final persisted row", async () => {
+    const c = await createCollection("C", undefined, db);
+
+    const result = await saveTabs(
+      c.id,
+      [
+        { url: "https://a.com", title: "First" },
+        { url: "https://a.com", title: "Second" },
+      ],
+      db,
+    );
+
+    // One Link per input tab, in input order — but both slots must be the
+    // FINAL state of the single persisted row, not a stale pre-update snapshot.
+    expect(result).toHaveLength(2);
+    expect(result[0]!.id).toBe(result[1]!.id);
+    expect(result[0]!.title).toBe("Second");
+    expect(result[1]!.title).toBe("Second");
+
+    const rows = await db.links.where("collectionId").equals(c.id).toArray();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.title).toBe("Second");
+    expect(await opsFor("links", result[0]!.id)).toHaveLength(1);
+  });
+
+  it("softDeleteLinks with a nonexistent id neither tombstones anything nor enqueues an op", async () => {
+    await softDeleteLinks(["no-such-id"], db);
+
+    expect(await db.links.get("no-such-id")).toBeUndefined();
+    expect(await opsFor("links", "no-such-id")).toHaveLength(0);
+  });
+
+  it("restoreLinks with a nonexistent id does not enqueue an op", async () => {
+    await restoreLinks(["no-such-id"], db);
+    expect(await opsFor("links", "no-such-id")).toHaveLength(0);
+  });
+
+  it("renameCollection and setCollectionAccent on a nonexistent id do not enqueue ops", async () => {
+    await renameCollection("no-such-id", "Ghost", db);
+    await setCollectionAccent("no-such-id", "#123456", db);
+    expect(await opsFor("collections", "no-such-id")).toHaveLength(0);
+  });
+
+  it("moveCollection and moveLink throw when the moved row does not exist", async () => {
+    const c = await createCollection("C", undefined, db);
+    await expect(moveCollection("no-such-id", null, c.id, db)).rejects.toThrow();
+    await expect(moveLink("no-such-id", c.id, null, null, db)).rejects.toThrow();
+    // Nothing was queued for the phantom row.
+    expect(await opsFor("collections", "no-such-id")).toHaveLength(0);
+    expect(await opsFor("links", "no-such-id")).toHaveLength(0);
+  });
+
   it("saveTabs enqueues a PendingOp for both newly created and updated (deduped) links", async () => {
     const c = await createCollection("C", undefined, db);
     const [link] = await saveTabs(c.id, [{ url: "https://a.com", title: "A" }], db);

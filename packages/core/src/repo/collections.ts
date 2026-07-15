@@ -46,8 +46,10 @@ export async function renameCollection(
   db: BurrowDB = getDB(),
 ): Promise<void> {
   return db.transaction("rw", db.collections, db.pendingOps, async () => {
-    await db.collections.update(id, { name, updatedAt: Date.now() });
-    await enqueueOp(db, "collections", id);
+    // Dexie's update() resolves to the number of modified rows (0 when the
+    // id doesn't exist) — only enqueue an op when a row actually changed.
+    const modified = await db.collections.update(id, { name, updatedAt: Date.now() });
+    if (modified > 0) await enqueueOp(db, "collections", id);
   });
 }
 
@@ -57,8 +59,8 @@ export async function setCollectionAccent(
   db: BurrowDB = getDB(),
 ): Promise<void> {
   return db.transaction("rw", db.collections, db.pendingOps, async () => {
-    await db.collections.update(id, { accent, updatedAt: Date.now() });
-    await enqueueOp(db, "collections", id);
+    const modified = await db.collections.update(id, { accent, updatedAt: Date.now() });
+    if (modified > 0) await enqueueOp(db, "collections", id);
   });
 }
 
@@ -67,6 +69,7 @@ export async function setCollectionAccent(
  * are the ids of the rows that should end up immediately before/after it
  * (either may be `null` to mean "this end of the list"); their current
  * positions are looked up and `positionBetween` computes the new key.
+ * Throws if the moved collection does not exist.
  */
 export async function moveCollection(
   id: string,
@@ -75,10 +78,14 @@ export async function moveCollection(
   db: BurrowDB = getDB(),
 ): Promise<void> {
   return db.transaction("rw", db.collections, db.pendingOps, async () => {
-    const [before, after] = await Promise.all([
+    const [row, before, after] = await Promise.all([
+      db.collections.get(id),
       beforeId ? db.collections.get(beforeId) : undefined,
       afterId ? db.collections.get(afterId) : undefined,
     ]);
+    if (!row) {
+      throw new Error(`moveCollection: no collection with id "${id}"`);
+    }
     const position = positionBetween(before?.position ?? null, after?.position ?? null);
     await db.collections.update(id, { position, updatedAt: Date.now() });
     await enqueueOp(db, "collections", id);
@@ -94,7 +101,8 @@ export async function moveCollection(
 export async function softDeleteCollection(id: string, db: BurrowDB = getDB()): Promise<void> {
   return db.transaction("rw", db.collections, db.links, db.pendingOps, async () => {
     const now = Date.now();
-    await db.collections.update(id, { deletedAt: now, updatedAt: now });
+    const modified = await db.collections.update(id, { deletedAt: now, updatedAt: now });
+    if (modified === 0) return; // nonexistent collection: nothing to tombstone or enqueue
     await enqueueOp(db, "collections", id);
 
     const liveLinks = (await db.links.where("collectionId").equals(id).toArray()).filter(
