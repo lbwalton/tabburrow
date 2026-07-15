@@ -85,7 +85,7 @@
     "id": "T8",
     "title": "Dashboard shell \u2014 rail + collections",
     "phase": 1,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "Create, rename (inline), recolor, delete-with-undo all work and persist across browser restart",
       "Drag a collection to a new rail position; order survives reload",
