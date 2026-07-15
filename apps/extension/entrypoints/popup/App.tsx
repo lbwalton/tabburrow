@@ -130,9 +130,14 @@ export function App() {
   }
 
   async function handleCloseSavedTabs() {
-    if (state.view !== "confirm") return;
-    await closeTabsByUrl(state.savedUrls);
-    dispatch({ type: "RESET" });
+    if (state.view !== "confirm" || busy) return;
+    setBusy(true);
+    try {
+      await closeTabsByUrl(state.savedUrls);
+      dispatch({ type: "RESET" });
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -150,18 +155,35 @@ export function App() {
       </header>
 
       {state.view === "confirm" ? (
-        <div className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3">
+        // Toast's visual language (tokens, spacing, role="status"), rendered
+        // inline in normal document flow rather than the floating <Toast>
+        // component itself — Toast only offers a single action slot and this
+        // state needs two (Close saved tabs / Done).
+        <div
+          role="status"
+          className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3 shadow-lg"
+        >
           <p className="text-sm text-[var(--text)]">
             <span className="text-[var(--accent)]">&#10003;</span> Saved {state.count}{" "}
             {state.count === 1 ? "tab" : "tabs"} to {state.collectionName}
           </p>
           <div className="flex gap-2">
             {state.action === "all" ? (
-              <Button variant="danger" size="sm" onClick={() => void handleCloseSavedTabs()}>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => void handleCloseSavedTabs()}
+                disabled={busy}
+              >
                 Close saved tabs
               </Button>
             ) : null}
-            <Button variant="ghost" size="sm" onClick={() => dispatch({ type: "RESET" })}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => dispatch({ type: "RESET" })}
+              disabled={busy}
+            >
               Done
             </Button>
           </div>
