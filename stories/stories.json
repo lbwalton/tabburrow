@@ -35,7 +35,7 @@
     "id": "T4",
     "title": "core \u2014 repositories (TDD)",
     "phase": 0,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "create and list operations maintain position ordering",
       "saveTabs dedupes same URL within a collection",
