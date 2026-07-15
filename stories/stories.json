@@ -143,7 +143,7 @@
     "id": "T13",
     "title": "Import/export + shortcuts + settings",
     "phase": 1,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "Export then re-import into a wiped profile reproduces identical collections/links",
       "A real Chrome bookmarks HTML file imports with correct folder mapping",
