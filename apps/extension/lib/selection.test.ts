@@ -10,18 +10,11 @@ describe("emptySelection", () => {
   });
 });
 
-describe("nextSelection: click", () => {
-  it("selects only the clicked id and sets it as the anchor", () => {
-    const state = nextSelection(emptySelection(), { type: "click", id: "b" });
-    expect(state).toEqual({ selected: new Set(["b"]), anchorId: "b" });
-  });
-
-  it("replaces a prior multi-selection with just the clicked id", () => {
-    const prior: SelectionState = { selected: new Set(["a", "b", "c"]), anchorId: "a" };
-    const state = nextSelection(prior, { type: "click", id: "d" });
-    expect(state).toEqual({ selected: new Set(["d"]), anchorId: "d" });
-  });
-});
+// T10 removed the "click" event variant: a plain click no longer selects
+// (it opens the link — see lib/click-intent.ts), so `nextSelection` never
+// receives a "replace selection with just this id" event from a click
+// anymore. The range tests below construct their `prior` selection state
+// as plain literals instead of via a removed `{type:"click"}` dispatch.
 
 describe("nextSelection: toggle", () => {
   it("adds an unselected id and makes it the anchor", () => {
@@ -50,37 +43,37 @@ describe("nextSelection: toggle", () => {
 
 describe("nextSelection: range", () => {
   it("selects the inclusive range forward from the anchor", () => {
-    const prior = nextSelection(emptySelection(), { type: "click", id: "b" });
+    const prior: SelectionState = { selected: new Set(["b"]), anchorId: "b" };
     const state = nextSelection(prior, { type: "range", id: "d", order });
     expect(state).toEqual({ selected: new Set(["b", "c", "d"]), anchorId: "b" });
   });
 
   it("selects the inclusive range backward from the anchor", () => {
-    const prior = nextSelection(emptySelection(), { type: "click", id: "d" });
+    const prior: SelectionState = { selected: new Set(["d"]), anchorId: "d" };
     const state = nextSelection(prior, { type: "range", id: "b", order });
     expect(state).toEqual({ selected: new Set(["b", "c", "d"]), anchorId: "d" });
   });
 
   it("keeps the anchor fixed across repeated shift-clicks (grows/shrinks from the same origin)", () => {
-    let state = nextSelection(emptySelection(), { type: "click", id: "b" });
+    let state: SelectionState = { selected: new Set(["b"]), anchorId: "b" };
     state = nextSelection(state, { type: "range", id: "d", order });
     state = nextSelection(state, { type: "range", id: "c", order });
     expect(state).toEqual({ selected: new Set(["b", "c"]), anchorId: "b" });
   });
 
-  it("falls back to a plain click when there is no anchor yet", () => {
+  it("falls back to selecting just the id when there is no anchor yet", () => {
     const state = nextSelection(emptySelection(), { type: "range", id: "c", order });
     expect(state).toEqual({ selected: new Set(["c"]), anchorId: "c" });
   });
 
-  it("falls back to a plain click when the anchor is stale (no longer in order)", () => {
+  it("falls back to selecting just the id when the anchor is stale (no longer in order)", () => {
     const prior: SelectionState = { selected: new Set(["zzz"]), anchorId: "zzz" };
     const state = nextSelection(prior, { type: "range", id: "c", order });
     expect(state).toEqual({ selected: new Set(["c"]), anchorId: "c" });
   });
 
   it("a single-item range (anchor === id) selects just that item", () => {
-    const prior = nextSelection(emptySelection(), { type: "click", id: "c" });
+    const prior: SelectionState = { selected: new Set(["c"]), anchorId: "c" };
     const state = nextSelection(prior, { type: "range", id: "c", order });
     expect(state).toEqual({ selected: new Set(["c"]), anchorId: "c" });
   });

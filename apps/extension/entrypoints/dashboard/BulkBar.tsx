@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Collection, Link } from "@tabburrow/core";
 import { getDB, moveLinkToEnd, softDeleteLinks } from "@tabburrow/core";
 import { Button } from "@tabburrow/ui";
+import { openFailureMessage, openLinks } from "../../lib/restore";
 
 export interface BulkBarProps {
   /** The selected links, already in current display order (so "Open all" and "Move to…" preserve it). */
@@ -10,6 +11,8 @@ export interface BulkBarProps {
   collections: Collection[];
   onClear: () => void;
   onError: (message: string) => void;
+  /** Notifies `App` after Delete succeeds, so it can show the 6s Undo toast (`restoreLinks`, positions intact). */
+  onDeleted: (ids: string[]) => void;
 }
 
 /**
@@ -20,25 +23,19 @@ export interface BulkBarProps {
  * sequential awaits are what makes "preserving relative order" true;
  * `Promise.all`-ing them could interleave the read-then-write pairs.
  */
-export function BulkBar({ selectedLinks, currentCollectionId, collections, onClear, onError }: BulkBarProps) {
+export function BulkBar({ selectedLinks, currentCollectionId, collections, onClear, onError, onDeleted }: BulkBarProps) {
   const db = getDB();
   const [busy, setBusy] = useState(false);
   const targets = collections.filter((c) => c.id !== currentCollectionId);
 
   async function openAll() {
-    // chrome.tabs.create can reject per-tab (invalid URL, window gone) —
-    // keep opening the rest and surface ONE toast with the failed count
-    // instead of silently swallowing or aborting the whole batch.
-    let failed = 0;
-    for (const link of selectedLinks) {
-      try {
-        await chrome.tabs.create({ url: link.url });
-      } catch {
-        failed += 1;
-      }
-    }
-    if (failed > 0) {
-      onError(`Couldn't open ${failed} of ${selectedLinks.length} links.`);
+    // Background tabs (dashboard keeps focus) via lib/restore.ts's shared
+    // `openLinks` — same helper the collection header's "Restore all" and a
+    // single card-click open use, instead of re-deriving the
+    // try/catch-per-tab loop a third time.
+    const result = await openLinks(selectedLinks.map((l) => l.url));
+    if (result.failed > 0) {
+      onError(openFailureMessage(result.failed));
     }
   }
 
@@ -61,10 +58,9 @@ export function BulkBar({ selectedLinks, currentCollectionId, collections, onCle
     if (busy) return;
     setBusy(true);
     try {
-      await softDeleteLinks(
-        selectedLinks.map((l) => l.id),
-        db,
-      );
+      const ids = selectedLinks.map((l) => l.id);
+      await softDeleteLinks(ids, db);
+      onDeleted(ids);
       onClear();
     } catch (err) {
       onError(err instanceof Error ? err.message : "Could not delete those links.");

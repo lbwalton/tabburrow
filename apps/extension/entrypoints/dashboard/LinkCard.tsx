@@ -7,6 +7,8 @@ import { updateLink, getDB } from "@tabburrow/core";
 import { Badge, Card } from "@tabburrow/ui";
 import { faviconFor } from "../../lib/tabs";
 import { formatHost } from "../../lib/links";
+import type { ClickIntent, KeyIntent } from "../../lib/click-intent";
+import { clickIntent, keyIntent } from "../../lib/click-intent";
 import type { EditLinkPatch } from "./EditLinkPopover";
 import { EditLinkPopover } from "./EditLinkPopover";
 
@@ -15,9 +17,10 @@ export interface LinkCardProps {
   selected: boolean;
   /** True while the grid is view-sorted (name/date) — dragging is fully disabled in that mode. */
   dragDisabled: boolean;
-  onSelect: (id: string, event: MouseEvent) => void;
-  /** Keyboard selection: Enter/Space on the focused card body toggles it. */
-  onToggleSelect: (id: string) => void;
+  /** A click resolved to an intent via `clickIntent` (open/toggle/range) — `LinkGrid` performs the effect (open the tab, or update selection using its own `order`, which this card doesn't have). */
+  onCardIntent: (id: string, intent: ClickIntent) => void;
+  /** Enter/Space on the focused card body, resolved via `keyIntent` (open/toggle). */
+  onKeyIntent: (id: string, intent: KeyIntent) => void;
   onError: (message: string) => void;
 }
 
@@ -72,12 +75,19 @@ function Favicon({ url, faviconUrl }: { url: string; faviconUrl: string | null }
  * dnd-kit's `attributes` (role="button", `aria-roledescription`, and the
  * `aria-disabled` that only describes DRAGGING) move to the dedicated grip
  * handle — same pattern as `CollectionRow`'s grip. That frees Enter/Space
- * on the card body itself to toggle selection (dnd-kit's
- * `defaultKeyboardCodes` claim both keys for drag pickup, which is why
- * they couldn't coexist on one element). Note: a pointer-drag started from
- * the grip also works — its pointerdown bubbles to the card's handler.
+ * on the card body itself for `keyIntent` (dnd-kit's `defaultKeyboardCodes`
+ * claim both keys for drag pickup, which is why they couldn't coexist on
+ * one element). Note: a pointer-drag started from the grip also works —
+ * its pointerdown bubbles to the card's handler.
+ *
+ * Click/key -> intent (open/toggle/range) is resolved HERE via
+ * `clickIntent`/`keyIntent` (lib/click-intent.ts), reading the raw DOM
+ * event's modifiers — but the resulting intent is just handed up to
+ * `LinkGrid` via `onCardIntent`/`onKeyIntent`, which is what actually opens
+ * the tab or updates selection (a shift-range needs the grid's current
+ * `order`, which this card doesn't have).
  */
-export function LinkCard({ link, selected, dragDisabled, onSelect, onToggleSelect, onError }: LinkCardProps) {
+export function LinkCard({ link, selected, dragDisabled, onCardIntent, onKeyIntent, onError }: LinkCardProps) {
   const db = getDB();
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: link.id,
@@ -91,18 +101,24 @@ export function LinkCard({ link, selected, dragDisabled, onSelect, onToggleSelec
   const editTriggerRef = useRef<HTMLButtonElement>(null);
 
   function handleClick(event: MouseEvent) {
-    onSelect(link.id, event);
+    const intent = clickIntent({
+      button: event.button,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+    });
+    onCardIntent(link.id, intent);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     // Only keys pressed on the card itself — the grip's Enter/Space (drag
     // pickup) and any typing inside the edit popover bubble through here
-    // and must not toggle selection.
+    // and must not open/toggle.
     if (event.target !== event.currentTarget) return;
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onToggleSelect(link.id);
-    }
+    const intent = keyIntent(event.key);
+    if (!intent) return;
+    event.preventDefault();
+    onKeyIntent(link.id, intent);
   }
 
   function handleSave(patch: EditLinkPatch) {
@@ -128,14 +144,14 @@ export function LinkCard({ link, selected, dragDisabled, onSelect, onToggleSelec
         opacity: isDragging ? 0.5 : 1,
         boxShadow: selected ? "0 0 0 2px var(--accent) inset" : undefined,
       }}
-      className={`group relative flex flex-col gap-2 text-left transition-[background-color,transform] duration-150 hover:bg-[var(--surface-hover)] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
-        dragDisabled ? "cursor-default" : "cursor-grab active:cursor-grabbing"
-      }`}
+      className="group relative flex cursor-pointer flex-col gap-2 text-left transition-[background-color,transform] duration-150 hover:bg-[var(--surface-hover)] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
     >
       <div className="flex items-start gap-2 pr-11">
         <Favicon url={link.url} faviconUrl={link.faviconUrl} />
         <div className="min-w-0 flex-1">
-          <h3 className="line-clamp-2 text-sm font-medium leading-snug text-[var(--text)]">{link.title}</h3>
+          <h3 className="line-clamp-2 text-sm font-medium leading-snug text-[var(--text)] group-hover:underline">
+            {link.title}
+          </h3>
           <p className="mt-0.5 truncate text-xs text-[var(--text-2)]" style={{ fontFamily: "var(--font-mono)" }}>
             {formatHost(link.url)}
           </p>

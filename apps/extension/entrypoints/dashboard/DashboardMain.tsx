@@ -9,6 +9,7 @@ import { BurrowIllustration } from "./BurrowIllustration";
 import { useInlineRename } from "./useInlineRename";
 import { LinkGrid } from "./LinkGrid";
 import { SortMenu } from "./SortMenu";
+import { RestoreAllButton } from "./RestoreAllButton";
 
 export interface DashboardMainProps {
   route: ResolvedRoute;
@@ -20,6 +21,8 @@ export interface DashboardMainProps {
   sortMode: SortMode;
   onSortModeChange: (mode: SortMode) => void;
   onLinkError: (message: string) => void;
+  /** Notifies `App` after a link-delete succeeds, so it can show the 6s Undo toast. */
+  onLinksDeleted: (ids: string[]) => void;
   onCreateFirstCollection: () => void;
 }
 
@@ -33,6 +36,7 @@ export function DashboardMain({
   sortMode,
   onSortModeChange,
   onLinkError,
+  onLinksDeleted,
   onCreateFirstCollection,
 }: DashboardMainProps) {
   if (route.kind === "sessions") {
@@ -108,6 +112,7 @@ export function DashboardMain({
       sortMode={sortMode}
       onSortModeChange={onSortModeChange}
       onLinkError={onLinkError}
+      onLinksDeleted={onLinksDeleted}
     />
   );
 }
@@ -125,6 +130,7 @@ interface CollectionPanelProps {
   sortMode: SortMode;
   onSortModeChange: (mode: SortMode) => void;
   onLinkError: (message: string) => void;
+  onLinksDeleted: (ids: string[]) => void;
 }
 
 function CollectionPanel({
@@ -136,6 +142,7 @@ function CollectionPanel({
   sortMode,
   onSortModeChange,
   onLinkError,
+  onLinksDeleted,
 }: CollectionPanelProps) {
   const db = getDB();
   const rename = useInlineRename({
@@ -170,7 +177,12 @@ function CollectionPanel({
             {linksLoaded ? `${links.length} ${links.length === 1 ? "link" : "links"}` : ""}
           </span>
         </div>
-        {linksLoaded && links.length > 0 ? <SortMenu value={sortMode} onChange={onSortModeChange} /> : null}
+        {linksLoaded && links.length > 0 ? (
+          <div className="flex items-center gap-2">
+            <RestoreAllButton links={links} onError={onLinkError} />
+            <SortMenu value={sortMode} onChange={onSortModeChange} />
+          </div>
+        ) : null}
       </header>
 
       <div className="flex-1">
@@ -188,6 +200,7 @@ function CollectionPanel({
             sortMode={sortMode}
             collections={collections}
             onLinkError={onLinkError}
+            onLinksDeleted={onLinksDeleted}
           />
         )}
       </div>

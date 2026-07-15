@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import type { MouseEvent } from "react";
 import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable";
 import type { Collection, Link } from "@tabburrow/core";
 import type { SortMode } from "../../lib/links";
 import { sortLinksForView } from "../../lib/links";
 import { emptySelection, nextSelection, pruneSelection } from "../../lib/selection";
+import type { ClickIntent, KeyIntent } from "../../lib/click-intent";
+import { openFailureMessage, openLinks } from "../../lib/restore";
 import { LinkCard } from "./LinkCard";
 import { BulkBar } from "./BulkBar";
 
@@ -18,6 +19,8 @@ export interface LinkGridProps {
   /** For the bulk bar's "Move to…" menu (filters out `collectionId` itself). */
   collections: Collection[];
   onLinkError: (message: string) => void;
+  /** Notifies `App` after a link-delete succeeds, so it can show the 6s Undo toast. */
+  onLinksDeleted: (ids: string[]) => void;
 }
 
 /**
@@ -27,8 +30,17 @@ export interface LinkGridProps {
  * on each `LinkCard`, but the actual `DndContext`/`onDragEnd` live in
  * `App.tsx` (see its docstring) since a card can be dropped on a rail row
  * outside this component's subtree.
+ *
+ * T10: a card's click/key resolves to an `open`/`toggle`/`range` intent in
+ * `LinkCard` (via `lib/click-intent.ts`) and is handed up here as
+ * `onCardIntent`/`onKeyIntent` — this is where the intent actually DOES
+ * something: `open` opens the link as a background tab (`lib/restore.ts`'s
+ * `openLinks`, dashboard keeps focus) and surfaces a failure toast; `toggle`
+ * / `range` update `selection` exactly as the old plain-click/cmd-click/
+ * shift-click handling did (a plain click no longer touches selection at
+ * all — see `lib/selection.ts`'s docstring).
  */
-export function LinkGrid({ collectionId, links, order, sortMode, collections, onLinkError }: LinkGridProps) {
+export function LinkGrid({ collectionId, links, order, sortMode, collections, onLinkError, onLinksDeleted }: LinkGridProps) {
   const [selection, setSelection] = useState(emptySelection());
 
   // A different collection is a different selection universe entirely.
@@ -71,13 +83,31 @@ export function LinkGrid({ collectionId, links, order, sortMode, collections, on
       : sortLinksForView(links, sortMode);
   const displayOrder = displayLinks.map((l) => l.id);
 
-  function handleCardSelect(id: string, event: MouseEvent) {
-    if (event.shiftKey) {
-      setSelection((s) => nextSelection(s, { type: "range", id, order: displayOrder }));
-    } else if (event.metaKey || event.ctrlKey) {
+  // `chrome.tabs.create` can reject (invalid URL, window gone) — surface
+  // ONE failure toast instead of throwing (same policy `openLinks` itself
+  // documents; a single-link open just never has >1 failure to report).
+  async function openLink(id: string) {
+    const link = byId.get(id);
+    if (!link) return;
+    const result = await openLinks([link.url]);
+    if (result.failed > 0) onLinkError(openFailureMessage(result.failed));
+  }
+
+  function handleCardIntent(id: string, intent: ClickIntent) {
+    if (intent === "open") {
+      void openLink(id);
+    } else if (intent === "toggle") {
       setSelection((s) => nextSelection(s, { type: "toggle", id }));
     } else {
-      setSelection((s) => nextSelection(s, { type: "click", id }));
+      setSelection((s) => nextSelection(s, { type: "range", id, order: displayOrder }));
+    }
+  }
+
+  function handleCardKeyIntent(id: string, intent: KeyIntent) {
+    if (intent === "open") {
+      void openLink(id);
+    } else {
+      setSelection((s) => nextSelection(s, { type: "toggle", id }));
     }
   }
 
@@ -100,8 +130,8 @@ export function LinkGrid({ collectionId, links, order, sortMode, collections, on
               link={link}
               selected={selection.selected.has(link.id)}
               dragDisabled={dragDisabled}
-              onSelect={handleCardSelect}
-              onToggleSelect={(id) => setSelection((s) => nextSelection(s, { type: "toggle", id }))}
+              onCardIntent={handleCardIntent}
+              onKeyIntent={handleCardKeyIntent}
               onError={onLinkError}
             />
           ))}
@@ -115,6 +145,7 @@ export function LinkGrid({ collectionId, links, order, sortMode, collections, on
           collections={collections}
           onClear={() => setSelection(emptySelection())}
           onError={onLinkError}
+          onDeleted={onLinksDeleted}
         />
       ) : null}
     </div>

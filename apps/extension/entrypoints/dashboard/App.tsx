@@ -21,6 +21,7 @@ import {
   moveLink,
   moveLinkToEnd,
   restoreCollection,
+  restoreLinks,
   setMeta,
   softDeleteCollection,
 } from "@tabburrow/core";
@@ -42,6 +43,13 @@ interface PendingDelete {
 interface LinkOpError {
   id: number;
   message: string;
+}
+
+interface PendingLinkDelete {
+  /** Date.now() — doubles as the Toast key so a second link-delete during the first toast's window restarts it rather than being swallowed (same pattern `reorderError`/`linkOpError` already use below). */
+  key: number;
+  ids: string[];
+  count: number;
 }
 
 // Stable empty-Map reference so the Rail/linkCounts prop doesn't change
@@ -128,6 +136,11 @@ export function App() {
   // first toast's window restarts it rather than being swallowed.
   const [reorderError, setReorderError] = useState<number | null>(null);
   const [linkOpError, setLinkOpError] = useState<LinkOpError | null>(null);
+  // Single slot, same "replace the pending one" semantics as `pendingDelete`
+  // above: a second link-delete while the first's Undo toast is still up
+  // silently drops the first batch's undo (it stays deleted) rather than
+  // stacking multiple pending-undo toasts of the same kind.
+  const [pendingLinkDelete, setPendingLinkDelete] = useState<PendingLinkDelete | null>(null);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -215,6 +228,22 @@ export function App() {
     setLinkOpError({ id: Date.now(), message });
   }
 
+  function handleLinksDeleted(ids: string[]) {
+    if (ids.length === 0) return;
+    setPendingLinkDelete({ key: Date.now(), ids, count: ids.length });
+  }
+
+  function handleUndoLinkDelete() {
+    if (!pendingLinkDelete) return;
+    // restoreLinks (packages/core/src/repo/links.ts) only ever clears
+    // deletedAt — it never touches position, so this is guaranteed to put
+    // every restored link back exactly where it was (core's repo.test.ts
+    // asserts this directly: restoring a tombstoned link lands it back in
+    // its original slot relative to its siblings, not appended to the end).
+    void restoreLinks(pendingLinkDelete.ids, db);
+    setPendingLinkDelete(null);
+  }
+
   // Gate the whole shell on the first live-query emission: rendering the
   // rail/empty-state before we actually know whether any collections exist
   // would flash the wrong state for an instant (the "no flicker" rule
@@ -244,6 +273,7 @@ export function App() {
             sortMode={sortMode}
             onSortModeChange={handleSortModeChange}
             onLinkError={handleLinkError}
+            onLinksDeleted={handleLinksDeleted}
             onCreateFirstCollection={handleCreateFirstCollection}
           />
         </main>
@@ -272,6 +302,16 @@ export function App() {
               onAction={handleUndoDelete}
               durationMs={6000}
               onDismiss={() => setPendingDelete(null)}
+            />
+          ) : null}
+          {pendingLinkDelete ? (
+            <Toast
+              key={pendingLinkDelete.key}
+              message={`Deleted ${pendingLinkDelete.count} link${pendingLinkDelete.count === 1 ? "" : "s"}`}
+              actionLabel="Undo"
+              onAction={handleUndoLinkDelete}
+              durationMs={6000}
+              onDismiss={() => setPendingLinkDelete(null)}
             />
           ) : null}
         </div>

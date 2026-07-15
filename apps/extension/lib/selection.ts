@@ -1,9 +1,17 @@
 /**
- * Pure multi-select state for the link grid: click (single), cmd/ctrl-click
+ * Pure multi-select state for the link grid: cmd/ctrl-click or Space
  * (toggle), shift-click (range from a fixed anchor within the current sort
  * order), Escape/collection-change (clear). No DOM/React import — the grid
- * wires DOM events (`event.shiftKey`/`metaKey`/`ctrlKey`) to `SelectionEvent`
- * and calls `nextSelection`.
+ * wires DOM events to `SelectionEvent` and calls `nextSelection`.
+ *
+ * As of T10, a PLAIN click (or Enter) no longer selects — it opens the link
+ * instead. That resolution happens one layer up, in `lib/click-intent.ts`'s
+ * `clickIntent`/`keyIntent` (which `LinkCard` calls on the raw DOM event
+ * before anything reaches here): this module never sees a "plain click"
+ * event at all anymore, only `toggle`/`range`/`clear`. The old `"click"`
+ * event variant (replace-selection-with-just-this-id) was removed along
+ * with its only call site in `LinkGrid` — see selection.test.ts for the
+ * corresponding removed/updated tests.
  */
 
 export interface SelectionState {
@@ -17,36 +25,32 @@ export function emptySelection(): SelectionState {
 }
 
 export type SelectionEvent =
-  | { type: "click"; id: string }
   | { type: "toggle"; id: string }
   | { type: "range"; id: string; order: string[] }
   | { type: "clear" };
 
 /**
  * The single decision function behind the grid's selection: given the
- * current state and a click-shaped event, what should the selection become?
+ * current state and a toggle/range/clear event, what should the selection
+ * become?
  *
- * - `click`: replaces the selection with just `id`; `id` becomes the new
- *   anchor for a future range.
- * - `toggle` (cmd/ctrl-click): adds/removes `id` from the selection without
- *   touching the rest. The toggled id becomes the anchor, unless the toggle
- *   just emptied the selection entirely — then there's nothing sensible to
- *   range from, so the anchor clears too.
+ * - `toggle` (cmd/ctrl-click, or Space on the focused card): adds/removes
+ *   `id` from the selection without touching the rest. The toggled id
+ *   becomes the anchor, unless the toggle just emptied the selection
+ *   entirely — then there's nothing sensible to range from, so the anchor
+ *   clears too.
  * - `range` (shift-click): selects the contiguous slice of `order` between
  *   the current anchor and `id` (inclusive), REPLACING the prior selection.
  *   The anchor itself does not move, so a later shift-click still ranges
- *   from the original starting point. Falls back to plain `click` semantics
- *   when there's no anchor yet, or the anchor/id aren't in `order` (a stale
- *   anchor from a since-removed row).
+ *   from the original starting point. Falls back to selecting just `id`
+ *   (and anchoring there) when there's no anchor yet, or the anchor/id
+ *   aren't in `order` (a stale anchor from a since-removed row).
  * - `clear`: empties both.
  */
 export function nextSelection(state: SelectionState, event: SelectionEvent): SelectionState {
   switch (event.type) {
     case "clear":
       return emptySelection();
-
-    case "click":
-      return { selected: new Set([event.id]), anchorId: event.id };
 
     case "toggle": {
       const selected = new Set(state.selected);
