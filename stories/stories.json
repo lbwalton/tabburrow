@@ -1,0 +1,307 @@
+[
+  {
+    "id": "T1",
+    "title": "Monorepo scaffold",
+    "phase": 0,
+    "status": "done",
+    "acceptance": [
+      "pnpm install succeeds",
+      "pnpm typecheck runs (no packages yet is ok)"
+    ]
+  },
+  {
+    "id": "T2",
+    "title": "core package — types + Dexie database",
+    "phase": 0,
+    "status": "pending",
+    "acceptance": [
+      "db.test.ts passes",
+      "Collection and Link types export correctly",
+      "Dexie indexes created successfully"
+    ]
+  },
+  {
+    "id": "T3",
+    "title": "core — fractional indexing (TDD)",
+    "phase": 0,
+    "status": "pending",
+    "acceptance": [
+      "positionBetween returns keys strictly between a and b",
+      "1000 sequential inserts stay ordered and keys remain < 40 chars",
+      "throws error when a >= b"
+    ]
+  },
+  {
+    "id": "T4",
+    "title": "core — repositories (TDD)",
+    "phase": 0,
+    "status": "pending",
+    "acceptance": [
+      "create and list operations maintain position ordering",
+      "saveTabs dedupes same URL within a collection",
+      "softDeleteCollection tombstones child links",
+      "every mutation enqueues a PendingOp",
+      "pruneAutoSnapshots keeps exactly N newest autos"
+    ]
+  },
+  {
+    "id": "T5",
+    "title": "ui package — Deep Green tokens + primitives",
+    "phase": 0,
+    "status": "pending",
+    "acceptance": [
+      "tokens.css exports CSS custom properties",
+      "8 React primitives (Button, Input, Card, etc.) type-check correctly",
+      "typography scales applied"
+    ]
+  },
+  {
+    "id": "T6",
+    "title": "WXT scaffold + manifest",
+    "phase": 1,
+    "status": "pending",
+    "acceptance": [
+      "Extension loads in Chrome with no manifest errors",
+      "Popup opens showing a styled TabBurrow placeholder on ground #16241E",
+      "Dashboard opens as a full tab via chrome.runtime.getURL"
+    ]
+  },
+  {
+    "id": "T7",
+    "title": "Popup — save flows",
+    "phase": 1,
+    "status": "pending",
+    "acceptance": [
+      "One click saves current tab into Last Used collection (2 clicks cold: pick target once, remembered after)",
+      "All tabs saves every http(s) tab of the window; confirmation shows correct count; optional close button works and never fires on its own",
+      "Highlight 3 tabs → Selected saves exactly those 3",
+      "New-collection inline creation works from the picker",
+      "Recent collections list (5 most recently updated) opens dashboard focused on that collection",
+      "Popup is fully keyboard navigable; visible focus rings"
+    ]
+  },
+  {
+    "id": "T8",
+    "title": "Dashboard shell — rail + collections",
+    "phase": 1,
+    "status": "pending",
+    "acceptance": [
+      "Create, rename (inline), recolor, delete-with-undo all work and persist across browser restart",
+      "Drag a collection to a new rail position; order survives reload",
+      "Empty dashboard shows illustrated empty state (burrow arch motif, token colors), not a blank pane"
+    ]
+  },
+  {
+    "id": "T9",
+    "title": "Dashboard — link grid + drag and drop",
+    "phase": 1,
+    "status": "pending",
+    "acceptance": [
+      "Reorder within a collection sticks after reload",
+      "Drag a card onto another collection in the rail moves it",
+      "Bulk select 3 → Move to another collection → all 3 move",
+      "Edit title/note/tags persists",
+      "Sort by name/date works; switching back to manual restores drag order"
+    ]
+  },
+  {
+    "id": "T10",
+    "title": "Restore + undo polish",
+    "phase": 1,
+    "status": "pending",
+    "acceptance": [
+      "Restore-all on a 20-link collection asks first, then opens all 20",
+      "Restore-all ≤15 opens immediately",
+      "Card click opens correct URL in new tab",
+      "Delete links → Undo restores them with positions intact"
+    ]
+  },
+  {
+    "id": "T11",
+    "title": "Search",
+    "phase": 1,
+    "status": "pending",
+    "acceptance": [
+      "Fuzzy match: gthb finds github links",
+      "Result click (link → opens URL; collection → routes to it)",
+      "Keyboard-only flow works end to end in overlay"
+    ]
+  },
+  {
+    "id": "T12",
+    "title": "Sessions — snapshots and crash restore",
+    "phase": 1,
+    "status": "pending",
+    "acceptance": [
+      "Manual snapshot captures every open window/tab; restore recreates them in new windows (pinned preserved)",
+      "Auto snapshots appear at 5-minute marks; never more than 10 autos kept",
+      "Kill Chrome (force quit) → reopen → dashboard offers crash restore; accepting restores the pre-crash tabs"
+    ]
+  },
+  {
+    "id": "T13",
+    "title": "Import/export + shortcuts + settings",
+    "phase": 1,
+    "status": "pending",
+    "acceptance": [
+      "Export then re-import into a wiped profile reproduces identical collections/links",
+      "A real Chrome bookmarks HTML file imports with correct folder mapping",
+      "Alt+Shift+S saves current tab with badge feedback and no popup",
+      "Theme toggle flips dashboard+popup to paper theme and persists"
+    ]
+  },
+  {
+    "id": "T14",
+    "title": "QA pass 1 — extension-core bug bash",
+    "phase": 1,
+    "status": "pending",
+    "acceptance": [
+      "200-link collection scroll perf acceptable",
+      "non-http tabs excluded gracefully",
+      "popup opens under 300ms",
+      "zoom 80–125% works",
+      "window resize handled",
+      "double-click spam on save handled"
+    ]
+  },
+  {
+    "id": "T15",
+    "title": "Supabase schema + RLS",
+    "phase": 2,
+    "status": "pending",
+    "acceptance": [
+      "supabase db lint passes with no errors",
+      "RLS policies enforce user data isolation",
+      "tables created with correct indexes",
+      "profile trigger creates user profile on sign-up"
+    ]
+  },
+  {
+    "id": "T16",
+    "title": "Extension auth",
+    "phase": 2,
+    "status": "pending",
+    "acceptance": [
+      "Google sign-in completes inside the extension (no dangling tabs) and survives browser restart",
+      "Email code flow works with a real inbox",
+      "Sign out clears session; local data untouched"
+    ]
+  },
+  {
+    "id": "T17",
+    "title": "core — sync engine (TDD)",
+    "phase": 2,
+    "status": "pending",
+    "acceptance": [
+      "local newer wins over remote in LWW merge",
+      "tombstone beats concurrent edit in both directions",
+      "deletion never resurrects after 3 sync cycles",
+      "pendingOps drained exactly once per syncOnce call",
+      "pull of unknown rows inserts them locally",
+      "cursor advances only on successful pull"
+    ]
+  },
+  {
+    "id": "T18",
+    "title": "Sync wiring in extension (PRO-gated)",
+    "phase": 2,
+    "status": "pending",
+    "acceptance": [
+      "With a PRO-flagged test user: edit on profile A appears on profile B within ~1 min or on manual Sync now",
+      "Delete on A never resurrects from B",
+      "Free user: no network sync calls fire (verify via network log); banner explains PRO",
+      "Offline: saves queue silently; going online drains queue"
+    ]
+  },
+  {
+    "id": "T19",
+    "title": "ai-organize Edge Function",
+    "phase": 2,
+    "status": "pending",
+    "acceptance": [
+      "quota 402 at 30 uses for free tier",
+      "PRO tier bypasses quota",
+      "month rollover resets ai_uses_count",
+      "unknown link IDs in response cause function to 502",
+      "ai_uses_count increments exactly once per success"
+    ]
+  },
+  {
+    "id": "T20",
+    "title": "AI organize UI",
+    "phase": 2,
+    "status": "pending",
+    "acceptance": [
+      "20 mixed tabs → plausible 3–5 groups; apply produces exactly previewed result",
+      "Cancel changes nothing",
+      "Quota counter decrements in UI after each run; 402 shows upgrade state, not error dump",
+      "Nothing is ever auto-applied"
+    ]
+  },
+  {
+    "id": "T21",
+    "title": "Web app scaffold + share pages",
+    "phase": 3,
+    "status": "pending",
+    "acceptance": [
+      "Shared slug renders; unshared/unknown slug 404s",
+      "Page scores ≥95 on Lighthouse a11y locally, renders beautifully at mobile width",
+      "OG image shows in a social-card debugger"
+    ]
+  },
+  {
+    "id": "T22",
+    "title": "Share controls in extension",
+    "phase": 3,
+    "status": "pending",
+    "acceptance": [
+      "Share → URL opens the live page with current links",
+      "Stop sharing → same URL 404s within one sync cycle",
+      "Free user sees PRO upsell, not the toggle"
+    ]
+  },
+  {
+    "id": "T23",
+    "title": "Stripe billing",
+    "phase": 3,
+    "status": "pending",
+    "acceptance": [
+      "Free user clicks Upgrade → completes 4242 checkout → webhook flips plan → extension shows PRO and sync starts",
+      "Cancel in portal → webhook downgrades → extension shows free state with graceful banner; local data untouched",
+      "Webhook rejects bad signatures (401)"
+    ]
+  },
+  {
+    "id": "T24",
+    "title": "Marketing site",
+    "phase": 3,
+    "status": "pending",
+    "acceptance": [
+      "seo-geo-aeo skill checklist complete (robots.txt, sitemap, llms.txt, JSON-LD, metadata, semantic HTML, Ask AI block)",
+      "Lighthouse ≥90 across categories locally",
+      "every page renders correctly at mobile/desktop and both light/dark themes"
+    ]
+  },
+  {
+    "id": "T25",
+    "title": "Open-source polish + store assets",
+    "phase": 3,
+    "status": "pending",
+    "acceptance": [
+      "CI green on a test push",
+      "a stranger could self-host from SELF_HOSTING.md alone (dry-run validates)",
+      "all store asset files present at exact required dimensions"
+    ]
+  },
+  {
+    "id": "T26",
+    "title": "Final bug bash + burn-down",
+    "phase": 3,
+    "status": "pending",
+    "acceptance": [
+      "every AC from Tasks 6–25 verified end to end",
+      "all defects logged to stories/fixes.json",
+      "all defects marked fixed and re-verified"
+    ]
+  }
+]
