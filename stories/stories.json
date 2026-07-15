@@ -41,7 +41,8 @@
       "saveTabs dedupes same URL within a collection",
       "softDeleteCollection tombstones child links",
       "every mutation enqueues a PendingOp",
-      "pruneAutoSnapshots keeps exactly N newest autos"
+      "listX excludes tombstoned",
+      "pruneAutoSnapshots keeps exactly N newest autos and never touches manual"
     ]
   },
   {
@@ -63,7 +64,7 @@
     "acceptance": [
       "Extension loads in Chrome with no manifest errors",
       "Popup opens showing a styled TabBurrow placeholder on ground #16241E",
-      "Dashboard opens as a full tab via chrome.runtime.getURL"
+      "Dashboard opens as a full tab via chrome.runtime.getURL(\"dashboard.html\")"
     ]
   },
   {
@@ -194,11 +195,13 @@
     "status": "pending",
     "acceptance": [
       "local newer wins over remote in LWW merge",
+      "remote newer overwrites local",
       "tombstone beats concurrent edit in both directions",
       "deletion never resurrects after 3 sync cycles",
       "pendingOps drained exactly once per syncOnce call",
       "pull of unknown rows inserts them locally",
-      "cursor advances only on successful pull"
+      "cursor advances only on successful pull",
+      "initialUpload pushes rows with no pendingOps entries"
     ]
   },
   {
@@ -207,7 +210,7 @@
     "phase": 2,
     "status": "pending",
     "acceptance": [
-      "With a PRO-flagged test user: edit on profile A appears on profile B within ~1 min or on manual Sync now",
+      "With a PRO-flagged test user (flip profiles.plan manually in SQL for now): edit on profile A appears on profile B within ~1 min or on manual Sync now",
       "Delete on A never resurrects from B",
       "Free user: no network sync calls fire (verify via network log); banner explains PRO",
       "Offline: saves queue silently; going online drains queue"
@@ -222,7 +225,7 @@
       "quota 402 at 30 uses for free tier",
       "PRO tier bypasses quota",
       "month rollover resets ai_uses_count",
-      "unknown link IDs in response cause function to 502",
+      "function 502s if model returns unknown ids after one retry",
       "ai_uses_count increments exactly once per success"
     ]
   },
@@ -232,7 +235,7 @@
     "phase": 2,
     "status": "pending",
     "acceptance": [
-      "20 mixed tabs → plausible 3–5 groups; apply produces exactly previewed result",
+      "20 mixed tabs (dev docs, recipes, YouTube, shopping) → plausible 3–5 groups; apply produces exactly previewed result",
       "Cancel changes nothing",
       "Quota counter decrements in UI after each run; 402 shows upgrade state, not error dump",
       "Nothing is ever auto-applied"
@@ -277,7 +280,7 @@
     "phase": 3,
     "status": "pending",
     "acceptance": [
-      "seo-geo-aeo skill checklist complete (robots.txt, sitemap, llms.txt, JSON-LD, metadata, semantic HTML, Ask AI block)",
+      "seo-geo-aeo skill checklist complete (robots.txt with AI crawlers, sitemap, llms.txt, JSON-LD SoftwareApplication + FAQPage, per-page metadata, semantic HTML, Ask AI block)",
       "Lighthouse ≥90 across categories locally",
       "every page renders correctly at mobile/desktop and both light/dark themes"
     ]
@@ -289,7 +292,7 @@
     "status": "pending",
     "acceptance": [
       "CI green on a test push",
-      "a stranger could self-host from SELF_HOSTING.md alone (dry-run validates)",
+      "a stranger could self-host from SELF_HOSTING.md alone (dry-run the steps against a scratch Supabase project)",
       "all store asset files present at exact required dimensions"
     ]
   },
