@@ -1,0 +1,75 @@
+name: Bug report
+description: Something in TabBurrow isn't working as expected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. The more detail you
+        give here, the faster it can be reproduced and fixed.
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: What did you do, in order, starting from a fresh state if possible?
+      placeholder: |
+        1. Open the popup
+        2. Highlight 3 tabs and click "Save selected"
+        3. Open the dashboard
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Include error messages, screenshots, or console output if you have them.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: TabBurrow version
+      description: Found in the dashboard's Settings pane, or in apps/extension/package.json if you built from source.
+      placeholder: "0.0.1"
+    validations:
+      required: true
+
+  - type: input
+    id: chrome-version
+    attributes:
+      label: Chrome version
+      description: chrome://version
+      placeholder: "128.0.6613.120"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Install method
+      options:
+        - Chrome Web Store
+        - Built from source (load unpacked)
+        - Self-hosted (own Supabase project)
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Anything else?
+      description: Extension console logs (chrome://extensions → Inspect views), related issues, or anything else useful.
+    validations:
+      required: false
