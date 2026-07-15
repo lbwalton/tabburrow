@@ -49,7 +49,7 @@
     "id": "T5",
     "title": "ui package \u2014 Deep Green tokens + primitives",
     "phase": 0,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "tokens.css exports CSS custom properties",
       "8 React primitives (Button, Input, Card, etc.) type-check correctly",
