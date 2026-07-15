@@ -2,6 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Pre-paint theme init: classic blocking script, kept ABOVE the module
+         bundle Vite hoists into <head> so data-theme is set before first paint
+         (only the charset meta may precede it). External file because MV3's
+         extension-page CSP blocks inline scripts. -->
+    <script src="/theme-init.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TabBurrow</title>
   </head>

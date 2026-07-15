@@ -10,6 +10,56 @@ import { faviconFor, getCurrentTab } from "./tabs";
 export const LAST_USED_COLLECTION_META_KEY = "lastUsedCollectionId";
 export const PENDING_COMMAND_META_KEY = "pendingCommand";
 export const PENDING_COMMAND_SAVE_ALL = "save-all";
+/** Meta value that means "no pending command" — written to clear/revert the flag. */
+export const PENDING_COMMAND_CLEAR = "";
+
+/**
+ * A pending command is only honored within this window of its being set.
+ * The flag is meant to bridge ONE background→popup hop (milliseconds); the
+ * TTL is the belt-and-suspenders guard for any path where the flag was
+ * written but the popup never opened to clear it (openPopup rejecting
+ * before the rollback in background.ts could run, the service worker dying
+ * mid-flight, ...) — without it, a stranded flag would silently fire a full
+ * save-all on the next unrelated popup open, hours or days later.
+ */
+export const PENDING_COMMAND_MAX_AGE_MS = 15_000;
+
+/** True when a pending-command flag stamped at `ts` is still within its TTL at `now`. A garbage `ts` (NaN, from a malformed flag) is never fresh. */
+export function isPendingCommandFresh(ts: number, now: number): boolean {
+  return now - ts < PENDING_COMMAND_MAX_AGE_MS;
+}
+
+/** The meta value background.ts writes for a pending save-all: JSON `{command, ts}` so the popup can check freshness, not just presence. */
+export function pendingSaveAllFlagValue(now: number): string {
+  return JSON.stringify({ command: PENDING_COMMAND_SAVE_ALL, ts: now });
+}
+
+export interface PendingCommandFlag {
+  command: string;
+  /** NaN when the stored flag had no (or a non-numeric) timestamp — `isPendingCommandFresh` treats that as stale. */
+  ts: number;
+}
+
+/**
+ * Parses a stored pendingCommand meta value. Returns null for anything that
+ * isn't a `{command: string, ...}` JSON object — absent/cleared values,
+ * malformed JSON, and the pre-JSON legacy bare-string format alike (a
+ * legacy flag carries no timestamp to prove freshness, so it must not
+ * replay).
+ */
+export function parsePendingCommandFlag(value: string | null): PendingCommandFlag | null {
+  if (!value) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const { command, ts } = parsed as { command?: unknown; ts?: unknown };
+  if (typeof command !== "string") return null;
+  return { command, ts: typeof ts === "number" ? ts : NaN };
+}
 
 export type CommandPlan =
   | { action: "save-current-silently" }
@@ -59,6 +109,9 @@ const BADGE_FLASH_MS = 1500;
 export function flashSavedBadge(): void {
   chrome.action.setBadgeBackgroundColor({ color: BADGE_ACCENT_HEX });
   chrome.action.setBadgeText({ text: "✓" });
+  // If the MV3 service worker is torn down within these 1.5s the clear never
+  // runs and the ✓ sticks until the next SW wake — accepted cosmetic risk
+  // (an alarm-based clear would outlive the worker but is overkill here).
   setTimeout(() => {
     chrome.action.setBadgeText({ text: "" });
   }, BADGE_FLASH_MS);

@@ -80,7 +80,7 @@ describe("parseChromeBookmarksHtml / planFromBookmarksDocument", () => {
     expect(plan.collections.find((c) => c.name === "Empty Folder")).toBeUndefined();
   });
 
-  it("produces exactly the four non-empty collections, in document order", () => {
+  it("produces exactly the three non-empty collections, in document order", () => {
     const plan = parseChromeBookmarksHtml(fixture);
     expect(plan.collections.map((c) => c.name)).toEqual(["Imported bookmarks", "Work", "Work / Projects"]);
   });

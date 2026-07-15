@@ -13,7 +13,10 @@ import { nextHighlight, resolveHighlight } from "../../lib/searchNav";
 import { dashboardCollectionUrl } from "../../lib/dashboard";
 import { formatHost } from "../../lib/links";
 import {
+  isPendingCommandFresh,
   LAST_USED_COLLECTION_META_KEY,
+  parsePendingCommandFlag,
+  PENDING_COMMAND_CLEAR,
   PENDING_COMMAND_META_KEY,
   PENDING_COMMAND_SAVE_ALL,
 } from "../../lib/commands";
@@ -104,23 +107,29 @@ export function App() {
   // Snapshot the current window's tabs + last-used target once, on open. The
   // popup is a fresh document every time it opens, so a one-shot fetch is
   // sufficient (no live tab-change subscription needed). Also reads (and
-  // immediately clears) the "save-all" pending-command flag background.ts's
-  // Alt+Shift+A handler may have left — clearing it here, not after the
-  // replay fires below, means a popup close mid-flight can't leave a stale
-  // flag to wrongly replay on the NEXT ordinary open.
+  // immediately clears — whether or not it will be honored) the "save-all"
+  // pending-command flag background.ts's Alt+Shift+A handler may have left.
+  // Clearing here, not after the replay fires below, means a popup close
+  // mid-flight can't leave a stale flag; on top of that, a flag older than
+  // PENDING_COMMAND_MAX_AGE_MS is ignored outright (stranded flags from an
+  // openPopup failure whose rollback never ran must not replay a save-all
+  // the user didn't just ask for — see lib/commands.ts).
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [all, selected, lastUsed, pendingCommand] = await Promise.all([
+      const [all, selected, lastUsed, pendingCommandRaw] = await Promise.all([
         getAllTabs(),
         getHighlightedTabs(),
         getMeta(LAST_USED_KEY, db),
         getMeta(PENDING_COMMAND_META_KEY, db),
       ]);
       if (cancelled) return;
-      if (pendingCommand === PENDING_COMMAND_SAVE_ALL) {
-        void setMeta(PENDING_COMMAND_META_KEY, "", db);
-        setPendingSaveAll(true);
+      const pendingFlag = parsePendingCommandFlag(pendingCommandRaw);
+      if (pendingFlag) {
+        void setMeta(PENDING_COMMAND_META_KEY, PENDING_COMMAND_CLEAR, db);
+        if (pendingFlag.command === PENDING_COMMAND_SAVE_ALL && isPendingCommandFresh(pendingFlag.ts, Date.now())) {
+          setPendingSaveAll(true);
+        }
       }
       setAllTabs(all);
       setSelectedTabs(selected);

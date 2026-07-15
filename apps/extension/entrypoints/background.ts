@@ -11,8 +11,9 @@ import {
 import {
   commandPlan,
   LAST_USED_COLLECTION_META_KEY,
+  PENDING_COMMAND_CLEAR,
   PENDING_COMMAND_META_KEY,
-  PENDING_COMMAND_SAVE_ALL,
+  pendingSaveAllFlagValue,
   saveCurrentTabSilently,
 } from "../lib/commands";
 
@@ -74,14 +75,31 @@ async function handleCommand(command: string): Promise<void> {
       await saveCurrentTabSilently(lastUsedId!);
       return;
     case "open-popup":
-      chrome.action.openPopup();
+      try {
+        await chrome.action.openPopup();
+      } catch (err) {
+        // openPopup can reject (no active window, another popup open, ...).
+        // Nothing to roll back on this path — just make the failure visible.
+        console.warn("[tabburrow] openPopup failed for save-current fallback", err);
+      }
       return;
     case "open-popup-pending-save-all":
       // The service worker can't reproduce the popup's picker/"Close saved
       // tabs" confirmation UX itself — it just leaves a flag for the popup
-      // to pick up on mount (see popup/App.tsx) and opens it.
-      await setMeta(PENDING_COMMAND_META_KEY, PENDING_COMMAND_SAVE_ALL);
-      chrome.action.openPopup();
+      // to pick up on mount (see popup/App.tsx) and opens it. The flag
+      // carries a timestamp: the popup ignores (and clears) anything older
+      // than PENDING_COMMAND_MAX_AGE_MS, the second layer of defense should
+      // the rollback below itself never get to run.
+      await setMeta(PENDING_COMMAND_META_KEY, pendingSaveAllFlagValue(Date.now()));
+      try {
+        await chrome.action.openPopup();
+      } catch (err) {
+        // The popup never opened, so nothing will consume the flag — revert
+        // it now or the NEXT unrelated popup open would replay a save-all
+        // the user didn't just ask for.
+        await setMeta(PENDING_COMMAND_META_KEY, PENDING_COMMAND_CLEAR);
+        console.warn("[tabburrow] openPopup failed for save-all; pendingCommand reverted", err);
+      }
       return;
     case "open-dashboard":
       chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
