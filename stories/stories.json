@@ -96,7 +96,7 @@
     "id": "T9",
     "title": "Dashboard \u2014 link grid + drag and drop",
     "phase": 1,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "Reorder within a collection sticks after reload",
       "Drag a card onto another collection in the rail moves it",
