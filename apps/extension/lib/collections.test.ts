@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Collection } from "@tabburrow/core";
-import { sortByRecentlyUpdated, recentCollections, filterCollectionsByName } from "./collections";
+import { sortByRecentlyUpdated, recentCollections, filterCollectionsByName, friendlyCreateError } from "./collections";
 
 function coll(id: string, name: string, updatedAt: number): Collection {
   return {
@@ -54,5 +54,22 @@ describe("filterCollectionsByName", () => {
 
   it("returns an empty array when nothing matches", () => {
     expect(filterCollectionsByName(input, "zzz")).toEqual([]);
+  });
+});
+
+describe("friendlyCreateError", () => {
+  it("maps the repo's empty-name error to friendly copy", () => {
+    expect(friendlyCreateError(new Error("createCollection: name must not be empty"))).toBe(
+      "Give your collection a name.",
+    );
+  });
+
+  it("passes through any other Error message as-is", () => {
+    expect(friendlyCreateError(new Error("network unavailable"))).toBe("network unavailable");
+  });
+
+  it("falls back to a generic message for a non-Error throw", () => {
+    expect(friendlyCreateError("boom")).toBe("Could not create collection.");
+    expect(friendlyCreateError(undefined)).toBe("Could not create collection.");
   });
 });

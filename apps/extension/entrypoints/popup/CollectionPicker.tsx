@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { Collection } from "@tabburrow/core";
 import { Button, Input } from "@tabburrow/ui";
-import { sortByRecentlyUpdated, filterCollectionsByName } from "../../lib/collections";
+import { sortByRecentlyUpdated, filterCollectionsByName, friendlyCreateError } from "../../lib/collections";
 
 export interface CollectionPickerProps {
   collections: Collection[];
@@ -16,13 +16,6 @@ export interface CollectionPickerProps {
    * can't retarget or double-fire the save.
    */
   busy: boolean;
-}
-
-/** Repo errors are developer-shaped ("createCollection: name must not be empty") — remap to friendly UI copy. */
-function friendlyCreateError(err: unknown): string {
-  const message = err instanceof Error ? err.message : "";
-  if (message.includes("must not be empty")) return "Give your collection a name.";
-  return message || "Could not create collection.";
 }
 
 /**

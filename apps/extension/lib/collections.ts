@@ -19,3 +19,14 @@ export function filterCollectionsByName(collections: Collection[], query: string
   if (!q) return collections;
   return collections.filter((c) => c.name.toLowerCase().includes(q));
 }
+
+/**
+ * Repo errors are developer-shaped ("createCollection: name must not be
+ * empty") — remap to friendly UI copy. Shared by the popup's
+ * CollectionPicker and the dashboard rail's "New collection" input.
+ */
+export function friendlyCreateError(err: unknown): string {
+  const message = err instanceof Error ? err.message : "";
+  if (message.includes("must not be empty")) return "Give your collection a name.";
+  return message || "Could not create collection.";
+}
