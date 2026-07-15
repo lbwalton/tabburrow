@@ -71,7 +71,7 @@
     "id": "T7",
     "title": "Popup \u2014 save flows",
     "phase": 1,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "One click saves current tab into Last Used collection (2 clicks cold: pick target once, remembered after)",
       "All tabs saves every http(s) tab of the window; confirmation shows correct count; optional close button works and never fires on its own",
