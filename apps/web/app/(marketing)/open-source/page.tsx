@@ -75,17 +75,17 @@ export default function OpenSourcePage() {
           </p>
           <ul className="mt-4 flex flex-col gap-2 leading-relaxed text-[var(--text-2)]">
             <li>
-              <strong className="text-[var(--text)]">Your own Supabase project</strong> —
+              <strong className="text-[var(--text)]">Your own Supabase project</strong>:
               a free-tier Postgres database, auth, and Edge Functions,
               created from the schema and migrations in the repo.
             </li>
             <li>
-              <strong className="text-[var(--text)]">Your own Anthropic API key</strong> —
+              <strong className="text-[var(--text)]">Your own Anthropic API key</strong>:
               powers the AI organize Edge Function; you set your own usage
               limits and pay Anthropic directly for what you use.
             </li>
             <li>
-              <strong className="text-[var(--text)]">Your own build</strong> —
+              <strong className="text-[var(--text)]">Your own build</strong>:
               point the extension at your Supabase URL and load it, or build
               and publish it under your own listing.
             </li>

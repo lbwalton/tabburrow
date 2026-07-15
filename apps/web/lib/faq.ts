@@ -35,7 +35,7 @@ export const homeFaq: FaqItem[] = [
   {
     question: "How is this different from other tab managers?",
     answer:
-      "Most tab managers make you create an account before you can save a single tab. TabBurrow works instantly with no signup, and it's the only one in the category that's fully open source and uses AI to auto-organize your saved tabs into collections you review before anything changes.",
+      "TabBurrow works instantly with no signup, and it pairs full open source (AGPL) with AI organizing. You can read every line of the code that touches your data, and the AI never sees page content, only titles and links. Suggested changes are shown as a preview you review before anything moves.",
   },
 ];
 
@@ -64,7 +64,7 @@ export const pricingFaq: FaqItem[] = [
   {
     question: "Do you offer refunds?",
     answer:
-      "Yes. Cancel anytime from the extension's billing settings, which opens the Stripe customer portal, and email us within 14 days of a charge for a full refund, no questions asked.",
+      "You can cancel anytime from the extension's billing settings, which opens the Stripe customer portal. Not happy with PRO? Email us and we'll make it right.",
   },
   {
     question: "What counts as fair use for AI organize?",

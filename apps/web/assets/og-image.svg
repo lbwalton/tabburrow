@@ -2,7 +2,7 @@
   <!-- Static OG/Twitter card source. Rasterized to public/og-image.png by
        scripts/make-og-image.mjs (sharp/librsvg doesn't reliably load the
        woff2 brand fonts, so text here uses a bold system sans-serif
-       fallback — acceptable for a static social-share asset). Colors are
+       fallback, acceptable for a static social-share asset). Colors are
        the brand tokens' hex values used verbatim, same convention as
        apps/extension/assets/icon.svg. -->
   <rect width="1200" height="630" fill="#16241E" />

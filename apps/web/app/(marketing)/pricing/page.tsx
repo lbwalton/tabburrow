@@ -16,8 +16,8 @@ const COMPARISON_ROWS: Array<{ feature: string; free: string; pro: string; selfH
   { feature: "Drag-and-drop organizing", free: "Yes", pro: "Yes", selfHost: "Yes" },
   { feature: "Sessions & crash restore", free: "Yes", pro: "Yes", selfHost: "Yes" },
   { feature: "Search, import & export", free: "Yes", pro: "Yes", selfHost: "Yes" },
-  { feature: "Cloud sync across devices", free: "—", pro: "Yes", selfHost: "Yes (your Supabase)" },
-  { feature: "Shareable collection pages", free: "—", pro: "Yes", selfHost: "Yes (your Supabase)" },
+  { feature: "Cloud sync across devices", free: "No", pro: "Yes", selfHost: "Yes (your Supabase)" },
+  { feature: "Shareable collection pages", free: "No", pro: "Yes", selfHost: "Yes (your Supabase)" },
   { feature: "AI organize", free: "30 runs/month", pro: "Unlimited (fair use)", selfHost: "Your Anthropic key" },
   { feature: "Price", free: "$0", pro: "$4/mo or $29/yr", selfHost: "$0 to us" },
 ];
@@ -40,6 +40,9 @@ export default function PricingPage() {
             sync, sharing, and unlimited AI. Self-hosting is always free too.
           </p>
         </div>
+        {/* Visually hidden so the plan cards' h3s nest under an h2 instead
+            of skipping straight from the page h1. */}
+        <h2 className="sr-only">Plans</h2>
         <div className="mt-12">
           <PricingToggle />
         </div>

@@ -26,10 +26,10 @@ export function GET() {
 - Self-host: the same PRO features, run on infrastructure you control with your own Supabase and Anthropic keys. Free. See ${SITE_URL}/open-source
 
 ## Pages
-- ${SITE_URL}/ : Home — product overview, before/after tab organization, core features, FAQ.
+- ${SITE_URL}/ : Home: product overview, before/after tab organization, core features, FAQ.
 - ${SITE_URL}/pricing : Free vs PRO vs self-host comparison, fair-use AI note, pricing FAQ.
 - ${SITE_URL}/open-source : Why the project uses the AGPL-3.0 license, what self-hosting involves, how to contribute.
-- ${SITE_URL}/privacy : Privacy policy — what's stored locally vs. synced to the cloud, what AI organize sends, how billing data is handled.
+- ${SITE_URL}/privacy : Privacy policy: what's stored locally vs. synced to the cloud, what AI organize sends, how billing data is handled.
 - ${SITE_URL}/terms : Terms of service for the hosted PRO subscription.
 
 ## Source & contact

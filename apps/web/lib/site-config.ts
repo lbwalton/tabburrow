@@ -13,7 +13,7 @@ export const SITE_DESCRIPTION =
 
 /**
  * TODO(T25): the GitHub repo isn't public yet and the Chrome Web Store
- * listing hasn't shipped. Both stay "#" until those go live — every CTA on
+ * listing hasn't shipped. Both stay "#" until those go live; every CTA on
  * the site reads from these two constants, so flipping them here is the
  * only change needed once the repo/listing are public.
  */

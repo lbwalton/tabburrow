@@ -11,6 +11,7 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
+    // <!-- TODO before launch: LB decision needed on refund policy + governing law -->
     <div data-theme="paper" className="bg-[var(--bg-ground)]">
       <section aria-label="Terms of service" className="mx-auto max-w-6xl px-6 py-16 sm:py-24">
         <Card variant="paper" className="mx-auto max-w-3xl sm:p-10">
@@ -58,8 +59,8 @@ export default function TermsPage() {
                 renews automatically until canceled. Cancel anytime from the
                 extension&apos;s billing settings, which opens the Stripe
                 customer portal; access continues until the end of the
-                current billing period. If PRO isn&apos;t right for you,
-                email us within 14 days of a charge for a full refund.
+                current billing period. Not happy with PRO? Email us and
+                we&apos;ll make it right.
               </p>
             </div>
 
@@ -124,17 +125,6 @@ export default function TermsPage() {
                 We may update these terms as the product changes. We&apos;ll
                 update the effective date above; continued use after a change
                 means you accept the updated terms.
-              </p>
-            </div>
-
-            <div>
-              <h2 className="text-xl font-semibold" style={{ fontFamily: "var(--font-display)" }}>
-                Governing law
-              </h2>
-              <p className="mt-3">
-                These terms are governed by the laws of the State of
-                California, without regard to its conflict-of-law
-                provisions.
               </p>
             </div>
 

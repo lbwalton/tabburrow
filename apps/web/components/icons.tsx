@@ -1,7 +1,9 @@
 /**
  * Small inline marks used in chrome (nav, footer, buttons). The burrow arch
- * reuses the exact silhouette from apps/extension/assets/icon.svg (same two
- * brand-accent hexes, used verbatim as a brand asset — not a token lookup).
+ * reuses the exact silhouette from apps/extension/assets/icon.svg, but as
+ * inline SVG it can (and must) read the brand tokens instead of hardcoding
+ * hex. Only standalone assets that can't see CSS vars (app/icon.svg,
+ * assets/og-image.svg) keep literal brand hexes.
  */
 export function BurrowMark({ className }: { className?: string }) {
   return (
@@ -9,10 +11,10 @@ export function BurrowMark({ className }: { className?: string }) {
       <path
         fillRule="evenodd"
         clipRule="evenodd"
-        fill="#F97316"
+        fill="var(--accent)"
         d="M24,112 L24,64 A40,40 0 0 1 104,64 L104,112 Z M40,112 L40,80 A24,24 0 0 1 88,80 L88,112 Z"
       />
-      <rect x="12" y="116" width="104" height="10" rx="5" fill="#D9A441" />
+      <rect x="12" y="116" width="104" height="10" rx="5" fill="var(--accent-2)" />
     </svg>
   );
 }

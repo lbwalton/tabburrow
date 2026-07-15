@@ -3,7 +3,7 @@ import type { FaqItem } from "../lib/faq";
 /**
  * Native <details>/<summary> accordion: keyboard and screen-reader
  * accessible with zero JS. The visible text here is what backs the
- * FAQPage JSON-LD emitted alongside it — keep both reading from the same
+ * FAQPage JSON-LD emitted alongside it; keep both reading from the same
  * `items` array (see lib/faq.ts) so they can't drift apart.
  */
 export function Faq({ items }: { items: FaqItem[] }) {

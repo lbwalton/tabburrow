@@ -11,7 +11,7 @@ export interface LinkButtonProps extends AnchorHTMLAttributes<HTMLAnchorElement>
 }
 
 // Mirrors @tabburrow/ui's <Button> visual language for CTAs that must be
-// real <a> elements (external links, navigation) rather than <button>s —
+// real <a> elements (external links, navigation) rather than <button>s;
 // Button only renders a native button, and nesting an <a> inside one would
 // be invalid HTML. Kept local to apps/web rather than changing the shared
 // primitive's API.

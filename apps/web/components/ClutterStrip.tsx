@@ -37,7 +37,7 @@ export function ClutterStrip() {
           className="mb-4 text-xs font-semibold uppercase tracking-wide text-[var(--text-2)]"
           style={{ fontFamily: "var(--font-mono)" }}
         >
-          Before — 47 tabs open
+          Before: 47 tabs open
         </p>
         <div className="flex flex-wrap items-center gap-2" aria-hidden="true">
           {CHAOS_CHIPS.map((chip, i) => (
@@ -73,7 +73,7 @@ export function ClutterStrip() {
           className="mb-4 text-xs font-semibold uppercase tracking-wide text-[var(--text-2)]"
           style={{ fontFamily: "var(--font-mono)" }}
         >
-          After — one click, sorted
+          After: one click, sorted
         </p>
         <ul className="flex flex-col gap-2">
           {COLLECTIONS.map((c) => (

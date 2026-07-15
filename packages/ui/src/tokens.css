@@ -3,6 +3,8 @@
    Direction: "Deep Green" (warm editorial dark), adapted from the
    global EZE Media brand tokens at ~/brand/tokens.css (updated 2026-07-10).
    Values are copied verbatim from that source; do not fork them here.
+   (One reviewed exception: --btn-fg, changed for WCAG AA contrast; see
+   the inline note at its definition.)
 
    Two themes:
      :root                    -- dark shell (default, "burrow" world)
@@ -67,7 +69,12 @@
 
   /* --- Convenience aliases --- */
   --focus:           var(--accent); /* keyboard focus ring */
-  --btn-fg:          #FFFFFF;        /* text on a solid --accent button */
+  /* Text on a solid --accent button. Deliberate deviation from the brand
+     source's white: #FFFFFF on #F97316 computes 2.80:1 (fails WCAG AA);
+     the ink value gives 5.99:1 (passes AA) and keeps the editorial
+     dark-on-orange look. Every --btn-fg consumer pairs it with an
+     --accent background, so this is safe to change globally. */
+  --btn-fg:          #211D14;
 
   /* --- Shape: the "burrow arch" motif — rounded top, flat-ish bottom --- */
   --radius-card:     12px;

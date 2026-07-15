@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Badge, Card } from "@tabburrow/ui";
+import { Card } from "@tabburrow/ui";
 import { LinkButton } from "./LinkButton";
 import { CHROME_STORE_URL, GITHUB_URL } from "../lib/site-config";
 
@@ -57,7 +57,7 @@ export function PricingToggle() {
             <li>Unlimited collections and links</li>
             <li>Drag-and-drop, sessions, crash restore</li>
             <li>Fuzzy search, import/export</li>
-            <li>AI organize — 30 runs/month</li>
+            <li>AI organize: 30 runs/month</li>
             <li>No account required</li>
           </ul>
           <LinkButton href={CHROME_STORE_URL} className="w-full justify-center">
@@ -68,11 +68,8 @@ export function PricingToggle() {
         {/* PRO */}
         <Card
           variant="paper"
-          className="relative flex flex-col gap-5 ring-2 ring-[var(--accent)] sm:p-8"
+          className="flex flex-col gap-5 ring-2 ring-[var(--accent)] sm:p-8"
         >
-          <Badge variant="accent" className="absolute -top-3 left-6">
-            Most popular
-          </Badge>
           <div>
             <h3 className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
               PRO
@@ -94,7 +91,7 @@ export function PricingToggle() {
             <li>Everything in Free</li>
             <li>Cloud sync across devices</li>
             <li>Shareable collection pages</li>
-            <li>AI organize — unlimited (fair use)</li>
+            <li>AI organize: unlimited (fair use)</li>
           </ul>
           <LinkButton href={CHROME_STORE_URL} className="w-full justify-center">
             Add to Chrome

@@ -15,7 +15,9 @@ import {
 } from "../../lib/site-config";
 
 export const metadata: Metadata = {
-  title: SITE_TAGLINE,
+  // Absolute so the home title is brand-first (matching the OG title)
+  // instead of the template's tagline-first "%s · TabBurrow" ordering.
+  title: { absolute: `${SITE_NAME} · ${SITE_TAGLINE}` },
   description: SITE_DESCRIPTION,
   alternates: { canonical: "/" },
 };
@@ -23,11 +25,11 @@ export const metadata: Metadata = {
 const FEATURES = [
   {
     title: "Local-first, no account",
-    body: "Everything runs on your device from the very first tab you save. Collections live in your browser's IndexedDB — nothing is required to sign up, and nothing leaves your machine unless you choose to sign in.",
+    body: "Everything runs on your device from the very first tab you save. Collections live in your browser's IndexedDB; nothing is required to sign up, and nothing leaves your machine unless you choose to sign in.",
   },
   {
     title: "AI organize, with a preview",
-    body: "One click sends your link titles and URLs (never page content) to Claude, which groups and tags them into collections. You review exactly what moves where before anything changes — nothing is ever applied automatically.",
+    body: "One click sends your link titles and URLs (never page content) to Claude, which groups and tags them into collections. You review exactly what moves where before anything changes; nothing is ever applied automatically.",
   },
   {
     title: "Sessions & crash restore",
@@ -91,7 +93,7 @@ export default function HomePage() {
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <LinkButton href={CHROME_STORE_URL} size="md" data-cta="hero-add-to-chrome">
-              Add to Chrome — it&apos;s free
+              Add to Chrome, it&apos;s free
             </LinkButton>
             <LinkButton
               href={GITHUB_URL}
@@ -169,7 +171,7 @@ export default function HomePage() {
             </LinkButton>
             {/* T25 TODO: swap for a live star count once the repo is public
                 (fetched at build/request time). No count is shown until
-                then — we don't fabricate social proof. */}
+                then; we don't fabricate social proof. */}
             <Badge variant="muted">★ star count coming soon</Badge>
           </div>
         </Card>
@@ -200,7 +202,7 @@ export default function HomePage() {
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <LinkButton href={CHROME_STORE_URL} size="md" data-cta="final-add-to-chrome">
-              Add to Chrome — it&apos;s free
+              Add to Chrome, it&apos;s free
             </LinkButton>
             <LinkButton href="/pricing" variant="ghost" size="md" data-cta="final-see-pricing">
               See pricing
