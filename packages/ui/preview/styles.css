@@ -1,0 +1,7 @@
+@import "tailwindcss";
+@import "../src/tokens.css";
+
+body {
+  margin: 0;
+  background: var(--bg-well);
+}

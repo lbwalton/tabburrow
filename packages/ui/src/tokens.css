@@ -1,0 +1,111 @@
+/* ============================================================
+   @tabburrow/ui — Deep Green design tokens
+   Direction: "Deep Green" (warm editorial dark), adapted from the
+   global EZE Media brand tokens at ~/brand/tokens.css (updated 2026-07-10).
+   Values are copied verbatim from that source; do not fork them here.
+
+   Two themes:
+     :root                    -- dark shell (default, "burrow" world)
+     [data-theme="paper"]     -- light "paper" world for long-form content
+
+   Use it:
+     import "@tabburrow/ui/tokens.css";
+   Then reference tokens:  background: var(--bg-ground); color: var(--text);
+   ============================================================ */
+
+@font-face {
+  font-family: "Syne";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/Syne-Bold.woff2") format("woff2");
+}
+
+/* Inter is shipped as a single variable-weight woff2 (Google's own build for
+   modern browsers); one file serves the whole 400-600 range used here. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("./fonts/Inter-Variable.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/GeistMono-Regular.woff2") format("woff2");
+}
+
+:root {
+  /* --- Grounds: the dark shell --- */
+  --bg-ground:      #16241E; /* main background (replaces black) */
+  --bg-well:         #0E1813; /* footers, wells, deepest recess */
+  --surface:         #1E3128; /* cards, one step lifted off --bg-ground */
+  --surface-hover:   #24382E; /* hover / raised state */
+
+  /* --- Hairlines: cream-tinted, never pure white --- */
+  --line:            rgba(238, 232, 217, 0.11);
+  --line-hi:         rgba(238, 232, 217, 0.20);
+
+  /* --- Text on the green shell --- */
+  --text:            #EEE8D9; /* cream, primary text */
+  --text-2:          #B9C3BB; /* cream dim, secondary text */
+
+  /* --- Paper world: light content cards (dark-theme default values) --- */
+  --paper:           #F1EAD9; /* kraft card surface */
+  --paper-line:      #D9CBA8; /* dividers on paper */
+  --ink:             #211D14; /* body text on paper (near-black ink, NOT green) */
+  --ink-soft:        #4B4636; /* secondary text on paper */
+
+  /* --- Accents --- */
+  --accent:          #F97316; /* orange, primary hero (bright) */
+  --accent-2:        #D9A441; /* yellow, eyebrow labels / markers / key numbers */
+  --muted:           #4A5D54; /* slate, muted supporting elements */
+
+  /* --- Convenience aliases --- */
+  --focus:           var(--accent); /* keyboard focus ring */
+  --btn-fg:          #FFFFFF;        /* text on a solid --accent button */
+
+  /* --- Shape: the "burrow arch" motif — rounded top, flat-ish bottom --- */
+  --radius-card:     12px;
+  --radius-arch:     12px 12px 2px 2px;
+
+  /* --- Type --- */
+  --font-display:    "Syne", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-body:       "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono:       "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* --- Paper theme: long-form / reading surfaces flip to the kraft palette ---
+   The brand README defines --paper (#F1EAD9) and --ink (#211D14) but does not
+   define a distinct "surface on paper" tone; --paper-line (#D9CBA8) is the
+   nearest documented neighbor, so the lifted surface below is derived by
+   darkening --paper slightly toward --paper-line rather than invented from
+   nothing. Flagging this as a judgment call for design review. */
+[data-theme="paper"] {
+  --bg-ground:       #F1EAD9; /* paper */
+  --bg-well:         #E8DFC7; /* derived: slightly deeper kraft, below paper-line */
+  --surface:         #F1EAD9; /* paper */
+  --surface-hover:   #E8E0CC; /* derived: paper lifted by getting slightly darker/warmer */
+
+  --line:            rgba(33, 29, 20, 0.12);
+  --line-hi:         rgba(33, 29, 20, 0.22);
+
+  --text:            #211D14; /* ink, primary text on paper */
+  --text-2:          #4B4636; /* ink-soft, secondary text on paper */
+
+  --muted:           #8A8368; /* derived: warm slate readable on paper */
+
+  /* Accents stay the same across themes so brand recognition holds. */
+}
+
+/* Dialog's native ::backdrop can't be reached via inline `style` from React,
+   and scoping with a data attribute keeps this from leaking onto any other
+   <dialog> a host page might render. */
+dialog[data-tabburrow-dialog]::backdrop {
+  background: var(--bg-well);
+  opacity: 0.7;
+}
