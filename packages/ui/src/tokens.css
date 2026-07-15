@@ -80,18 +80,20 @@
 }
 
 /* --- Paper theme: long-form / reading surfaces flip to the kraft palette ---
-   The brand README defines --paper (#F1EAD9) and --ink (#211D14) but does not
-   define a distinct "surface on paper" tone; --paper-line (#D9CBA8) is the
-   nearest documented neighbor, so the lifted surface below is derived by
-   darkening --paper slightly toward --paper-line rather than invented from
-   nothing. Flagging this as a judgment call for design review. */
+   Elevation keeps the brand rule's direction (surfaces LIFT by getting
+   lighter): the ground is a deeper kraft "desk" and cards are lighter paper
+   sheets sitting on it. The brand source only defines --paper (#F1EAD9) and
+   --ink (#211D14) for this world, so --bg-ground, --bg-well, --surface-hover,
+   and --muted below are derived values (kraft tones around --paper /
+   --paper-line), not copied from ~/brand/tokens.css. Flagged for design
+   review. */
 [data-theme="paper"] {
-  --bg-ground:       #F1EAD9; /* paper */
-  --bg-well:         #E8DFC7; /* derived: slightly deeper kraft, below paper-line */
-  --surface:         #F1EAD9; /* paper */
-  --surface-hover:   #E8E0CC; /* derived: paper lifted by getting slightly darker/warmer */
+  --bg-ground:       #E7DDC4; /* derived: deeper kraft desk */
+  --bg-well:         #DCD0B2; /* derived: deepest kraft recess */
+  --surface:         #F1EAD9; /* paper — cards are lighter sheets on the desk */
+  --surface-hover:   #F7F2E5; /* derived: sheet lifted further, lighter still */
 
-  --line:            rgba(33, 29, 20, 0.12);
+  --line:            rgba(33, 29, 20, 0.12); /* ink-tinted hairline, visible on ground and surface */
   --line-hi:         rgba(33, 29, 20, 0.22);
 
   --text:            #211D14; /* ink, primary text on paper */
