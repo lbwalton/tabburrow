@@ -278,7 +278,7 @@
     "id": "T24",
     "title": "Marketing site",
     "phase": 3,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "seo-geo-aeo skill checklist complete (robots.txt with AI crawlers, sitemap, llms.txt, JSON-LD SoftwareApplication + FAQPage, per-page metadata, semantic HTML, Ask AI block)",
       "Lighthouse \u226590 across categories locally",
