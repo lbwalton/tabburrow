@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { BurrowDB } from "../src/db";
-import type { PendingOp } from "../src/types";
+import type { Collection, Link, PendingOp, SessionSnapshot } from "../src/types";
 import {
   createCollection,
   renameCollection,
@@ -27,6 +27,8 @@ import {
   pruneAutoSnapshots,
 } from "../src/repo/sessions";
 import { getMeta, setMeta } from "../src/repo/meta";
+import { importData } from "../src/repo/import";
+import type { ImportPayload } from "../src/repo/import";
 
 let db: BurrowDB;
 
@@ -639,5 +641,109 @@ describe("meta repo", () => {
     await setMeta("deviceId", "device-1", db);
     await setMeta("deviceId", "device-2", db);
     expect(await getMeta("deviceId", db)).toBe("device-2");
+  });
+});
+
+describe("import repo", () => {
+  it("is id-preserving: re-importing a prior export after a full wipe reproduces identical collections/links", async () => {
+    const c = await createCollection("C", "#F97316", db);
+    const [link] = await saveTabs(c.id, [{ url: "https://a.com", title: "A" }], db);
+
+    // Snapshot exactly what a live export would contain (this task's
+    // lib/exporter.ts in apps/extension does the same listCollections/
+    // listLinks read — importData doesn't care where its payload came from).
+    const exportedCollections = await db.collections.toArray();
+    const exportedLinks = await db.links.toArray();
+
+    // Wipe the whole profile clean, as if re-importing into a fresh install.
+    await db.collections.clear();
+    await db.links.clear();
+    await db.pendingOps.clear();
+
+    const result = await importData({ collections: exportedCollections, links: exportedLinks, sessions: [] }, db);
+    expect(result).toEqual({ collections: 1, links: 1, sessions: 0 });
+
+    const restoredCollection = await db.collections.get(c.id);
+    const restoredLink = await db.links.get(link!.id);
+    expect(restoredCollection?.id).toBe(c.id);
+    expect(restoredCollection?.name).toBe("C");
+    expect(restoredCollection?.accent).toBe("#F97316");
+    expect(restoredCollection?.position).toBe(c.position);
+    expect(restoredLink?.id).toBe(link!.id);
+    expect(restoredLink?.url).toBe("https://a.com");
+    expect(restoredLink?.collectionId).toBe(c.id);
+    expect(restoredLink?.position).toBe(link!.position);
+  });
+
+  it("upserts by id instead of duplicating when a row with that id already exists", async () => {
+    const c = await createCollection("Old name", undefined, db);
+    const [link] = await saveTabs(c.id, [{ url: "https://a.com", title: "Old title" }], db);
+
+    const renamedCollection: Collection = { ...(await db.collections.get(c.id))!, name: "New name" };
+    const renamedLink: Link = { ...(await db.links.get(link!.id))!, title: "New title" };
+
+    await importData({ collections: [renamedCollection], links: [renamedLink], sessions: [] }, db);
+
+    expect(await db.collections.count()).toBe(1);
+    expect(await db.links.count()).toBe(1);
+    expect((await db.collections.get(c.id))!.name).toBe("New name");
+    expect((await db.links.get(link!.id))!.title).toBe("New title");
+  });
+
+  it("importing a tombstone-free row over an existing tombstoned one un-deletes it, without duplicating", async () => {
+    const c = await createCollection("C", undefined, db);
+    await softDeleteCollection(c.id, db);
+    expect((await db.collections.get(c.id))!.deletedAt).not.toBeNull();
+
+    // A live export (as lib/exporter.ts builds it) only ever contains
+    // deletedAt: null rows — simulate re-importing one taken before the delete.
+    const liveVersion: Collection = { ...(await db.collections.get(c.id))!, deletedAt: null };
+    await importData({ collections: [liveVersion], links: [], sessions: [] }, db);
+
+    expect(await db.collections.count()).toBe(1);
+    expect((await db.collections.get(c.id))!.deletedAt).toBeNull();
+  });
+
+  it("stamps updatedAt to the import time and enqueues one guarded PendingOp per row", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000);
+    const c = await createCollection("C", undefined, db);
+    const [link] = await saveTabs(c.id, [{ url: "https://a.com", title: "A" }], db);
+    await db.pendingOps.clear();
+
+    vi.setSystemTime(5_000);
+    const payload: ImportPayload = {
+      collections: [(await db.collections.get(c.id))!],
+      links: [(await db.links.get(link!.id))!],
+      sessions: [],
+    };
+    await importData(payload, db);
+
+    expect((await db.collections.get(c.id))!.updatedAt).toBe(5_000);
+    expect((await db.links.get(link!.id))!.updatedAt).toBe(5_000);
+    expect(await opsFor("collections", c.id)).toHaveLength(1);
+    expect(await opsFor("links", link!.id)).toHaveLength(1);
+  });
+
+  it("bulkPuts sessions without enqueuing any PendingOp for them", async () => {
+    const before = await db.pendingOps.count();
+    const session: SessionSnapshot = {
+      id: crypto.randomUUID(),
+      name: "Imported session",
+      kind: "manual",
+      windows: [{ tabs: [{ url: "https://a.com", title: "A" }] }],
+      createdAt: Date.now(),
+    };
+
+    const result = await importData({ collections: [], links: [], sessions: [session] }, db);
+
+    expect(result.sessions).toBe(1);
+    expect(await db.sessions.get(session.id)).toEqual(session);
+    expect(await db.pendingOps.count()).toBe(before);
+  });
+
+  it("is a no-op-safe empty import", async () => {
+    const result = await importData({ collections: [], links: [], sessions: [] }, db);
+    expect(result).toEqual({ collections: 0, links: 0, sessions: 0 });
   });
 });

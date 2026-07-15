@@ -39,6 +39,7 @@ import {
   restoreSnapshot,
   shouldOfferCrashRestore,
 } from "../../lib/sessions";
+import { applyTheme, parseTheme, THEME_META_KEY } from "../../lib/theme";
 import { useRoute } from "./useRoute";
 import { Rail } from "./Rail";
 import { DashboardMain } from "./DashboardMain";
@@ -89,6 +90,16 @@ const EMPTY_COUNTS = new Map<string, number>();
  */
 export function App() {
   const db = getDB();
+
+  // Applies the persisted theme on mount (default dark) — see
+  // lib/theme.ts's docstring. The Settings pane's own theme toggle also
+  // calls applyTheme directly on click, so a change made THERE is instant
+  // for this already-open tab; this effect is what makes a fresh dashboard
+  // load (or reload) reflect a change made from elsewhere (e.g. the popup).
+  useEffect(() => {
+    void getMeta(THEME_META_KEY, db).then((value) => applyTheme(parseTheme(value)));
+  }, [db]);
+
   const collectionsRaw = useLiveQuery(() => listCollections(db), []);
   const collections = collectionsRaw ?? [];
   const collectionsLoaded = collectionsRaw !== undefined;

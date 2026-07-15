@@ -11,6 +11,7 @@ import { LinkGrid } from "./LinkGrid";
 import { SortMenu } from "./SortMenu";
 import { RestoreAllButton } from "./RestoreAllButton";
 import { SessionsPane } from "./SessionsPane";
+import { SettingsPane } from "./SettingsPane";
 
 export interface DashboardMainProps {
   route: ResolvedRoute;
@@ -27,7 +28,7 @@ export interface DashboardMainProps {
   onCreateFirstCollection: () => void;
 }
 
-/** The dashboard's main area: routes to a collection panel, the sessions pane, a settings placeholder, or one of the empty states. */
+/** The dashboard's main area: routes to a collection panel, the sessions pane, the settings pane, or one of the empty states. */
 export function DashboardMain({
   route,
   collections,
@@ -45,15 +46,7 @@ export function DashboardMain({
   }
 
   if (route.kind === "settings") {
-    return (
-      <Centered>
-        <EmptyState
-          title="Settings"
-          description="Theme, sign-in, import/export, and shortcuts land in a later task."
-          illustration={<BurrowIllustration />}
-        />
-      </Centered>
-    );
+    return <SettingsPane />;
   }
 
   // No collections exist at all — either the route resolver said so

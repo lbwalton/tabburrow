@@ -12,11 +12,17 @@ import { emptyStateFor, searchAll } from "../../lib/search";
 import { nextHighlight, resolveHighlight } from "../../lib/searchNav";
 import { dashboardCollectionUrl } from "../../lib/dashboard";
 import { formatHost } from "../../lib/links";
+import {
+  LAST_USED_COLLECTION_META_KEY,
+  PENDING_COMMAND_META_KEY,
+  PENDING_COMMAND_SAVE_ALL,
+} from "../../lib/commands";
+import { applyTheme, parseTheme, THEME_META_KEY } from "../../lib/theme";
 import { SaveBar } from "./SaveBar";
 import { CollectionPicker } from "./CollectionPicker";
 import { RecentList } from "./RecentList";
 
-const LAST_USED_KEY = "lastUsedCollectionId";
+const LAST_USED_KEY = LAST_USED_COLLECTION_META_KEY;
 const EMPTY_SEARCH_RESULTS: SearchResults = { collections: [], links: [] };
 const SEARCH_DEBOUNCE_MS = 150;
 /** Compact popup body: show at most this many combined results (dashboard's overlay shows the full up-to-20 `searchAll` returns; the popup trims further to stay pocket-sized). */
@@ -47,6 +53,11 @@ export function App() {
   const [selectedTabs, setSelectedTabs] = useState<TabInfo[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Alt+Shift+A's "save all" shortcut can't reproduce the picker/confirm UX
+  // from the background service worker, so it sets this meta flag and opens
+  // the popup instead — read once on mount below, replayed once collections
+  // are loaded (see the effect after handleSaveClick).
+  const [pendingSaveAll, setPendingSaveAll] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResults>(EMPTY_SEARCH_RESULTS);
@@ -83,18 +94,34 @@ export function App() {
     };
   }, [searchQuery]);
 
+  // Applies the persisted theme on mount — same convention the dashboard's
+  // App.tsx follows (see lib/theme.ts's docstring); a fresh popup document
+  // every open means "on mount" is the only time this needs to run.
+  useEffect(() => {
+    void getMeta(THEME_META_KEY, db).then((value) => applyTheme(parseTheme(value)));
+  }, [db]);
+
   // Snapshot the current window's tabs + last-used target once, on open. The
   // popup is a fresh document every time it opens, so a one-shot fetch is
-  // sufficient (no live tab-change subscription needed).
+  // sufficient (no live tab-change subscription needed). Also reads (and
+  // immediately clears) the "save-all" pending-command flag background.ts's
+  // Alt+Shift+A handler may have left — clearing it here, not after the
+  // replay fires below, means a popup close mid-flight can't leave a stale
+  // flag to wrongly replay on the NEXT ordinary open.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [all, selected, lastUsed] = await Promise.all([
+      const [all, selected, lastUsed, pendingCommand] = await Promise.all([
         getAllTabs(),
         getHighlightedTabs(),
         getMeta(LAST_USED_KEY, db),
+        getMeta(PENDING_COMMAND_META_KEY, db),
       ]);
       if (cancelled) return;
+      if (pendingCommand === PENDING_COMMAND_SAVE_ALL) {
+        void setMeta(PENDING_COMMAND_META_KEY, "", db);
+        setPendingSaveAll(true);
+      }
       setAllTabs(all);
       setSelectedTabs(selected);
       setTargetId(lastUsed);
@@ -175,6 +202,21 @@ export function App() {
       dispatch({ type: "SAVE_CLICK", action, hasTarget: false });
     }
   }
+
+  // Replays a pending "save-all" command (see the mount effect above) the
+  // instant this popup's own data has settled — through the SAME
+  // handleSaveClick("all") path a manual click takes, so the picker
+  // (cold start) and "Close saved tabs" confirmation (warm) behave
+  // identically whether the popup was opened by hand or by Alt+Shift+A.
+  useEffect(() => {
+    if (!pendingSaveAll || !dataLoaded) return;
+    setPendingSaveAll(false);
+    handleSaveClick("all");
+    // handleSaveClick is intentionally omitted from the deps below: it's a
+    // plain function redeclared every render (not memoized), so depending on
+    // it would fire on every render rather than only the one transition
+    // (pendingSaveAll/dataLoaded becoming true) this effect cares about.
+  }, [pendingSaveAll, dataLoaded]);
 
   /** Shared tail of both picker resolutions: remember the target, close the picker, fire any pending save. */
   async function resolvePickerWith(collection: Collection, pendingAction: SaveAction | null) {

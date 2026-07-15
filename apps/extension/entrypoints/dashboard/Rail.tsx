@@ -77,6 +77,26 @@ export function Rail({ collections, order, linkCounts, selectedId, onCreateColle
         </SortableContext>
       </div>
 
+      {/* Plain div, not a second <nav> landmark — the outer <nav> above already covers this whole rail. */}
+      <div className="flex flex-col gap-0.5 border-t border-[var(--line)] px-2 py-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start"
+          onClick={() => (window.location.hash = "#/sessions")}
+        >
+          Sessions
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start"
+          onClick={() => (window.location.hash = "#/settings")}
+        >
+          Settings
+        </Button>
+      </div>
+
       <div className="border-t border-[var(--line)] p-2">
         {creating ? (
           <div className="flex flex-col gap-1.5 p-1">

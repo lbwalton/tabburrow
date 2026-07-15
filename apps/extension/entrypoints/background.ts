@@ -8,6 +8,13 @@ import {
   SESSION_STATE_RUNNING,
   snapshotsEqual,
 } from "../lib/sessions";
+import {
+  commandPlan,
+  LAST_USED_COLLECTION_META_KEY,
+  PENDING_COMMAND_META_KEY,
+  PENDING_COMMAND_SAVE_ALL,
+  saveCurrentTabSilently,
+} from "../lib/commands";
 
 const AUTO_SNAPSHOT_ALARM = "auto-snapshot";
 const AUTO_SNAPSHOT_INTERVAL_MINUTES = 5;
@@ -16,8 +23,6 @@ const AUTO_SNAPSHOT_KEEP = 10;
 export default defineBackground(() => {
   console.log("[tabburrow] service worker up");
 
-  // Command (keyboard shortcut) wiring lands in T13 — this is just an
-  // install/update log so the service worker lifecycle is observable.
   chrome.runtime.onInstalled.addListener((details) => {
     console.log(`[tabburrow] onInstalled reason=${details.reason}`);
     chrome.alarms.create(AUTO_SNAPSHOT_ALARM, { periodInMinutes: AUTO_SNAPSHOT_INTERVAL_MINUTES });
@@ -48,7 +53,43 @@ export default defineBackground(() => {
   chrome.windows.onRemoved.addListener(() => {
     void handleWindowRemoved();
   });
+
+  chrome.commands.onCommand.addListener((command) => {
+    void handleCommand(command);
+  });
 });
+
+/**
+ * The manifest's three keyboard shortcuts (see wxt.config.ts's
+ * `commands` block). `commandPlan` (lib/commands.ts) is the pure decision —
+ * this function is just the dispatch + the chrome.* calls each branch needs.
+ */
+async function handleCommand(command: string): Promise<void> {
+  const lastUsedId = await getMeta(LAST_USED_COLLECTION_META_KEY);
+  const plan = commandPlan(command, lastUsedId !== null);
+
+  switch (plan.action) {
+    case "save-current-silently":
+      // lastUsedId is non-null whenever commandPlan returns this action.
+      await saveCurrentTabSilently(lastUsedId!);
+      return;
+    case "open-popup":
+      chrome.action.openPopup();
+      return;
+    case "open-popup-pending-save-all":
+      // The service worker can't reproduce the popup's picker/"Close saved
+      // tabs" confirmation UX itself — it just leaves a flag for the popup
+      // to pick up on mount (see popup/App.tsx) and opens it.
+      await setMeta(PENDING_COMMAND_META_KEY, PENDING_COMMAND_SAVE_ALL);
+      chrome.action.openPopup();
+      return;
+    case "open-dashboard":
+      chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
+      return;
+    case "noop":
+      return;
+  }
+}
 
 /**
  * `chrome.runtime.onStartup` fires once per real browser-session boundary
