@@ -112,6 +112,35 @@ export async function moveLink(
   });
 }
 
+/**
+ * Moves a link into `toCollectionId`, positioned after everything currently
+ * there — computed from ALL of the target's rows (tombstoned included), the
+ * same `maxPosition` policy `saveTabs` appends with (see maxPosition's
+ * docstring). Deriving "last" from live rows only would land exactly ON a
+ * tombstoned row's position whenever the tombstone holds the greatest key,
+ * and a later restore would then produce two rows with equal positions and
+ * nondeterministic order. Throws if the moved link does not exist.
+ */
+export async function moveLinkToEnd(
+  id: string,
+  toCollectionId: string,
+  db: BurrowDB = getDB(),
+): Promise<void> {
+  return db.transaction("rw", db.links, db.pendingOps, async () => {
+    const row = await db.links.get(id);
+    if (!row) {
+      throw new Error(`moveLinkToEnd: no link with id "${id}"`);
+    }
+    const targetRows = await db.links.where("collectionId").equals(toCollectionId).toArray();
+    // No need to exclude the moved row itself when it's already in the
+    // target: if it holds the max, the new key is strictly greater than its
+    // own old one — still "the end", still collision-free.
+    const position = positionBetween(maxPosition(targetRows), null);
+    await db.links.update(id, { collectionId: toCollectionId, position, updatedAt: Date.now() });
+    await enqueueOp(db, "links", id);
+  });
+}
+
 export async function softDeleteLinks(ids: string[], db: BurrowDB = getDB()): Promise<void> {
   return db.transaction("rw", db.links, db.pendingOps, async () => {
     const now = Date.now();

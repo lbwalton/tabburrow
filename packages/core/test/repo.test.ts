@@ -15,6 +15,7 @@ import {
   saveTabs,
   updateLink,
   moveLink,
+  moveLinkToEnd,
   softDeleteLinks,
   restoreLinks,
   listLinks,
@@ -405,6 +406,91 @@ describe("links repo", () => {
     expect((await db.links.get(l1!.id))!.collectionId).toBe(target.id);
     expect(await listLinks(target.id, db).then((r) => r.map((l) => l.id))).toEqual([l1!.id, m1!.id]);
     expect(await listLinks(source.id, db).then((r) => r.map((l) => l.id))).toEqual([l2!.id]);
+  });
+
+  it("moveLinkToEnd appends after the target's current last live link", async () => {
+    const source = await createCollection("Source", undefined, db);
+    const target = await createCollection("Target", undefined, db);
+    const [moved] = await saveTabs(source.id, [{ url: "https://moved.com", title: "Moved" }], db);
+    const [t1, t2] = await saveTabs(
+      target.id,
+      [
+        { url: "https://t1.com", title: "T1" },
+        { url: "https://t2.com", title: "T2" },
+      ],
+      db,
+    );
+
+    await moveLinkToEnd(moved!.id, target.id, db);
+
+    expect((await db.links.get(moved!.id))!.collectionId).toBe(target.id);
+    expect(await listLinks(target.id, db).then((r) => r.map((l) => l.id))).toEqual([t1!.id, t2!.id, moved!.id]);
+    expect(await listLinks(source.id, db)).toHaveLength(0);
+  });
+
+  it("moveLinkToEnd positions past a tombstoned link holding the greatest position (no collision)", async () => {
+    // The failure mode this guards: deriving "last" from live links only
+    // (listLinks) would compute positionBetween(<last live>, null) and land
+    // exactly ON a tombstoned row's position — then a later restore of that
+    // tombstone produces two rows with equal positions and nondeterministic
+    // order. maxPosition deliberately scans ALL rows (see its docstring);
+    // moveLinkToEnd must do the same.
+    const source = await createCollection("Source", undefined, db);
+    const target = await createCollection("Target", undefined, db);
+    const [moved] = await saveTabs(source.id, [{ url: "https://moved.com", title: "Moved" }], db);
+    const [t1, t2, t3] = await saveTabs(
+      target.id,
+      [
+        { url: "https://t1.com", title: "T1" },
+        { url: "https://t2.com", title: "T2" },
+        { url: "https://t3.com", title: "T3" },
+      ],
+      db,
+    );
+    // Tombstone the link holding the greatest position; live max is now t2.
+    await softDeleteLinks([t3!.id], db);
+
+    await moveLinkToEnd(moved!.id, target.id, db);
+
+    const movedRow = (await db.links.get(moved!.id))!;
+    const tombstonedRow = (await db.links.get(t3!.id))!;
+    expect(movedRow.position).not.toBe(tombstonedRow.position);
+    expect(movedRow.position > tombstonedRow.position).toBe(true);
+
+    // Restoring the tombstone keeps a deterministic order: t1, t2, t3, moved.
+    await restoreLinks([t3!.id], db);
+    expect(await listLinks(target.id, db).then((r) => r.map((l) => l.id))).toEqual([
+      t1!.id,
+      t2!.id,
+      t3!.id,
+      moved!.id,
+    ]);
+  });
+
+  it("moveLinkToEnd into an empty collection still works", async () => {
+    const source = await createCollection("Source", undefined, db);
+    const target = await createCollection("Target", undefined, db);
+    const [moved] = await saveTabs(source.id, [{ url: "https://moved.com", title: "Moved" }], db);
+
+    await moveLinkToEnd(moved!.id, target.id, db);
+
+    expect(await listLinks(target.id, db).then((r) => r.map((l) => l.id))).toEqual([moved!.id]);
+  });
+
+  it("moveLinkToEnd throws when the moved link does not exist and enqueues nothing", async () => {
+    const c = await createCollection("C", undefined, db);
+    await expect(moveLinkToEnd("no-such-id", c.id, db)).rejects.toThrow();
+    expect(await opsFor("links", "no-such-id")).toHaveLength(0);
+  });
+
+  it("moveLinkToEnd enqueues a PendingOp", async () => {
+    const source = await createCollection("Source", undefined, db);
+    const target = await createCollection("Target", undefined, db);
+    const [moved] = await saveTabs(source.id, [{ url: "https://moved.com", title: "Moved" }], db);
+    await db.pendingOps.clear();
+
+    await moveLinkToEnd(moved!.id, target.id, db);
+    expect(await opsFor("links", moved!.id)).toHaveLength(1);
   });
 
   it("moveLink enqueues a PendingOp", async () => {

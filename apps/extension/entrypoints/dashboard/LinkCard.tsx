@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { MouseEvent } from "react";
+import type { KeyboardEvent, KeyboardEventHandler, MouseEvent } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Link } from "@tabburrow/core";
@@ -16,6 +16,8 @@ export interface LinkCardProps {
   /** True while the grid is view-sorted (name/date) — dragging is fully disabled in that mode. */
   dragDisabled: boolean;
   onSelect: (id: string, event: MouseEvent) => void;
+  /** Keyboard selection: Enter/Space on the focused card body toggles it. */
+  onToggleSelect: (id: string) => void;
   onError: (message: string) => void;
 }
 
@@ -55,41 +57,52 @@ function Favicon({ url, faviconUrl }: { url: string; faviconUrl: string | null }
 
 /**
  * One card in the link grid: favicon, title, domain, optional note/tags,
- * and a hover/focus-revealed edit pencil. Draggable (reorder within the
- * grid, or drop onto a rail `CollectionRow` to move collections) via the
- * same `useSortable` id/`data` pattern `CollectionRow` uses, but tagged
- * `{type: "link"}` so the single lifted `DndContext` in `App.tsx` can tell
- * the two drag kinds apart (see `lib/dnd.ts`). Selection (click, cmd/ctrl,
- * shift) and drag share the same pointer-down: dnd-kit's `PointerSensor`
- * only starts a drag past its activation distance and swallows the
- * following click once it does, so a plain click still reaches `onClick`
- * normally (verified against `@dnd-kit/core`'s sensor source). No custom
- * Enter/Space "select via keyboard" handler here on purpose: dnd-kit's
- * `KeyboardSensor` defaults bind BOTH of those keys to "pick up this
- * sortable for a keyboard-driven drag" on the very same focused element
- * (`defaultKeyboardCodes`), and reconfiguring that would also change the
- * rail's already-shipped drag-handle keyboard behavior (shared sensor
- * instance, must not regress). Keyboard selection is a gap worth a follow-up
- * with a dedicated key, not this one.
+ * a hover/focus-revealed edit pencil, and a hover/focus-revealed grip
+ * handle. Draggable (reorder within the grid, or drop onto a rail
+ * `CollectionRow` to move collections) via the same `useSortable`
+ * id/`data` pattern `CollectionRow` uses, but tagged `{type: "link"}` so
+ * the single lifted `DndContext` in `App.tsx` can tell the two drag kinds
+ * apart (see `lib/dnd.ts`).
+ *
+ * Drag/selection input split: dnd-kit's listeners map is split by sensor —
+ * the POINTER activator (`onPointerDown`) stays on the whole card body
+ * (drag anywhere; the `PointerSensor` only starts past its 4px activation
+ * distance and swallows the following click once it does, so a plain click
+ * still reaches `onClick`), while the KEYBOARD activator (`onKeyDown`) and
+ * dnd-kit's `attributes` (role="button", `aria-roledescription`, and the
+ * `aria-disabled` that only describes DRAGGING) move to the dedicated grip
+ * handle — same pattern as `CollectionRow`'s grip. That frees Enter/Space
+ * on the card body itself to toggle selection (dnd-kit's
+ * `defaultKeyboardCodes` claim both keys for drag pickup, which is why
+ * they couldn't coexist on one element). Note: a pointer-drag started from
+ * the grip also works — its pointerdown bubbles to the card's handler.
  */
-export function LinkCard({ link, selected, dragDisabled, onSelect, onError }: LinkCardProps) {
+export function LinkCard({ link, selected, dragDisabled, onSelect, onToggleSelect, onError }: LinkCardProps) {
   const db = getDB();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: link.id,
     data: { type: "link" },
     disabled: dragDisabled,
-    // dnd-kit's own default (role="button", tabIndex=0) doesn't fit — the
-    // card behaves like a listbox option (see the grid's role="listbox"),
-    // not a button. Override here rather than fighting spread-order in the
-    // JSX below (a literal `role`/`tabIndex` next to `{...attributes}` is a
-    // static duplicate-prop error either way).
-    attributes: { role: "option", tabIndex: 0 },
   });
+  // dnd-kit keys this map by each sensor's activator event name:
+  // PointerSensor -> onPointerDown, KeyboardSensor -> onKeyDown.
+  const { onKeyDown: keyboardDragActivator, ...pointerListeners } = listeners ?? {};
   const [editOpen, setEditOpen] = useState(false);
   const editTriggerRef = useRef<HTMLButtonElement>(null);
 
   function handleClick(event: MouseEvent) {
     onSelect(link.id, event);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    // Only keys pressed on the card itself — the grip's Enter/Space (drag
+    // pickup) and any typing inside the edit popover bubble through here
+    // and must not toggle selection.
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onToggleSelect(link.id);
+    }
   }
 
   function handleSave(patch: EditLinkPatch) {
@@ -103,10 +116,12 @@ export function LinkCard({ link, selected, dragDisabled, onSelect, onError }: Li
     <Card
       ref={setNodeRef}
       variant="surface"
+      role="option"
       aria-selected={selected}
+      tabIndex={0}
       onClick={handleClick}
-      {...attributes}
-      {...(dragDisabled ? {} : listeners)}
+      onKeyDown={handleKeyDown}
+      {...(dragDisabled ? {} : pointerListeners)}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
@@ -117,7 +132,7 @@ export function LinkCard({ link, selected, dragDisabled, onSelect, onError }: Li
         dragDisabled ? "cursor-default" : "cursor-grab active:cursor-grabbing"
       }`}
     >
-      <div className="flex items-start gap-2 pr-5">
+      <div className="flex items-start gap-2 pr-11">
         <Favicon url={link.url} faviconUrl={link.faviconUrl} />
         <div className="min-w-0 flex-1">
           <h3 className="line-clamp-2 text-sm font-medium leading-snug text-[var(--text)]">{link.title}</h3>
@@ -139,20 +154,35 @@ export function LinkCard({ link, selected, dragDisabled, onSelect, onError }: Li
         </div>
       ) : null}
 
-      <button
-        ref={editTriggerRef}
-        type="button"
-        aria-label="Edit link"
-        aria-expanded={editOpen}
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation();
-          setEditOpen((v) => !v);
-        }}
-        className="absolute right-2 top-2 rounded-[4px] px-1 py-0.5 text-xs leading-none text-[var(--text-2)] opacity-0 hover:bg-[var(--surface-hover)] hover:text-[var(--text)] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-      >
-        ✎
-      </button>
+      <div className="absolute right-2 top-2 flex items-center gap-0.5">
+        {!dragDisabled ? (
+          <button
+            ref={setActivatorNodeRef}
+            type="button"
+            aria-label="Reorder link"
+            {...attributes}
+            onKeyDown={keyboardDragActivator as KeyboardEventHandler<HTMLButtonElement> | undefined}
+            onClick={(e) => e.stopPropagation()}
+            className="cursor-grab touch-none rounded-[4px] px-1 py-0.5 text-xs leading-none text-[var(--text-2)] opacity-0 hover:bg-[var(--surface-hover)] hover:text-[var(--text)] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:cursor-grabbing"
+          >
+            ⠿
+          </button>
+        ) : null}
+        <button
+          ref={editTriggerRef}
+          type="button"
+          aria-label="Edit link"
+          aria-expanded={editOpen}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            setEditOpen((v) => !v);
+          }}
+          className="rounded-[4px] px-1 py-0.5 text-xs leading-none text-[var(--text-2)] opacity-0 hover:bg-[var(--surface-hover)] hover:text-[var(--text)] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        >
+          ✎
+        </button>
+      </div>
 
       {editOpen ? (
         <EditLinkPopover

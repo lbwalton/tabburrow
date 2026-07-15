@@ -48,7 +48,11 @@ export function LinkGrid({ collectionId, links, order, sortMode, collections, on
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setSelection(emptySelection());
+      if (event.key !== "Escape") return;
+      // An open edit popover owns Escape (the native <dialog> closes on it) —
+      // don't also clear the selection out from under the user.
+      if (document.querySelector("dialog[open]")) return;
+      setSelection(emptySelection());
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -97,6 +101,7 @@ export function LinkGrid({ collectionId, links, order, sortMode, collections, on
               selected={selection.selected.has(link.id)}
               dragDisabled={dragDisabled}
               onSelect={handleCardSelect}
+              onToggleSelect={(id) => setSelection((s) => nextSelection(s, { type: "toggle", id }))}
               onError={onLinkError}
             />
           ))}

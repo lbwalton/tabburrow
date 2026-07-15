@@ -19,6 +19,7 @@ import {
   listLinks,
   moveCollection,
   moveLink,
+  moveLinkToEnd,
   restoreCollection,
   setMeta,
   softDeleteCollection,
@@ -26,7 +27,7 @@ import {
 import { Toast } from "@tabburrow/ui";
 import { collectionHash, countLinksByCollection } from "../../lib/dashboard";
 import { resolveDragEnd } from "../../lib/dnd";
-import { appendLinkToCollection, parseSortMode, sortMetaKey } from "../../lib/links";
+import { parseSortMode, sortMetaKey } from "../../lib/links";
 import type { SortMode } from "../../lib/links";
 import { moveItem, neighborsAfterMove, nextLocalOrder } from "../../lib/reorder";
 import { useRoute } from "./useRoute";
@@ -172,11 +173,10 @@ export function App() {
       }
 
       case "move-link": {
-        // Dropped on the row of the collection already open: nothing to do
-        // (there's no meaningful "move" — and appendLinkToCollection would
-        // otherwise re-look-up the link itself as its own "last" neighbor).
+        // Dropped on the row of the collection already open: nothing to do,
+        // there's no meaningful "move".
         if (op.targetCollectionId === activeCollectionId) return;
-        appendLinkToCollection(op.linkId, op.targetCollectionId, db).catch((err) => {
+        moveLinkToEnd(op.linkId, op.targetCollectionId, db).catch((err) => {
           setLinkOpError({
             id: Date.now(),
             message: err instanceof Error ? err.message : "Couldn't move that link.",

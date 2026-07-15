@@ -1,8 +1,7 @@
 import { useState } from "react";
 import type { Collection, Link } from "@tabburrow/core";
-import { getDB, softDeleteLinks } from "@tabburrow/core";
+import { getDB, moveLinkToEnd, softDeleteLinks } from "@tabburrow/core";
 import { Button } from "@tabburrow/ui";
-import { appendLinkToCollection } from "../../lib/links";
 
 export interface BulkBarProps {
   /** The selected links, already in current display order (so "Open all" and "Move to…" preserve it). */
@@ -16,19 +15,30 @@ export interface BulkBarProps {
 /**
  * Slides up from the bottom of the main area once 1+ links are selected
  * (see the `.bulk-bar` `@starting-style` transition in `assets/tailwind.css`).
- * "Move to…" awaits `appendLinkToCollection` one link at a time — each call
- * looks the target's current last position up fresh, so sequential awaits
- * are what makes "preserving relative order" true; `Promise.all`-ing them
- * would have every link land on the same position.
+ * "Move to…" awaits `moveLinkToEnd` one link at a time — each call reads the
+ * target's current max position fresh inside its own transaction, so
+ * sequential awaits are what makes "preserving relative order" true;
+ * `Promise.all`-ing them could interleave the read-then-write pairs.
  */
 export function BulkBar({ selectedLinks, currentCollectionId, collections, onClear, onError }: BulkBarProps) {
   const db = getDB();
   const [busy, setBusy] = useState(false);
   const targets = collections.filter((c) => c.id !== currentCollectionId);
 
-  function openAll() {
+  async function openAll() {
+    // chrome.tabs.create can reject per-tab (invalid URL, window gone) —
+    // keep opening the rest and surface ONE toast with the failed count
+    // instead of silently swallowing or aborting the whole batch.
+    let failed = 0;
     for (const link of selectedLinks) {
-      chrome.tabs.create({ url: link.url });
+      try {
+        await chrome.tabs.create({ url: link.url });
+      } catch {
+        failed += 1;
+      }
+    }
+    if (failed > 0) {
+      onError(`Couldn't open ${failed} of ${selectedLinks.length} links.`);
     }
   }
 
@@ -37,7 +47,7 @@ export function BulkBar({ selectedLinks, currentCollectionId, collections, onCle
     setBusy(true);
     try {
       for (const link of selectedLinks) {
-        await appendLinkToCollection(link.id, targetCollectionId, db);
+        await moveLinkToEnd(link.id, targetCollectionId, db);
       }
       onClear();
     } catch (err) {
@@ -67,22 +77,22 @@ export function BulkBar({ selectedLinks, currentCollectionId, collections, onCle
     <div
       role="toolbar"
       aria-label="Bulk actions"
-      // `fixed` + `inset-x-0`/`mx-auto`/`w-fit` (the same viewport-relative
-      // pattern the Toast stack uses in App.tsx), not `sticky` — sticky's
-      // containing block depends on every ancestor between here and the
-      // scrolling `<main>` having the right height/overflow, which is easy
-      // to get subtly wrong across `LinkGrid` → `CollectionPanel` → `main`'s
-      // nested flex containers. `fixed` sidesteps that entirely at the cost
-      // of centering across the FULL window rather than just the content
-      // pane right of the rail — acceptable at the rail's fixed 280px width.
-      className="bulk-bar fixed inset-x-0 bottom-4 z-40 mx-auto flex w-fit items-center gap-3 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 shadow-lg"
+      // `fixed` + left offset matching the rail's w-[280px] (Rail.tsx) +
+      // `mx-auto`/`w-fit`, not `sticky` — sticky's containing block depends
+      // on every ancestor between here and the scrolling `<main>` having the
+      // right height/overflow, which is easy to get subtly wrong across
+      // `LinkGrid` → `CollectionPanel` → `main`'s nested flex containers.
+      // The left-[280px] centers the bar within the content pane right of
+      // the rail; if the rail ever becomes resizable, both widths need to
+      // move to a shared token.
+      className="bulk-bar fixed bottom-4 left-[280px] right-0 z-40 mx-auto flex w-fit items-center gap-3 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 shadow-lg"
       style={{ fontFamily: "var(--font-body)" }}
     >
       <span className="text-sm font-medium text-[var(--text)]" style={{ fontFamily: "var(--font-mono)" }}>
         {selectedLinks.length} selected
       </span>
 
-      <Button size="sm" variant="ghost" onClick={openAll} disabled={busy}>
+      <Button size="sm" variant="ghost" onClick={() => void openAll()} disabled={busy}>
         Open all
       </Button>
 

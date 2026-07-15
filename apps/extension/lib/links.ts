@@ -1,6 +1,3 @@
-import type { BurrowDB } from "@tabburrow/core";
-import { getDB, listLinks, moveLink } from "@tabburrow/core";
-
 /** The link grid's sort menu. "manual" is the drag-ordered `position` column; "name"/"date" are view-only sorts that never touch `position`. */
 export type SortMode = "manual" | "name" | "date";
 
@@ -73,26 +70,3 @@ export function sortLinksForView<T extends { title: string; createdAt: number }>
   return copy;
 }
 
-/**
- * Moves `linkId` into `targetCollectionId`, appended after whichever link is
- * currently last there (or first, if the target is empty yet). Looks the
- * target's order up fresh on every call — so a caller doing several of these
- * in a row (the grid's cross-collection drag, and the bulk bar's "Move to…")
- * MUST `await` each one sequentially rather than `Promise.all`-ing them, or
- * they'll all read the same "current last" and collide instead of chaining.
- *
- * Deliberately not `moveLink(linkId, targetCollectionId, null, null)`: that
- * pins every moved link to the exact same fractional-index midpoint
- * (`positionBetween(null, null)`), which only lands "at the end" for a
- * collection that's currently empty — for a populated one it can sort
- * *before* existing rows. Looking up the real last link avoids that.
- */
-export async function appendLinkToCollection(
-  linkId: string,
-  targetCollectionId: string,
-  db: BurrowDB = getDB(),
-): Promise<void> {
-  const targetLinks = await listLinks(targetCollectionId, db);
-  const lastId = targetLinks.length > 0 ? targetLinks[targetLinks.length - 1]!.id : null;
-  await moveLink(linkId, targetCollectionId, lastId, null, db);
-}
