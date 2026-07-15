@@ -132,7 +132,7 @@
     "id": "T12",
     "title": "Sessions \u2014 snapshots and crash restore",
     "phase": 1,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "Manual snapshot captures every open window/tab; restore recreates them in new windows (pinned preserved)",
       "Auto snapshots appear at 5-minute marks; never more than 10 autos kept",
