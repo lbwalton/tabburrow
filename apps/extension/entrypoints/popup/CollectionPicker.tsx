@@ -7,8 +7,22 @@ import { sortByRecentlyUpdated, filterCollectionsByName } from "../../lib/collec
 export interface CollectionPickerProps {
   collections: Collection[];
   onSelect: (collection: Collection) => void;
+  /** Creates the collection AND resolves the picker with it (App owns the continuation). */
   onCreate: (name: string) => Promise<Collection>;
   onCancel: () => void;
+  /**
+   * True while a selection/creation is resolving (the reducer's `resolving`
+   * flag). Gates every row and the create submit so a rapid second click
+   * can't retarget or double-fire the save.
+   */
+  busy: boolean;
+}
+
+/** Repo errors are developer-shaped ("createCollection: name must not be empty") — remap to friendly UI copy. */
+function friendlyCreateError(err: unknown): string {
+  const message = err instanceof Error ? err.message : "";
+  if (message.includes("must not be empty")) return "Give your collection a name.";
+  return message || "Could not create collection.";
 }
 
 /**
@@ -18,41 +32,44 @@ export interface CollectionPickerProps {
  * input, autofocused, with no search box and no "+ New collection…" click
  * required (first-run state).
  */
-export function CollectionPicker({ collections, onSelect, onCreate, onCancel }: CollectionPickerProps) {
+export function CollectionPicker({ collections, onSelect, onCreate, onCancel, busy }: CollectionPickerProps) {
   const isEmpty = collections.length === 0;
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(isEmpty);
   const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const newNameRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const ordered = useMemo(() => sortByRecentlyUpdated(collections), [collections]);
   const filtered = useMemo(() => filterCollectionsByName(ordered, query), [ordered, query]);
 
+  // Keyboard flow must be continuous: something inside the picker receives
+  // focus the moment it opens (the SaveBar it replaced has unmounted, so
+  // without this, focus would drop to <body>). Create mode focuses the name
+  // input; list mode focuses the search input.
   useEffect(() => {
     if (creating) newNameRef.current?.focus();
+    else searchRef.current?.focus();
   }, [creating]);
 
   async function handleCreate() {
+    if (busy) return;
     setError(null);
-    setBusy(true);
     try {
-      const created = await onCreate(newName);
+      await onCreate(newName);
+      // Success resolves the picker (App dispatches PICKER_RESOLVED and
+      // unmounts it); this write is a harmless no-op when that has happened.
       setNewName("");
-      setCreating(isEmpty); // stay expanded if the list is still empty after creating
-      onSelect(created);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create collection.");
-    } finally {
-      setBusy(false);
+      setError(friendlyCreateError(err));
     }
   }
 
   function handleContainerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
       event.stopPropagation();
-      onCancel();
+      onCancel(); // the reducer ignores ESCAPE while resolving
     }
   }
 
@@ -65,13 +82,14 @@ export function CollectionPicker({ collections, onSelect, onCreate, onCancel }: 
         >
           {isEmpty ? "Name your first collection" : "Save to…"}
         </h2>
-        <Button size="sm" variant="ghost" onClick={onCancel}>
+        <Button size="sm" variant="ghost" onClick={onCancel} disabled={busy}>
           Cancel
         </Button>
       </div>
 
       {!isEmpty ? (
         <Input
+          ref={searchRef}
           type="text"
           placeholder="Search collections…"
           value={query}
@@ -84,7 +102,10 @@ export function CollectionPicker({ collections, onSelect, onCreate, onCancel }: 
         {!isEmpty && !creating ? (
           <button
             type="button"
-            onClick={() => setCreating(true)}
+            onClick={() => {
+              if (!busy) setCreating(true);
+            }}
+            aria-disabled={busy || undefined}
             className="flex items-center gap-2 rounded-[var(--radius-card)] px-3 py-2 text-left text-sm font-medium text-[var(--accent)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           >
             + New collection…
@@ -133,7 +154,10 @@ export function CollectionPicker({ collections, onSelect, onCreate, onCancel }: 
           <button
             key={collection.id}
             type="button"
-            onClick={() => onSelect(collection)}
+            onClick={() => {
+              if (!busy) onSelect(collection); // App's reducer guard is the backstop
+            }}
+            aria-disabled={busy || undefined}
             className="flex items-center gap-2 rounded-[var(--radius-card)] px-3 py-2 text-left text-sm text-[var(--text)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           >
             <span

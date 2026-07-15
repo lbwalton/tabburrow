@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { Collection, TabInfo } from "@tabburrow/core";
 import { createCollection, getDB, getMeta, listCollections, saveTabs, setMeta } from "@tabburrow/core";
 import { Button, Kbd } from "@tabburrow/ui";
 import { closeTabsByUrl, faviconFor, getAllTabs, getCurrentTab, getHighlightedTabs } from "../../lib/tabs";
 import { initialPopupState, popupReducer } from "../../lib/popupState";
-import type { SaveAction } from "../../lib/popupState";
+import type { PopupState, SaveAction } from "../../lib/popupState";
 import { SaveBar } from "./SaveBar";
 import { CollectionPicker } from "./CollectionPicker";
 import { RecentList } from "./RecentList";
@@ -67,6 +67,20 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [state.view]);
 
+  // Focus restoration: leaving the picker back to idle (Escape or a
+  // resolved selection) must put keyboard focus back on the "Change" target
+  // button that opened it, so the keyboard-only flow stays continuous
+  // (Tab to Change -> Enter -> picker -> Escape -> back on Change).
+  const changeTargetRef = useRef<HTMLButtonElement>(null);
+  const prevViewRef = useRef<PopupState["view"]>(state.view);
+  useEffect(() => {
+    const prevView = prevViewRef.current;
+    prevViewRef.current = state.view;
+    if (prevView === "picker" && state.view === "idle") {
+      changeTargetRef.current?.focus();
+    }
+  }, [state.view]);
+
   // useLiveQuery resolves asynchronously (starts `undefined`); until its
   // first emission lands, `target` below can't be trusted — without this,
   // a warm popup (valid lastUsedCollectionId) could momentarily look cold
@@ -117,16 +131,42 @@ export function App() {
     }
   }
 
-  async function handlePickerSelect(collection: Collection) {
-    const pendingAction = state.view === "picker" ? state.pendingAction : null;
+  /** Shared tail of both picker resolutions: remember the target, close the picker, fire any pending save. */
+  async function resolvePickerWith(collection: Collection, pendingAction: SaveAction | null) {
     setTargetId(collection.id);
     await setMeta(LAST_USED_KEY, collection.id, db);
     dispatch({ type: "PICKER_RESOLVED" });
     if (pendingAction) void performSave(pendingAction, collection);
   }
 
+  async function handlePickerSelect(collection: Collection) {
+    // Double-select guard: the first click sets `resolving`; App re-renders
+    // before the next click is processed (React discrete-event flushing), so
+    // a rapid second click on a DIFFERENT row hits this guard and is ignored
+    // instead of firing performSave twice into two collections.
+    if (state.view !== "picker" || state.resolving !== null) return;
+    const pendingAction = state.pendingAction;
+    dispatch({ type: "PICKER_SELECT", collectionId: collection.id });
+    await resolvePickerWith(collection, pendingAction);
+  }
+
   async function handlePickerCreate(name: string): Promise<Collection> {
-    return createCollection(name, undefined, db);
+    // Same guard for the create path (CollectionPicker also gates on `busy`).
+    if (state.view !== "picker" || state.resolving !== null) {
+      throw new Error("Another choice is already being saved.");
+    }
+    const pendingAction = state.pendingAction;
+    dispatch({ type: "PICKER_CREATE_START" });
+    let created: Collection;
+    try {
+      created = await createCollection(name, undefined, db);
+    } catch (err) {
+      // Clear the resolving flag so the user can fix the name and retry.
+      dispatch({ type: "PICKER_CREATE_FAILED" });
+      throw err;
+    }
+    await resolvePickerWith(created, pendingAction);
+    return created;
   }
 
   async function handleCloseSavedTabs() {
@@ -194,6 +234,7 @@ export function App() {
           onSelect={(c) => void handlePickerSelect(c)}
           onCreate={handlePickerCreate}
           onCancel={() => dispatch({ type: "ESCAPE" })}
+          busy={state.resolving !== null}
         />
       ) : (
         <>
@@ -212,6 +253,7 @@ export function App() {
               <span className="text-[var(--text)]">{target ? target.name : "Choose a collection"}</span>
             </span>
             <Button
+              ref={changeTargetRef}
               size="sm"
               variant="ghost"
               onClick={() => dispatch({ type: "CHANGE_TARGET_CLICK" })}
@@ -234,8 +276,13 @@ export function App() {
         <span className="flex items-center gap-1 text-xs text-[var(--text-2)]">
           <Kbd>Enter</Kbd>
           <span>save</span>
-          <Kbd>Esc</Kbd>
-          <span>back</span>
+          {/* Esc only does anything while the picker is open — only advertise it then. */}
+          {state.view === "picker" ? (
+            <>
+              <Kbd>Esc</Kbd>
+              <span>back</span>
+            </>
+          ) : null}
         </span>
       </footer>
     </div>
