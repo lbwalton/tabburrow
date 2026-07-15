@@ -1,4 +1,9 @@
 @import "tailwindcss";
+/* Tailwind v4 auto-detects sources from the project root it resolves, which
+   misses the component files one directory up from this CSS entry. Register
+   the package source explicitly or none of the components' utility classes
+   (bg-[var(--surface)] etc.) are generated. */
+@source "../src";
 @import "../src/tokens.css";
 
 body {
