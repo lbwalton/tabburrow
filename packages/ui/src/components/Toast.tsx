@@ -1,3 +1,9 @@
+"use client";
+// Uses hooks (useEffect/useRef), so Next.js App Router Server Component
+// consumers need this directive or the whole @tabburrow/ui barrel fails to
+// compile when imported anywhere in a server module graph. No-op for the
+// Vite-based extension build.
+
 import { useEffect, useRef } from "react";
 import { cx } from "../lib/cx";
 

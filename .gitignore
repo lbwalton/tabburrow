@@ -8,6 +8,7 @@ dist/
 .env.*
 !.env.example
 *.local
+*.tsbuildinfo
 .DS_Store
 supabase/.temp/
 .superpowers/

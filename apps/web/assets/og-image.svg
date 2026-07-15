@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <!-- Static OG/Twitter card source. Rasterized to public/og-image.png by
+       scripts/make-og-image.mjs (sharp/librsvg doesn't reliably load the
+       woff2 brand fonts, so text here uses a bold system sans-serif
+       fallback — acceptable for a static social-share asset). Colors are
+       the brand tokens' hex values used verbatim, same convention as
+       apps/extension/assets/icon.svg. -->
+  <rect width="1200" height="630" fill="#16241E" />
+
+  <!-- Faint oversized arch, pure atmosphere -->
+  <path
+    d="M -60,650 L -60,430 A 420,420 0 0 1 780,430 L 780,650"
+    fill="none"
+    stroke="#0E1813"
+    stroke-width="60"
+    opacity="0.6"
+  />
+
+  <!-- Burrow arch mark, scaled + translated from the 128x128 source -->
+  <g transform="translate(120,175) scale(2.2)">
+    <path
+      fill-rule="evenodd"
+      clip-rule="evenodd"
+      fill="#F97316"
+      d="M24,112 L24,64 A40,40 0 0 1 104,64 L104,112 Z M40,112 L40,80 A24,24 0 0 1 88,80 L88,112 Z"
+    />
+    <rect x="12" y="116" width="104" height="10" rx="5" fill="#D9A441" />
+  </g>
+
+  <text
+    x="450"
+    y="330"
+    font-family="Arial, Helvetica, sans-serif"
+    font-weight="700"
+    font-size="92"
+    fill="#EEE8D9"
+  >TabBurrow</text>
+
+  <rect x="452" y="360" width="120" height="8" rx="4" fill="#F97316" />
+
+  <text
+    x="450"
+    y="420"
+    font-family="Arial, Helvetica, sans-serif"
+    font-weight="400"
+    font-size="34"
+    fill="#B9C3BB"
+  >Your tabs deserve a burrow.</text>
+
+  <text
+    x="450"
+    y="470"
+    font-family="Arial, Helvetica, sans-serif"
+    font-weight="400"
+    font-size="26"
+    fill="#B9C3BB"
+  >Open-source, local-first tab manager for Chrome.</text>
+</svg>

@@ -4,9 +4,13 @@ packages:
 
 # esbuild: widely-used bundler, native binary postinstall (needed by vite's
 # transform pipeline). spawn-sync: small child-process helper pulled in
-# transitively. Both are common, low-risk postinstall scripts — approved.
+# transitively. sharp: image processing lib with a prebuilt-binary
+# postinstall, already used by apps/extension/scripts/make-icons.mjs and
+# now apps/web/scripts/make-og-image.mjs. All three are common, low-risk
+# postinstall scripts — approved.
 allowBuilds:
   esbuild: true
+  sharp: true
   spawn-sync: true
 
 # wxt@0.20.27's own vite-node pick (naturally resolved to vite-node@6.0.0,

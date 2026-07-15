@@ -1,0 +1,49 @@
+@import "tailwindcss";
+/* Tailwind v4 needs an explicit @source to pick up @tabburrow/ui's
+   Tailwind arbitrary-value classes (bg-[var(--surface)] etc.) since they
+   live outside this app's own source tree. Path is relative to this file:
+   app/globals.css -> ../node_modules is apps/web/node_modules, where pnpm
+   symlinks @tabburrow/ui. See packages/ui/README.md. */
+@source "../node_modules/@tabburrow/ui/src";
+@import "@tabburrow/ui/tokens.css";
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-ground);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 1rem;
+  z-index: 100;
+  background: var(--accent);
+  color: var(--btn-fg);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-card);
+  font-family: var(--font-body);
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

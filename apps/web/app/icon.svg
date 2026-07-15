@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Browser-tab favicon: same burrow-arch mark as apps/extension/assets/icon.svg (Next's
+       app/icon.svg convention auto-generates the favicon + metadata icon links). -->
+  <path
+    fill-rule="evenodd"
+    clip-rule="evenodd"
+    fill="#F97316"
+    d="M24,112 L24,64 A40,40 0 0 1 104,64 L104,112 Z M40,112 L40,80 A24,24 0 0 1 88,80 L88,112 Z"
+  />
+  <rect x="12" y="116" width="104" height="10" rx="5" fill="#D9A441" />
+</svg>
