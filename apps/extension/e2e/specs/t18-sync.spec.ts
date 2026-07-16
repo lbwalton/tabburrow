@@ -8,6 +8,7 @@ import {
   fetchCollectionsForUser,
   fetchLinksForUser,
   findAdminUserByEmail,
+  insertCloudCollection,
   setUserPlan,
 } from "../admin";
 import { seedCollectionsAndLinks, seedPosition } from "../seed";
@@ -135,6 +136,49 @@ test("PRO round-trip: an edit on device A appears on device B via Sync now; a de
     await expect(dashA.getByRole("listbox", { name: "Links" }).getByRole("option")).toHaveCount(0);
     await finalScreenshot(dashA, "t18-pro-round-trip-delete-not-resurrected");
 
+    // --- Opposite direction (fix pass 1): create on A, sync to B, DELETE on
+    // A, sync both — the delete must not resurrect on B either. Same
+    // tombstone+LWW mechanics, but exercised with the deleting device being
+    // the one that ALSO created the row (the B->A phase above deleted on the
+    // device that had only pulled it). ---
+    const httpPage2 = await a.context.newPage();
+    await httpPage2.goto(testServer.pageUrl("Sync Test Page 2"));
+    await httpPage2.bringToFront();
+    const popupA2 = await popupPage(a.context, a.extensionId);
+    await httpPage2.bringToFront();
+    // Warm save: "Sync Test Collection" is the remembered target from the
+    // cold save above, so one click saves straight into it.
+    await popupA2.getByRole("button", { name: "Save this tab" }).click();
+    await expect(popupA2.getByText(/Saved 1 tab to Sync Test Collection/)).toBeVisible();
+    await popupA2.close();
+
+    await dashA.goto(`chrome-extension://${a.extensionId}/dashboard.html#/settings`);
+    await syncNow(dashA);
+    await dashB.goto(`chrome-extension://${b.extensionId}/dashboard.html#/settings`);
+    await syncNow(dashB);
+    await dashB.goto(`chrome-extension://${b.extensionId}/dashboard.html#/c/${collectionId}`);
+    await expect(dashB.getByRole("listbox", { name: "Links" }).getByRole("option")).toHaveCount(1);
+
+    // Delete on A this time.
+    await dashA.goto(`chrome-extension://${a.extensionId}/dashboard.html#/c/${collectionId}`);
+    const gridA = dashA.getByRole("listbox", { name: "Links" });
+    await gridA
+      .getByRole("option")
+      .first()
+      .click({ modifiers: [process.platform === "darwin" ? "Meta" : "Control"] });
+    const bulkBarA = dashA.getByRole("toolbar", { name: "Bulk actions" });
+    await expect(bulkBarA).toBeVisible();
+    await bulkBarA.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(gridA.getByRole("option")).toHaveCount(0);
+
+    await dashA.goto(`chrome-extension://${a.extensionId}/dashboard.html#/settings`);
+    await syncNow(dashA);
+    await dashB.goto(`chrome-extension://${b.extensionId}/dashboard.html#/settings`);
+    await syncNow(dashB);
+
+    await dashB.goto(`chrome-extension://${b.extensionId}/dashboard.html#/c/${collectionId}`);
+    await expect(dashB.getByRole("listbox", { name: "Links" }).getByRole("option")).toHaveCount(0);
+
     await deleteCloudDataForUser(SUPABASE_URL, SERVICE_ROLE_KEY!, authUser!.id);
     await deleteAdminUser(SUPABASE_URL, SERVICE_ROLE_KEY!, authUser!.id);
   } finally {
@@ -260,6 +304,179 @@ test("FREE gate: a signed-in free user's sync attempts never touch collections/l
 
     const authUser = await findAdminUserByEmail(SUPABASE_URL, SERVICE_ROLE_KEY!, email);
     if (authUser) await deleteAdminUser(SUPABASE_URL, SERVICE_ROLE_KEY!, authUser.id);
+  } finally {
+    await closeExtensionContext(context, userDataDir);
+  }
+});
+
+test("account switch: after A synced on this device, B is blocked from syncing; Replace local data wipes A's rows and pulls B's cloud", async () => {
+  test.skip(!SERVICE_ROLE_KEY, "SUPABASE_SERVICE_ROLE_KEY not set in root .env — see SELF_HOSTING.md");
+  test.setTimeout(120_000);
+
+  const emailA = "e2e-switch-a@tabburrow.test";
+  const emailB = "e2e-switch-b@tabburrow.test";
+  await cleanupStrayUser(emailA);
+  await cleanupStrayUser(emailB);
+
+  const { context, extensionId, userDataDir } = await launchExtensionContext();
+  try {
+    const dash = await context.newPage();
+    await dash.goto(`chrome-extension://${extensionId}/dashboard.html`);
+
+    // Local data that will be "A's" once A syncs (initialUpload adopts it).
+    const aCollectionId = randomUUID();
+    await seedCollectionsAndLinks(
+      dash,
+      [{ id: aCollectionId, name: "Switch A Collection", position: seedPosition(0) }],
+      [
+        {
+          id: randomUUID(),
+          collectionId: aCollectionId,
+          url: "https://example.com/switch-a",
+          title: "Switch A Link",
+          position: seedPosition(0),
+        },
+      ],
+    );
+    await dash.reload();
+
+    // --- A signs in, goes PRO, syncs — arming lastSyncUserId with A. ---
+    await dash.goto(`chrome-extension://${extensionId}/dashboard.html#/settings`);
+    await signInWithEmailOtp(dash, emailA);
+    const userA = await findAdminUserByEmail(SUPABASE_URL, SERVICE_ROLE_KEY!, emailA);
+    expect(userA).toBeTruthy();
+    await setUserPlan(SUPABASE_URL, SERVICE_ROLE_KEY!, userA!.id, "pro");
+    await dash.getByRole("button", { name: "Refresh status" }).click();
+    await expect(dash.getByText("PRO", { exact: true })).toBeVisible();
+    await syncNow(dash);
+    const aCloud = await fetchCollectionsForUser(SUPABASE_URL, SERVICE_ROLE_KEY!, userA!.id);
+    expect(aCloud).toContainEqual(expect.objectContaining({ id: aCollectionId, name: "Switch A Collection" }));
+
+    // --- A signs out (local data stays, by design), B signs in + PRO. ---
+    await dash.getByRole("button", { name: "Sign out" }).click();
+    await expect(dash.getByRole("button", { name: "Send code" })).toBeVisible();
+    await signInWithEmailOtp(dash, emailB);
+    const userB = await findAdminUserByEmail(SUPABASE_URL, SERVICE_ROLE_KEY!, emailB);
+    expect(userB).toBeTruthy();
+    await setUserPlan(SUPABASE_URL, SERVICE_ROLE_KEY!, userB!.id, "pro");
+    await dash.getByRole("button", { name: "Refresh status" }).click();
+    await expect(dash.getByText("PRO", { exact: true })).toBeVisible();
+
+    // --- Blocked state renders instead of a Sync button. ---
+    await expect(dash.getByText(/previously synced with a different account/)).toBeVisible();
+    await expect(dash.getByRole("button", { name: "Sync now" })).toHaveCount(0);
+    await expect(dash.getByRole("button", { name: "Replace local data" })).toBeVisible();
+    await finalScreenshot(dash, "t18-account-switch-blocked");
+
+    // --- The leak check: NONE of A's rows may have been uploaded as B. ---
+    const bCloudBefore = await fetchCollectionsForUser(SUPABASE_URL, SERVICE_ROLE_KEY!, userB!.id);
+    expect(bCloudBefore).toEqual([]);
+
+    // Seed a collection that exists ONLY in B's cloud, so the post-replace
+    // full pull has something real to land (and proves the cursor reset —
+    // a stale cursor inherited from A's sync would be NEWER than this row's
+    // updated_at and would skip it).
+    const bCollectionId = randomUUID();
+    const now = Date.now();
+    await insertCloudCollection(SUPABASE_URL, SERVICE_ROLE_KEY!, {
+      id: bCollectionId,
+      user_id: userB!.id,
+      name: "Switch B Cloud Collection",
+      position: seedPosition(0),
+      created_at: now,
+      updated_at: now,
+    });
+
+    // --- Resolve: Replace local data. ---
+    await dash.getByRole("button", { name: "Replace local data" }).click();
+
+    const rail = dash.getByRole("navigation", { name: "Collections" });
+    await expect(rail.getByText("Switch B Cloud Collection")).toBeVisible();
+    await expect(rail.getByText("Switch A Collection")).toHaveCount(0);
+    // Blocked banner resolved; the normal Sync row is back.
+    await expect(dash.getByRole("button", { name: "Sync now" })).toBeVisible();
+    await expect(dash.getByText(/previously synced with a different account/)).toHaveCount(0);
+    await finalScreenshot(dash, "t18-account-switch-replaced");
+
+    // B's cloud still contains only B's own row — the wipe ran BEFORE any
+    // sync for B, so A's rows never went up under B's user_id.
+    const bCloudAfter = await fetchCollectionsForUser(SUPABASE_URL, SERVICE_ROLE_KEY!, userB!.id);
+    expect(bCloudAfter).toEqual([
+      expect.objectContaining({ id: bCollectionId, name: "Switch B Cloud Collection" }),
+    ]);
+
+    await deleteCloudDataForUser(SUPABASE_URL, SERVICE_ROLE_KEY!, userA!.id);
+    await deleteAdminUser(SUPABASE_URL, SERVICE_ROLE_KEY!, userA!.id);
+    await deleteCloudDataForUser(SUPABASE_URL, SERVICE_ROLE_KEY!, userB!.id);
+    await deleteAdminUser(SUPABASE_URL, SERVICE_ROLE_KEY!, userB!.id);
+  } finally {
+    await closeExtensionContext(context, userDataDir);
+  }
+});
+
+test("offline: mutations queue silently while offline and drain to the cloud once back online", async () => {
+  test.skip(!SERVICE_ROLE_KEY, "SUPABASE_SERVICE_ROLE_KEY not set in root .env — see SELF_HOSTING.md");
+  test.setTimeout(90_000);
+
+  const email = "e2e-sync-offline@tabburrow.test";
+  await cleanupStrayUser(email);
+
+  const { context, extensionId, userDataDir } = await launchExtensionContext();
+  try {
+    const dash = await context.newPage();
+    await dash.goto(`chrome-extension://${extensionId}/dashboard.html#/settings`);
+    await signInWithEmailOtp(dash, email);
+    const authUser = await findAdminUserByEmail(SUPABASE_URL, SERVICE_ROLE_KEY!, email);
+    expect(authUser).toBeTruthy();
+    await setUserPlan(SUPABASE_URL, SERVICE_ROLE_KEY!, authUser!.id, "pro");
+    await dash.getByRole("button", { name: "Refresh status" }).click();
+    await expect(dash.getByText("PRO", { exact: true })).toBeVisible();
+
+    // Baseline sync while online (bootstraps the device).
+    await syncNow(dash);
+    await expect(dash.getByText(/Synced/)).toBeVisible();
+
+    // --- Go offline. A manual sync now FAILS visibly (error + Retry)... ---
+    await context.setOffline(true);
+    await syncNow(dash);
+    await expect(dash.getByText("Sync error")).toBeVisible();
+    await expect(dash.getByRole("button", { name: "Retry" })).toBeVisible();
+
+    // --- ...but a local mutation queues SILENTLY: creating a collection
+    // works instantly with no error UI of its own (local-first: the write is
+    // IndexedDB-only; only its pendingOp waits for the network). ---
+    await dash.getByRole("button", { name: "+ New collection" }).click();
+    await dash.getByPlaceholder("Collection name").fill("Offline Collection");
+    await dash.getByRole("button", { name: "Create", exact: true }).click();
+    const rail = dash.getByRole("navigation", { name: "Collections" });
+    await expect(rail.getByText("Offline Collection")).toBeVisible();
+    // No mutation-failure toast (the dashboard's error toasts all start
+    // "Could(n't) ..." — absence = the create didn't surface any error).
+    await expect(dash.getByText(/Could(n't| not)/)).toHaveCount(0);
+
+    // Not in the cloud yet: the op is queued, nothing more. (Best-effort
+    // assert — see the FREE-gate test's note on service-worker fetches; the
+    // SW's own background sync isn't subject to setOffline, but no nudge
+    // fires from a rail create until its debounce alarm, and this check runs
+    // immediately.)
+    const cloudWhileOffline = await fetchCollectionsForUser(SUPABASE_URL, SERVICE_ROLE_KEY!, authUser!.id);
+    expect(cloudWhileOffline.find((c) => c.name === "Offline Collection")).toBeUndefined();
+
+    // --- Back online: Sync now drains the queue. (Creating a collection
+    // navigated the dashboard to the new collection's route — go back to
+    // Settings, where the Sync section lives.) ---
+    await context.setOffline(false);
+    await dash.goto(`chrome-extension://${extensionId}/dashboard.html#/settings`);
+    await syncNow(dash);
+    await expect(dash.getByText(/Synced/)).toBeVisible();
+    await expect(dash.getByText("Sync error")).toHaveCount(0);
+
+    const cloudAfter = await fetchCollectionsForUser(SUPABASE_URL, SERVICE_ROLE_KEY!, authUser!.id);
+    expect(cloudAfter).toContainEqual(expect.objectContaining({ name: "Offline Collection", deleted_at: null }));
+    await finalScreenshot(dash, "t18-offline-drain");
+
+    await deleteCloudDataForUser(SUPABASE_URL, SERVICE_ROLE_KEY!, authUser!.id);
+    await deleteAdminUser(SUPABASE_URL, SERVICE_ROLE_KEY!, authUser!.id);
   } finally {
     await closeExtensionContext(context, userDataDir);
   }

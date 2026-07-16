@@ -14,7 +14,14 @@ import {
 import type { AuthUser, Plan } from "../../lib/auth";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { relativeTime } from "../../lib/sessions";
-import { LAST_SYNC_AT_META_KEY, LAST_SYNC_ERROR_META_KEY, requestSync } from "../../lib/sync-controller";
+import {
+  accountSwitchDecision,
+  LAST_SYNC_AT_META_KEY,
+  LAST_SYNC_ERROR_META_KEY,
+  LAST_SYNC_USER_ID_META_KEY,
+  replaceLocalDataWithCloud,
+  requestSync,
+} from "../../lib/sync-controller";
 
 type FormStage = "email" | "code";
 
@@ -52,6 +59,14 @@ export function AccountPane() {
   const lastSyncAtRaw = useLiveQuery(() => getMeta(LAST_SYNC_AT_META_KEY, db), [db]);
   const lastSyncErrorRaw = useLiveQuery(() => getMeta(LAST_SYNC_ERROR_META_KEY, db), [db]);
   const hasSyncError = !!lastSyncErrorRaw;
+  // The account-switch guard's UI half (see lib/sync-controller.ts's
+  // accountSwitchDecision docstring for the data-leak scenario this blocks).
+  // `undefined` while the live query's first emission is pending — the Sync
+  // section renders nothing in that window rather than flashing a "Sync now"
+  // button that a blocked device shouldn't have.
+  const lastSyncUserIdRaw = useLiveQuery(() => getMeta(LAST_SYNC_USER_ID_META_KEY, db), [db]);
+  const [replacing, setReplacing] = useState(false);
+  const [switchDismissed, setSwitchDismissed] = useState(false);
 
   const [stage, setStage] = useState<FormStage>("email");
   const [email, setEmail] = useState("");
@@ -178,6 +193,21 @@ export function AccountPane() {
     }
   }
 
+  async function handleReplaceLocalData() {
+    if (replacing || !user) return;
+    setReplacing(true);
+    try {
+      // Wipes local collections/links/pendingOps (NOT sessions), resets the
+      // cursor, and runs a full pull of this account's cloud data — the
+      // explicit user resolution of the "blocked" account-switch state.
+      // The blocked banner disappears on its own once this lands:
+      // lastSyncUserId's live query re-emits with the current user's id.
+      await replaceLocalDataWithCloud(user.id, db);
+    } finally {
+      setReplacing(false);
+    }
+  }
+
   if (!configured) {
     return (
       <Card variant="surface" arch={false} className="flex flex-col gap-2">
@@ -210,21 +240,64 @@ export function AccountPane() {
         {plan === "pro" ? (
           <div className="flex flex-col gap-2 border-t border-[var(--line)] pt-3">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-2)]">Sync</h3>
-            {hasSyncError ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-[var(--accent-2)]">Sync error</span>
-                <Button type="button" variant="ghost" size="sm" onClick={() => void handleSyncNow()} disabled={syncing}>
-                  Retry
-                </Button>
-              </div>
-            ) : lastSyncAtRaw ? (
-              <p className="text-xs text-[var(--text-2)]">Synced {relativeTime(Number(lastSyncAtRaw), Date.now())}</p>
-            ) : null}
-            <div>
-              <Button type="button" variant="primary" size="sm" onClick={() => void handleSyncNow()} disabled={syncing}>
-                Sync now
-              </Button>
-            </div>
+            {lastSyncUserIdRaw === undefined ? null : accountSwitchDecision({
+                lastSyncUserId: lastSyncUserIdRaw,
+                currentUserId: user.id,
+              }) === "blocked" ? (
+              switchDismissed ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-xs text-[var(--text-2)]">Sync is paused for this account.</p>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setSwitchDismissed(false)}>
+                    Resolve
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs text-[var(--text-2)]">
+                    This device previously synced with a different account. To sync with this account, replace this
+                    device&apos;s local data with this account&apos;s cloud data.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      onClick={() => void handleReplaceLocalData()}
+                      disabled={replacing}
+                    >
+                      Replace local data
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSwitchDismissed(true)}
+                      disabled={replacing}
+                    >
+                      Not now
+                    </Button>
+                  </div>
+                </div>
+              )
+            ) : (
+              <>
+                {hasSyncError ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-[var(--accent-2)]">Sync error</span>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => void handleSyncNow()} disabled={syncing}>
+                      Retry
+                    </Button>
+                  </div>
+                ) : lastSyncAtRaw ? (
+                  <p className="text-xs text-[var(--text-2)]">Synced {relativeTime(Number(lastSyncAtRaw), Date.now())}</p>
+                ) : null}
+                <div>
+                  <Button type="button" variant="primary" size="sm" onClick={() => void handleSyncNow()} disabled={syncing}>
+                    Sync now
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <p className="border-t border-[var(--line)] pt-3 text-xs text-[var(--text-2)]">

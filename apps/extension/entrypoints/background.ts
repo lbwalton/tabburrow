@@ -37,7 +37,12 @@ const AUTO_SNAPSHOT_KEEP = 10;
 const SYNC_INTERVAL_ALARM = "sync-interval";
 const SYNC_DEBOUNCE_ALARM = "sync-debounce";
 const SYNC_INTERVAL_MINUTES = 1;
-const SYNC_DEBOUNCE_MINUTES = 0.05; // 3s
+// 3s nominal — but Chrome only honors sub-30s alarm delays for UNPACKED
+// extensions (dev/e2e). In a packed store build this is clamped to ~30s
+// (Chrome logs a warning and rounds up). Acceptable: the debounce is purely
+// a latency optimization, and the 1-minute "sync-interval" alarm above is
+// the correctness backstop either way — a clamped nudge still beats it.
+const SYNC_DEBOUNCE_MINUTES = 0.05;
 
 // Constructed once at the service worker's top level (not lazily inside a
 // handler) so supabase-js's autoRefreshToken timer starts keeping any

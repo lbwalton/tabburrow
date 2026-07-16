@@ -120,6 +120,26 @@ export async function fetchLinksForUser(
 }
 
 /**
+ * T18 fix pass: inserts a cloud `collections` row directly as the admin —
+ * used by the account-switch e2e test to seed data that exists ONLY in user
+ * B's cloud (never touched this device), so "Replace local data" has
+ * something real to pull. Timestamps are epoch-ms bigints per the schema
+ * (supabase/migrations/0001_init.sql).
+ */
+export async function insertCloudCollection(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  row: { id: string; user_id: string; name: string; position: string; created_at: number; updated_at: number },
+): Promise<void> {
+  const res = await fetch(`${supabaseUrl}/rest/v1/collections`, {
+    method: "POST",
+    headers: { ...adminHeaders(serviceRoleKey), Prefer: "return=minimal" },
+    body: JSON.stringify(row),
+  });
+  if (!res.ok) throw new Error(`collections insert failed: ${res.status} ${await res.text()}`);
+}
+
+/**
  * Deletes every `collections`/`links` row for a test user — cloud-side
  * cleanup so a t18-sync.spec.ts run never leaves rows behind for a NEXT run
  * to trip over (links first: no FK from links -> collections in the schema,
