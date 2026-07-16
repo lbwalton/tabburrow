@@ -169,7 +169,7 @@
     "id": "T15",
     "title": "Supabase schema + RLS",
     "phase": 2,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "supabase db lint passes with no errors",
       "RLS policies enforce user data isolation",
