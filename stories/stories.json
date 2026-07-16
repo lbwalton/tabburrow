@@ -267,7 +267,7 @@
     "id": "T23",
     "title": "Stripe billing",
     "phase": 3,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "Free user clicks Upgrade \u2192 completes 4242 checkout \u2192 webhook flips plan \u2192 extension shows PRO and sync starts",
       "Cancel in portal \u2192 webhook downgrades \u2192 extension shows free state with graceful banner; local data untouched",
