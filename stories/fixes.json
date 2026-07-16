@@ -16,5 +16,23 @@
     "expected": "Deterministic pass in full-suite runs",
     "actual": "Intermittent timing flake under suite load",
     "status": "open"
+  },
+  {
+    "id": "F3",
+    "found": "T23b",
+    "area": "e2e/ai",
+    "repro": "t20 @live-ai e2e test fails independent of T23b changes (was passing during T20). Pre-existing regression or transient Anthropic API issue \u2014 needs diagnosis: check function logs, key validity, quota state, API status.",
+    "expected": "@live-ai happy path passes when env is configured",
+    "actual": "Fails as of T23b full-suite runs",
+    "status": "open"
+  },
+  {
+    "id": "F4",
+    "found": "T23b",
+    "area": "e2e",
+    "repro": "Under parallel system load, t14 popup-speed perf test and t18 PRO round-trip intermittently fail full-suite runs; both pass in isolation. F2 tracked the t18 case; popup-perf now also implicated.",
+    "expected": "Deterministic full-suite runs",
+    "actual": "Load-sensitive flakes",
+    "status": "open"
   }
 ]
