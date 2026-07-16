@@ -6,7 +6,8 @@
     "repro": "View /pricing in paper-card context or share page: Button variant=ghost renders near-invisible on Card variant=paper (dark-shell ghost tokens do not flip on paper surfaces). T21b fixed its own instance locally in OpenAllButton; PricingToggle.tsx instance remains.",
     "expected": "Ghost buttons legible on paper surfaces",
     "actual": "Invisible/illegible ghost button on kraft background",
-    "status": "open"
+    "status": "fixed",
+    "resolution": "Card variant=\"paper\" now stamps data-surface=\"paper\" (Card.tsx) and tokens.css scopes --text/--text-2/--line/--line-hi/--surface-hover under [data-surface=\"paper\"], so every nested component (Button ghost, LinkButton ghost) inherits paper-legible tokens automatically; OpenAllButton's local workaround was reverted to plain Button variant=\"ghost\" to prove it."
   },
   {
     "id": "F2",
@@ -15,16 +16,18 @@
     "repro": "Full-suite runs intermittently fail the t18 PRO round-trip e2e test; passes in isolation. Seen twice across T20 implementation + fix runs.",
     "expected": "Deterministic pass in full-suite runs",
     "actual": "Intermittent timing flake under suite load",
-    "status": "open"
+    "status": "fixed",
+    "resolution": "Reproduced under load (--repeat-each 3 + parallel pnpm -r test/busy-loop CPU churn, load avg 17.8 on 8 cores): device B's post-sync grid assertion saw 0 links for the full 8s expect-timeout even though device A's push had already resolved, because \"Sync now\" re-enabling only proves requestSync() resolved, not that it ran a real push+pull (it resolves identically on a silent {skipped:...} gate outcome, and can race the background service worker's own periodic sync-interval alarm on the same device). Added a syncUntil() helper that retries the whole sync-click+verify cycle up to 3x with backoff instead of trusting one click; applied at all 4 sync-then-verify checkpoints; test.setTimeout raised 120s->180s for retry headroom. Reproduced clean on 3/3 repeat-each runs under the same load after the fix."
   },
   {
     "id": "F3",
     "found": "T23b",
     "area": "e2e/ai",
-    "repro": "t20 @live-ai e2e test fails independent of T23b changes (was passing during T20). Pre-existing regression or transient Anthropic API issue \u2014 needs diagnosis: check function logs, key validity, quota state, API status.",
+    "repro": "t20 @live-ai e2e test fails independent of T23b changes (was passing during T20). Pre-existing regression or transient Anthropic API issue — needs diagnosis: check function logs, key validity, quota state, API status.",
     "expected": "@live-ai happy path passes when env is configured",
     "actual": "Fails as of T23b full-suite runs",
-    "status": "open"
+    "status": "fixed",
+    "resolution": "Root cause confirmed via docker exec ... env on supabase_edge_runtime_tabburrow: ANTHROPIC_API_KEY was entirely absent from the running edge-runtime container's process env (Anthropic API itself verified healthy via a direct curl: 200 OK on the same model). supabase start has no --env-file flag and config.toml's [edge_runtime.secrets] block was commented out, so the container's Stripe/SITE_URL vars (present) came from a one-off T23a-era `supabase functions serve --env-file <stripe-only-temp-file>` session whose container was left running after ANTHROPIC_API_KEY was omitted from that file; ai-organize/index.ts's `if (!anthropicKey) return errorResponse(\"upstream\",502)` guard fired on every call, surfaced by the extension as \"AI organize is temporarily unavailable.\" Fixed by populating config.toml's [edge_runtime.secrets] with env(ANTHROPIC_API_KEY) plus the existing Stripe/SITE_URL vars, then `supabase stop && supabase start` (with root .env sourced into the shell) so a single `supabase start` is now the drift-proof source of truth. Verified: docker exec env now shows ANTHROPIC_API_KEY; @live-ai and @live-stripe both pass."
   },
   {
     "id": "F4",
@@ -33,6 +36,7 @@
     "repro": "Under parallel system load, t14 popup-speed perf test and t18 PRO round-trip intermittently fail full-suite runs; both pass in isolation. F2 tracked the t18 case; popup-perf now also implicated.",
     "expected": "Deterministic full-suite runs",
     "actual": "Load-sensitive flakes",
-    "status": "open"
+    "status": "fixed",
+    "resolution": "Reproduced under the same CPU-churn load as F2: a single popup open measured 877ms against the 800ms budget (single-sample measurement, noise-sensitive under contention). Changed the test to open the popup 3x and gate on the MEDIAN elapsed time instead of one sample — absorbs one contended outlier without hiding a genuine regression, which would push all three samples up together. Budget left at 800ms (still catches a real ~3x regression). Reproduced clean on 3/3 repeat-each runs under load after the fix; t18's fix (syncUntil) is shared/covered under F2."
   }
 ]
