@@ -376,8 +376,41 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
-# [edge_runtime.secrets]
-# secret_key = "env(SECRET_VALUE)"
+# F3 fix (stories/fixes.json, T26 burn-down): `supabase start` boots the
+# edge-runtime container as part of its own Docker stack — it does NOT
+# read the repo's root `.env`, and (unlike `supabase functions serve`) it
+# has no `--env-file` flag at all (verified: `supabase start --help` lists
+# no such flag). The ONLY way `supabase start`'s edge-runtime gets a secret
+# is this block, each entry pulling one var from the CLI process's OWN
+# shell environment via `env(VAR_NAME)` — so `.env` still needs sourcing
+# into the shell before `supabase start` (`set -a; source .env; set +a`),
+# but that's now the ONE place required, not a per-function ad-hoc list.
+#
+# Root cause this fixes: with this block empty/commented (as it shipped),
+# `ai-organize` silently 502'd ("upstream") on every call — confirmed via
+# `docker exec supabase_edge_runtime_tabburrow env`, which showed
+# STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET/STRIPE_PRICE_*/SITE_URL present
+# (from a prior ad-hoc `supabase functions serve --env-file <temp-stripe-
+# only-file>` run during T23a's billing work, per SELF_HOSTING.md §3's
+# documented local-testing pattern, whose container the CLI left running
+# after that session ended) but ANTHROPIC_API_KEY entirely absent, because
+# that temp file only had the Stripe/SITE_URL vars T23a needed. `ai-organize/
+# index.ts`'s `Deno.env.get("ANTHROPIC_API_KEY")` guard returned `undefined`
+# and short-circuited to `errorResponse("upstream", 502)` BEFORE ever
+# calling Anthropic — which `lib/ai.ts` (apps/extension) surfaces as "AI
+# organize is temporarily unavailable. Try again in a moment.", exactly
+# what t20-ai-organize.spec.ts's `@live-ai` test saw. Declaring every
+# secret every function needs here, in the repo, makes a plain `supabase
+# start` (after sourcing `.env`) the one-step, drift-proof source of truth
+# instead of relying on whoever last ran `functions serve --env-file` to
+# have included everything.
+[edge_runtime.secrets]
+ANTHROPIC_API_KEY = "env(ANTHROPIC_API_KEY)"
+STRIPE_SECRET_KEY = "env(STRIPE_SECRET_KEY)"
+STRIPE_WEBHOOK_SECRET = "env(STRIPE_WEBHOOK_SECRET)"
+STRIPE_PRICE_MONTHLY = "env(STRIPE_PRICE_MONTHLY)"
+STRIPE_PRICE_YEARLY = "env(STRIPE_PRICE_YEARLY)"
+SITE_URL = "env(SITE_URL)"
 
 # T19: the edge-runtime gateway's own pre-invocation JWT check rejects
 # this project's asymmetric (ES256) access tokens even though they're
