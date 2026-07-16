@@ -12,9 +12,10 @@ export interface RouteState {
    * True for exactly the render(s) right after a hash carrying
    * "?organize=1" was seen — App.tsx watches this to auto-open
    * AiOrganizeDialog (T20's popup "Save all + organize" deep link). The
-   * flag is stripped from `location.hash` in an effect below the moment
-   * it's observed, which flips this back to `false` on the very next
-   * hashchange — so it's a one-shot pulse, not a sticky "organize mode".
+   * flag is stripped from the URL in an effect below the moment it's
+   * observed (via history.replaceState — see the effect's docstring), which
+   * flips this back to `false` on the very next render — so it's a one-shot
+   * pulse, not a sticky "organize mode".
    */
   organizeRequested: boolean;
 }
@@ -40,17 +41,26 @@ export function useRoute(collectionIds: string[]): RouteState {
 
   const organizeRequested = useMemo(() => hasOrganizeFlag(hash), [hash]);
 
-  // Rewrites location.hash to drop the flag once observed. This fires a new
-  // hashchange (setHash to the same, now-clean value `parsed` below already
-  // computed from) — harmless, and what makes organizeRequested a one-shot
-  // pulse rather than something a reload could replay.
+  // Rewrites the URL to drop the flag once observed — via
+  // history.replaceState, NOT a `location.hash` assignment (fix pass 1):
+  // assigning the hash PUSHES a new history entry, which would leave the
+  // flagged URL one Back-press away and make the browser's Back button
+  // re-trigger the auto-open. Replacing the current entry removes the
+  // flagged URL from history entirely, so neither reload NOR Back can
+  // replay it. replaceState fires no hashchange event, so the local state
+  // is updated by hand (`setHash`) to flip `organizeRequested` back off.
   useEffect(() => {
-    if (organizeRequested) {
-      window.location.hash = stripOrganizeFlag(hash);
-    }
+    if (!organizeRequested) return;
+    const stripped = stripOrganizeFlag(hash);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${window.location.search}${stripped}`,
+    );
+    setHash(stripped);
     // Only re-run when the flag itself newly appears — `hash` is read fresh
-    // from the closure, not depended on, so this doesn't fire again once
-    // hash changes as a RESULT of the strip below.
+    // from the closure on that render, not depended on, so the setHash above
+    // (which changes `hash` to the stripped value) doesn't re-fire this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organizeRequested]);
 

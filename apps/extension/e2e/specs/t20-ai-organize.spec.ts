@@ -290,3 +290,41 @@ test("signed-out state: the menu item shows a lock glyph and the dialog offers S
   await expect(dialog.getByRole("button", { name: "Sign in" })).toBeVisible();
   await finalScreenshot(dash, "t20-ai-organize-signed-out");
 });
+
+test("?organize=1 deep link auto-opens the dialog once; the flag is stripped via replaceState so Back never re-triggers it", async ({
+  cleanDashboard,
+  extensionId,
+}) => {
+  const dash = cleanDashboard;
+
+  const collectionId = randomUUID();
+  await seedCollectionsAndLinks(
+    dash,
+    [{ id: collectionId, name: "Back Button Test", position: seedPosition(0) }],
+    [{ id: randomUUID(), collectionId, url: "https://example.com/1", title: "Example One", position: seedPosition(0) }],
+  );
+  await dash.reload();
+
+  // Deep-link with the organize flag — the dashboard must auto-open the
+  // dialog (in the signed-out state here; WHICH state it opens in is
+  // irrelevant to the history mechanics under test).
+  await dash.goto(`chrome-extension://${extensionId}/dashboard.html#/c/${collectionId}?organize=1`);
+  const dialog = dash.getByRole("dialog", { name: "Organize with AI" });
+  await expect(dialog).toBeVisible();
+
+  // The flag is consumed and stripped from the URL...
+  await expect.poll(() => dash.evaluate(() => window.location.hash)).not.toContain("organize=1");
+
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toHaveCount(0);
+
+  // ...and because the strip REPLACED the flagged history entry (rather
+  // than pushing a stripped entry on top of it), Back does not land on the
+  // flagged URL and must NOT re-open the dialog.
+  await dash.goBack();
+  const hashAfterBack = await dash.evaluate(() => window.location.hash);
+  expect(hashAfterBack).not.toContain("organize=1");
+  // Give a wrongly-retriggered auto-open time to fire before asserting it didn't.
+  await dash.waitForTimeout(500);
+  await expect(dialog).toHaveCount(0);
+});

@@ -11,6 +11,7 @@ import {
   getAiUsesThisMonth,
   organizeLinks,
   planApplication,
+  summarizeApply,
 } from "../../lib/ai";
 import type { AiApplyResult, AiPlan } from "../../lib/ai";
 import { getPlan, onAuthChange } from "../../lib/auth";
@@ -40,6 +41,8 @@ type View =
   | { kind: "loading" }
   | { kind: "preview"; plan: AiPlan; included: boolean[] }
   | { kind: "applying" }
+  /** Some writes committed, some did not (see `summarizeApply`) — an honest report; NEVER the stale preview again. */
+  | { kind: "partial"; message: string }
   | { kind: "error"; message: string };
 
 type ResolvedView =
@@ -186,20 +189,27 @@ export function AiOrganizeDialog({
     const acceptedGroups = acceptedPlan.groups.filter((_, i) => included[i]);
     if (acceptedGroups.length === 0) return; // Apply is disabled at 0 selected — defensive no-op.
     setView({ kind: "applying" });
+    let result: AiApplyResult;
     try {
-      const result: AiApplyResult = await applyPlan({ groups: acceptedGroups, tags: acceptedPlan.tags }, collectionId, db);
-      const collectionsTouched = result.collectionsCreated + result.collectionsMerged;
-      onOrganized(
-        `Organized ${result.linksMoved} link${result.linksMoved === 1 ? "" : "s"} into ${collectionsTouched} collection${
-          collectionsTouched === 1 ? "" : "s"
-        }`,
-      );
-      onClose();
+      result = await applyPlan({ groups: acceptedGroups, tags: acceptedPlan.tags }, collectionId, db);
     } catch (err) {
+      // applyPlan only throws when NOTHING was attempted (its initial db
+      // read failed — see its resilience contract); every per-item failure
+      // is contained into the returned counts instead. So the preview is
+      // still an accurate picture of local state here, and ONLY here, which
+      // is what makes returning to it honest.
       onError(err instanceof Error ? err.message : "Could not apply the AI organize plan.");
-      // Back to the exact same preview, nothing lost — Apply failing must
-      // not silently discard the reviewed plan.
       setView({ kind: "preview", plan: acceptedPlan, included });
+      return;
+    }
+    const summary = summarizeApply(result);
+    if (summary.kind === "full") {
+      onOrganized(summary.message);
+      onClose();
+    } else {
+      // At least one write committed but not everything landed — an honest
+      // partial report. NEVER back to the preview: it now lies about state.
+      setView({ kind: "partial", message: summary.message });
     }
   }
 
@@ -378,6 +388,19 @@ export function AiOrganizeDialog({
     case "applying":
       body = <p className="py-2 text-sm text-[var(--text-2)]">Applying...</p>;
       footer = null;
+      break;
+
+    case "partial":
+      body = <p className="text-sm text-[var(--text)]">{resolved.message}</p>;
+      footer = (
+        // Dismiss only — deliberately NO retry and NO way back to the
+        // preview: after a partial apply the preview would lie about local
+        // state, and re-running the same plan would double-create the
+        // groups that DID land.
+        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+          Dismiss
+        </Button>
+      );
       break;
 
     case "error":

@@ -4,12 +4,16 @@ import {
   AiOrganizeError,
   aiOrganizeCtaAvailable,
   aiUsesMetaKey,
+  FALLBACK_GROUP_NAME,
   mergeTags,
   parseOrganizeResponse,
   planApplication,
+  resolveGroupNames,
+  summarizeApply,
   toWireLinks,
   yearMonthKey,
 } from "./ai";
+import type { AiApplyResult } from "./ai";
 import type { Link } from "@tabburrow/core";
 
 function makeLink(overrides: Partial<Link> = {}): Link {
@@ -76,6 +80,103 @@ describe("parseOrganizeResponse", () => {
       groups: [{ name: "G", emoji: "🗂️", linkIds: ["a"] }],
       tags: { a: ["ok"] },
     });
+  });
+});
+
+describe("resolveGroupNames", () => {
+  it("passes non-empty names through untouched", () => {
+    expect(resolveGroupNames(["Dev Docs", "Recipes"])).toEqual(["Dev Docs", "Recipes"]);
+  });
+
+  it("replaces an empty name with the deterministic fallback", () => {
+    expect(resolveGroupNames(["Dev Docs", ""])).toEqual(["Dev Docs", FALLBACK_GROUP_NAME]);
+  });
+
+  it("treats whitespace-only names as empty", () => {
+    expect(resolveGroupNames(["   "])).toEqual([FALLBACK_GROUP_NAME]);
+  });
+
+  it("disambiguates multiple fallbacks with a numeric suffix", () => {
+    expect(resolveGroupNames(["", "Real", ""])).toEqual([
+      FALLBACK_GROUP_NAME,
+      "Real",
+      `${FALLBACK_GROUP_NAME} 2`,
+    ]);
+  });
+
+  it("skips a fallback that collides case-insensitively with a real AI name", () => {
+    expect(resolveGroupNames(["organized LINKS", ""])).toEqual(["organized LINKS", `${FALLBACK_GROUP_NAME} 2`]);
+  });
+
+  it("handles an empty input", () => {
+    expect(resolveGroupNames([])).toEqual([]);
+  });
+});
+
+describe("parseOrganizeResponse (fallback naming integration)", () => {
+  it("a group arriving with an empty/missing name gets the fallback, never an empty string", () => {
+    const raw = {
+      groups: [
+        { name: "", emoji: "🗂️", link_ids: ["a"] },
+        { emoji: "🗂️", link_ids: ["b"] }, // name missing entirely
+      ],
+      tags: {},
+    };
+    const plan = parseOrganizeResponse(raw);
+    expect(plan.groups.map((g) => g.name)).toEqual([FALLBACK_GROUP_NAME, `${FALLBACK_GROUP_NAME} 2`]);
+  });
+});
+
+function makeApplyResult(overrides: Partial<AiApplyResult> = {}): AiApplyResult {
+  return {
+    createdCollections: 0,
+    mergedCollections: 0,
+    movedLinks: 0,
+    taggedLinks: 0,
+    skippedLinks: 0,
+    failedGroups: 0,
+    ...overrides,
+  };
+}
+
+describe("summarizeApply", () => {
+  it("full success: every link moved, no failed groups", () => {
+    const summary = summarizeApply(makeApplyResult({ createdCollections: 2, mergedCollections: 1, movedLinks: 9 }));
+    expect(summary.kind).toBe("full");
+    expect(summary.message).toBe("Organized 9 links into 3 collections");
+  });
+
+  it("full success singularizes correctly", () => {
+    const summary = summarizeApply(makeApplyResult({ createdCollections: 1, movedLinks: 1 }));
+    expect(summary.message).toBe("Organized 1 link into 1 collection");
+  });
+
+  it("skipped links produce an honest partial message", () => {
+    const summary = summarizeApply(makeApplyResult({ createdCollections: 2, movedLinks: 7, skippedLinks: 2 }));
+    expect(summary.kind).toBe("partial");
+    expect(summary.message).toBe(
+      "Organized 7 of 9 links into 2 collections. 2 links could not be moved (they may have been deleted).",
+    );
+  });
+
+  it("a single skipped link singularizes", () => {
+    const summary = summarizeApply(makeApplyResult({ createdCollections: 1, movedLinks: 3, skippedLinks: 1 }));
+    expect(summary.message).toContain("1 link could not be moved");
+  });
+
+  it("a failed group with no members is still partial and says so", () => {
+    const summary = summarizeApply(makeApplyResult({ createdCollections: 1, movedLinks: 4, failedGroups: 1 }));
+    expect(summary.kind).toBe("partial");
+    expect(summary.message).toContain("1 group could not be created");
+    expect(summary.message).not.toContain("could not be moved");
+  });
+
+  it("total failure is still a partial report, never a crash", () => {
+    const summary = summarizeApply(makeApplyResult({ skippedLinks: 3, failedGroups: 1 }));
+    expect(summary.kind).toBe("partial");
+    expect(summary.message).toContain("Organized 0 of 3 links into 0 collections");
+    expect(summary.message).toContain("3 links could not be moved");
+    expect(summary.message).toContain("1 group could not be created");
   });
 });
 

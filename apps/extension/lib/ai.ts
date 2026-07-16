@@ -69,13 +69,41 @@ export function toWireLinks(links: Link[]): WireLink[] {
   return links.map((l) => ({ id: l.id, title: l.title, url: l.url }));
 }
 
+/** The deterministic name an AI group with an empty/whitespace name falls back to (see `resolveGroupNames`) — validated at the PARSE layer so `applyPlan`'s `createCollection` can never late-fail on an empty name. */
+export const FALLBACK_GROUP_NAME = "Organized links";
+
+/**
+ * Pure: replaces empty/whitespace-only group names with a deterministic
+ * fallback ("Organized links", then "Organized links 2", ...) that never
+ * collides case-insensitively with any other name in the same plan —
+ * validation up front, instead of letting `createCollection`'s empty-name
+ * throw surface as a late mid-apply failure. Non-empty names pass through
+ * untouched.
+ */
+export function resolveGroupNames(names: string[]): string[] {
+  const taken = new Set(names.map((n) => n.trim().toLowerCase()).filter((n) => n.length > 0));
+  let counter = 0;
+  return names.map((name) => {
+    if (name.trim().length > 0) return name;
+    let candidate: string;
+    do {
+      counter++;
+      candidate = counter === 1 ? FALLBACK_GROUP_NAME : `${FALLBACK_GROUP_NAME} ${counter}`;
+    } while (taken.has(candidate.toLowerCase()));
+    taken.add(candidate.toLowerCase());
+    return candidate;
+  });
+}
+
 /**
  * Pure: the function's raw JSON body (`{groups:[{name,emoji,link_ids}],
  * tags}}`) -> `AiPlan`'s camelCase shape. The function already hard-validates
  * this shape server-side (supabase/functions/ai-organize/index.ts's
  * `validateAndNormalize`) — this parse is a defensive second line, not the
  * primary guard, so a malformed body maps to a generic "upstream" error
- * rather than a crash.
+ * rather than a crash, and an empty group name gets `resolveGroupNames`'s
+ * deterministic fallback rather than surviving to fail `createCollection`
+ * mid-apply.
  */
 export function parseOrganizeResponse(raw: unknown): AiPlan {
   if (raw === null || typeof raw !== "object") {
@@ -94,6 +122,8 @@ export function parseOrganizeResponse(raw: unknown): AiPlan {
     const linkIds = Array.isArray(obj.link_ids) ? obj.link_ids.filter((id): id is string => typeof id === "string") : [];
     return { name, emoji, linkIds };
   });
+  const resolvedNames = resolveGroupNames(groups.map((g) => g.name));
+  for (let i = 0; i < groups.length; i++) groups[i]!.name = resolvedNames[i]!;
 
   const tags: Record<string, string[]> = {};
   for (const [id, value] of Object.entries(tagsRaw as Record<string, unknown>)) {
@@ -281,10 +311,59 @@ export function mergeTags(existing: string[], incoming: string[]): string[] {
 // ---------------------------------------------------------------------------
 
 export interface AiApplyResult {
-  groupsApplied: number;
-  collectionsCreated: number;
-  collectionsMerged: number;
-  linksMoved: number;
+  /** Collections newly created for "create" groups whose creation succeeded. */
+  createdCollections: number;
+  /** Groups resolved to an existing live collection (`planApplication`'s "merge" action). */
+  mergedCollections: number;
+  /** Links whose `moveLinkToEnd` committed. */
+  movedLinks: number;
+  /** Moved links whose AI tags also committed (always <= movedLinks). */
+  taggedLinks: number;
+  /** Links that could NOT be moved: their own move failed (e.g. deleted between preview and apply), or their whole group's creation failed. */
+  skippedLinks: number;
+  /** Groups whose collection creation failed — their members are all counted in `skippedLinks`. */
+  failedGroups: number;
+}
+
+export type ApplySummaryKind = "full" | "partial";
+
+export interface ApplySummary {
+  kind: ApplySummaryKind;
+  /** Toast-ready (full) or partial-view-ready (partial) copy — the dialog renders this verbatim so the summary logic stays pure and TDD'd. */
+  message: string;
+}
+
+/**
+ * Pure: folds an `AiApplyResult` into the ONE user-facing outcome the
+ * dialog shows — "full" (everything the user accepted landed; toast + close)
+ * or "partial" (an honest report of what did and didn't land; the dialog
+ * must NEVER return to the now-stale preview once any write committed).
+ */
+export function summarizeApply(result: AiApplyResult): ApplySummary {
+  const collections = result.createdCollections + result.mergedCollections;
+  const collectionsLabel = `${collections} collection${collections === 1 ? "" : "s"}`;
+
+  if (result.skippedLinks === 0 && result.failedGroups === 0) {
+    return {
+      kind: "full",
+      message: `Organized ${result.movedLinks} link${result.movedLinks === 1 ? "" : "s"} into ${collectionsLabel}`,
+    };
+  }
+
+  const total = result.movedLinks + result.skippedLinks;
+  const problems: string[] = [];
+  if (result.skippedLinks > 0) {
+    problems.push(
+      `${result.skippedLinks} link${result.skippedLinks === 1 ? "" : "s"} could not be moved (they may have been deleted)`,
+    );
+  }
+  if (result.failedGroups > 0) {
+    problems.push(`${result.failedGroups} group${result.failedGroups === 1 ? "" : "s"} could not be created`);
+  }
+  return {
+    kind: "partial",
+    message: `Organized ${result.movedLinks} of ${total} links into ${collectionsLabel}. ${problems.join(". ")}.`,
+  };
 }
 
 /**
@@ -299,6 +378,20 @@ export interface AiApplyResult {
  * tombstones/pendingOps/sync hold exactly like any other change — nothing
  * here bypasses that.
  *
+ * Resilience contract (fix pass 1): the preview is a SNAPSHOT, and local
+ * data can legitimately change under it (a link deleted from another tab
+ * between preview and apply). So every per-item write is individually
+ * contained — a failed link move SKIPS that link (counted in
+ * `skippedLinks`), a failed group creation SKIPS that group's members
+ * (counted in `failedGroups` + `skippedLinks`) — and the loop always runs
+ * to completion. This function only ever throws when NOTHING was attempted
+ * yet (the initial `listCollections` read failing, i.e. the db itself is
+ * unavailable); once any write has been attempted, the outcome is always a
+ * returned `AiApplyResult`, never an exception that would leave committed
+ * writes unreported. The caller turns the result into "full" vs. an honest
+ * "partial" report via `summarizeApply` — never a reset back to the
+ * now-stale preview.
+ *
  * `sourceCollectionId` is accepted for interface symmetry with the
  * dialog's "before -> after" preview (every member link's "before" label
  * is this one collection, since AiOrganizeDialog only ever organizes a
@@ -307,10 +400,12 @@ export interface AiApplyResult {
  * which collection they started in, which is the entire point of
  * cross-collection AI regrouping.
  *
- * Fires exactly ONE `sendSyncNudge()` after every write below has
- * committed — not per group, not per link — same "keep the touch surface
- * small" precedent lib/sync-nudge.ts's docstring sets for every other
- * multi-write App-level action (drag-reorder, bulk delete, ...).
+ * Fires exactly ONE `sendSyncNudge()` (finally-style) whenever AT LEAST
+ * ONE write committed — not per group, not per link, and NOT when nothing
+ * landed — same "keep the touch surface small" precedent
+ * lib/sync-nudge.ts's docstring sets for every other multi-write App-level
+ * action (drag-reorder, bulk delete, ...). A partial failure must still
+ * nudge: the writes that DID commit need syncing like any others.
  */
 export async function applyPlan(
   plan: AiPlan,
@@ -319,47 +414,80 @@ export async function applyPlan(
 ): Promise<AiApplyResult> {
   void sourceCollectionId; // see docstring: kept for interface symmetry, not branched on.
 
+  // Deliberately OUTSIDE the containment below: if this read throws, no
+  // write was attempted and the caller may safely keep showing the preview.
   const existing: Collection[] = await listCollections(db);
   const actions = planApplication(plan.groups, existing);
 
-  let collectionsCreated = 0;
-  let collectionsMerged = 0;
-  let linksMoved = 0;
+  const result: AiApplyResult = {
+    createdCollections: 0,
+    mergedCollections: 0,
+    movedLinks: 0,
+    taggedLinks: 0,
+    skippedLinks: 0,
+    failedGroups: 0,
+  };
+  let writesCommitted = 0;
 
-  for (let i = 0; i < plan.groups.length; i++) {
-    const group = plan.groups[i]!;
-    const action = actions[i]!;
+  try {
+    for (let i = 0; i < plan.groups.length; i++) {
+      const group = plan.groups[i]!;
+      const action = actions[i]!;
 
-    let targetId: string;
-    if (action.kind === "create") {
-      const created = await createCollection(group.name, undefined, db);
-      targetId = created.id;
-      collectionsCreated++;
-    } else {
-      targetId = action.targetCollectionId;
-      collectionsMerged++;
-    }
+      let targetId: string;
+      if (action.kind === "create") {
+        try {
+          const created = await createCollection(group.name, undefined, db);
+          targetId = created.id;
+          result.createdCollections++;
+          writesCommitted++;
+        } catch {
+          result.failedGroups++;
+          result.skippedLinks += group.linkIds.length;
+          continue;
+        }
+      } else {
+        targetId = action.targetCollectionId;
+        result.mergedCollections++;
+      }
 
-    for (const linkId of group.linkIds) {
-      await moveLinkToEnd(linkId, targetId, db);
-      linksMoved++;
+      for (const linkId of group.linkIds) {
+        try {
+          await moveLinkToEnd(linkId, targetId, db);
+          result.movedLinks++;
+          writesCommitted++;
+        } catch {
+          // The reviewer's exact scenario: a link deleted between preview
+          // and apply. Skip it, keep going — never abort the loop.
+          result.skippedLinks++;
+          continue;
+        }
 
-      const incomingTags = plan.tags[linkId] ?? [];
-      if (incomingTags.length > 0) {
-        // Direct table read (not a repo export — there is no getLink(id)
-        // today): same "lib code may read db.* directly for a lookup no
-        // repo exposes yet" precedent lib/dashboard.ts's
-        // countLinksByCollection already sets.
-        const row = await db.links.get(linkId);
-        if (row) {
-          const merged = mergeTags(row.tags, incomingTags);
-          await updateLink(linkId, { tags: merged }, db);
+        const incomingTags = plan.tags[linkId] ?? [];
+        if (incomingTags.length === 0) continue;
+        try {
+          // Direct table read (not a repo export — there is no getLink(id)
+          // today): same "lib code may read db.* directly for a lookup no
+          // repo exposes yet" precedent lib/dashboard.ts's
+          // countLinksByCollection already sets.
+          const row = await db.links.get(linkId);
+          if (row) {
+            await updateLink(linkId, { tags: mergeTags(row.tags, incomingTags) }, db);
+            result.taggedLinks++;
+            writesCommitted++;
+          }
+        } catch {
+          // Moved but not tagged — the move already counted and must not be
+          // misreported over a cosmetic tag failure.
         }
       }
     }
+  } finally {
+    // Finally-style so no future code path can commit writes and skip the
+    // nudge; with full per-item containment above the loop never throws
+    // today, so this is belt-and-suspenders, not load-bearing control flow.
+    if (writesCommitted > 0) sendSyncNudge();
   }
 
-  sendSyncNudge();
-
-  return { groupsApplied: plan.groups.length, collectionsCreated, collectionsMerged, linksMoved };
+  return result;
 }
