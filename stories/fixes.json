@@ -7,5 +7,14 @@
     "expected": "Ghost buttons legible on paper surfaces",
     "actual": "Invisible/illegible ghost button on kraft background",
     "status": "open"
+  },
+  {
+    "id": "F2",
+    "found": "T20-fix",
+    "area": "e2e",
+    "repro": "Full-suite runs intermittently fail the t18 PRO round-trip e2e test; passes in isolation. Seen twice across T20 implementation + fix runs.",
+    "expected": "Deterministic pass in full-suite runs",
+    "actual": "Intermittent timing flake under suite load",
+    "status": "open"
   }
 ]
