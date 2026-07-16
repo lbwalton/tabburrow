@@ -289,7 +289,7 @@
     "id": "T25",
     "title": "Open-source polish + store assets",
     "phase": 3,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "CI green on a test push",
       "a stranger could self-host from SELF_HOSTING.md alone (dry-run the steps against a scratch Supabase project)",
