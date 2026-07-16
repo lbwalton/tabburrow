@@ -1,5 +1,5 @@
 import { test, expect } from "../fixtures";
-import { finalScreenshot, keyboardDragUntil } from "../test-utils";
+import { finalScreenshot, keyboardDragUntil, mouseDragUntil } from "../test-utils";
 
 /**
  * T8 — Dashboard shell: rail + collections. Acceptance (stories/stories.json):
@@ -67,6 +67,11 @@ test("create, inline rename, recolor, and delete-with-undo all work and persist 
     dashboard.getByRole("navigation", { name: "Collections" }).getByText("Weekly Groceries", { exact: true }),
   ).toBeVisible();
 
+  // Representative screenshot captured HERE — created + renamed + recolored
+  // collection visible, post-reload — not after the delete below (which
+  // would just duplicate t08-empty-state).
+  await finalScreenshot(dashboard, "t08-rail-crud");
+
   // --- Delete with undo ---
   await dashboard.getByRole("button", { name: "Delete collection" }).click();
   await expect(dashboard.getByText('"Weekly Groceries" deleted')).toBeVisible();
@@ -83,7 +88,6 @@ test("create, inline rename, recolor, and delete-with-undo all work and persist 
 
   void extensionId;
   void context;
-  await finalScreenshot(dashboard, "t08-rail-crud");
 });
 
 test("dragging a collection to a new rail position persists after reload (keyboard-drag path)", async ({
@@ -106,6 +110,38 @@ test("dragging a collection to a new rail position persists after reload (keyboa
   const draggedRow = rail.locator("li", { hasText: "Alpha" });
   const firstGrip = draggedRow.getByRole("button", { name: "Reorder collection" });
   await keyboardDragUntil(dashboard, firstGrip, "ArrowDown", async () => {
+    const names = await rail.locator("li").allTextContents();
+    expect(names[0]).toContain("Beta");
+    expect(names[1]).toContain("Alpha");
+  });
+
+  await dashboard.reload();
+  await expect(async () => {
+    const names = await rail.locator("li").allTextContents();
+    expect(names[0]).toContain("Beta");
+    expect(names[1]).toContain("Alpha");
+  }).toPass({ timeout: 5000 });
+});
+
+test("dragging a collection to a new rail position persists after reload (pointer-drag path)", async ({
+  cleanDashboard,
+}) => {
+  const dashboard = cleanDashboard;
+  await createCollection(dashboard, "Alpha");
+  await createCollection(dashboard, "Beta");
+  await createCollection(dashboard, "Gamma");
+
+  const rail = dashboard.getByRole("navigation", { name: "Collections" });
+  await expect(rail.locator("li")).toHaveCount(3);
+
+  // The real-user path: dnd-kit's PointerSensor (4px activation distance).
+  // A collection row's pointer drag activator is its grip button (⠿) —
+  // hover-revealed, but present in layout, so its bounding box is valid.
+  // Track rows by content, not index (positions are about to change).
+  const alphaRow = rail.locator("li", { hasText: "Alpha" });
+  const betaRow = rail.locator("li", { hasText: "Beta" });
+  const alphaGrip = alphaRow.getByRole("button", { name: "Reorder collection" });
+  await mouseDragUntil(dashboard, alphaGrip, betaRow, async () => {
     const names = await rail.locator("li").allTextContents();
     expect(names[0]).toContain("Beta");
     expect(names[1]).toContain("Alpha");

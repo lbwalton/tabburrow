@@ -1,6 +1,6 @@
 import { test, expect } from "../fixtures";
 import { seedCollectionsAndLinks, seedPosition } from "../seed";
-import { finalScreenshot, keyboardDragUntil } from "../test-utils";
+import { finalScreenshot, keyboardDragUntil, mouseDragUntil } from "../test-utils";
 
 /**
  * T9 — Link grid + drag and drop. Acceptance (stories/stories.json):
@@ -10,13 +10,12 @@ import { finalScreenshot, keyboardDragUntil } from "../test-utils";
  *   - Edit title/note/tags persists
  *   - Sort by name/date works; switching back to manual restores drag order
  *
- * Drag strategy: this file uses dnd-kit's KEYBOARD-drag path (grip focus +
- * Space/Arrow/Space) throughout, same as t08-rail.spec.ts, rather than
- * pointer-based mouse dragging. Honest attempt notes are in e2e/README.md —
- * pointer drag-and-drop across dnd-kit's PointerSensor was flaky under
- * Playwright's synthetic mouse events (activation-distance timing), while
- * the keyboard path is deterministic and dnd-kit explicitly supports it as
- * a first-class interaction, not just an a11y fallback.
+ * Drag strategy: BOTH dnd-kit input paths get coverage in this file —
+ * keyboard drags (grip focus + Space/Arrow/Space, `keyboardDragUntil`) and
+ * real pointer drags (`mouseDragUntil`: press, clear PointerSensor's 4px
+ * activation distance, stepped glide, hover settle, release — the path
+ * actual users take). Both helpers retry the full gesture on a miss; see
+ * e2e/README.md's dnd section and test-utils.ts's docstrings for why.
  */
 
 const COLLECTION_A = "col-a";
@@ -73,19 +72,80 @@ test("reordering within a collection (keyboard-drag) sticks after reload", async
   await finalScreenshot(dashboard, "t09-manual-reorder");
 });
 
+test("reordering within a collection (pointer-drag) sticks after reload", async ({
+  cleanDashboard,
+  extensionId,
+}) => {
+  const dashboard = cleanDashboard;
+  await seedTwoCollectionsWithLinks(dashboard);
+  // Raw-IndexedDB seed -> reload before asserting (see e2e/README.md).
+  await dashboard.reload();
+  await dashboard.goto(`chrome-extension://${extensionId}/dashboard.html#/c/${COLLECTION_A}`);
+
+  const grid = dashboard.getByRole("listbox", { name: "Links" });
+  await expect(grid.getByRole("option")).toHaveCount(3);
+
+  // The real-user path: dnd-kit's PointerSensor. A link card's pointer drag
+  // activator is the whole card body (see LinkCard.tsx's listeners split) —
+  // drag "Link One"'s body onto "Link Two"'s center to swap them. A drag
+  // that fails to activate degrades to a plain click (= opens the link as a
+  // background tab — harmless here; cleanDashboard closes extra tabs), and
+  // the helper retries the full gesture.
+  const cardOne = grid.getByRole("option", { name: /Link One/ });
+  const cardTwo = grid.getByRole("option", { name: /Link Two/ });
+  await mouseDragUntil(dashboard, cardOne, cardTwo, async () => {
+    const names = await grid.getByRole("option").allTextContents();
+    expect(names[0]).toContain("Link Two");
+    expect(names[1]).toContain("Link One");
+  });
+
+  await dashboard.reload();
+  await expect(async () => {
+    const names = await grid.getByRole("option").allTextContents();
+    expect(names[0]).toContain("Link Two");
+    expect(names[1]).toContain("Link One");
+  }).toPass({ timeout: 5000 });
+});
+
+test("dragging a card onto a rail collection row (pointer-drag) moves it there", async ({
+  cleanDashboard,
+  extensionId,
+}) => {
+  const dashboard = cleanDashboard;
+  await seedTwoCollectionsWithLinks(dashboard);
+  // Raw-IndexedDB seed -> reload before asserting (see e2e/README.md).
+  await dashboard.reload();
+  await dashboard.goto(`chrome-extension://${extensionId}/dashboard.html#/c/${COLLECTION_A}`);
+
+  const grid = dashboard.getByRole("listbox", { name: "Links" });
+  await expect(grid.getByRole("option")).toHaveCount(3);
+
+  // The cross-list gesture lib/dnd.ts's `move-link` operation exists for:
+  // a card dragged out of the grid and dropped on a rail CollectionRow.
+  // Only reachable via pointer (dnd-kit's keyboard sensor can't leave its
+  // own SortableContext) — this is the direct coverage of that drag; the
+  // "bulk Move to…" test below covers the same repo call through the menu.
+  const cardOne = grid.getByRole("option", { name: /Link One/ });
+  const railRowB = dashboard.getByRole("navigation", { name: "Collections" }).locator("li", { hasText: "Collection B" });
+  await mouseDragUntil(dashboard, cardOne, railRowB, async () => {
+    await expect(grid.getByRole("option")).toHaveCount(2, { timeout: 3000 });
+  });
+
+  await dashboard.goto(`chrome-extension://${extensionId}/dashboard.html#/c/${COLLECTION_B}`);
+  await expect(dashboard.getByRole("listbox", { name: "Links" }).getByRole("option", { name: /Link One/ })).toBeVisible();
+
+  // Sticks after reload, same bar as the reorder tests.
+  await dashboard.reload();
+  await expect(dashboard.getByRole("listbox", { name: "Links" }).getByRole("option", { name: /Link One/ })).toBeVisible();
+});
+
 test("moving a link card onto another rail collection (via bulk Move to) moves it", async ({
   cleanDashboard,
   extensionId,
 }) => {
-  // The dnd-kit "drop a card onto a rail row" gesture needs real pointer
-  // coordinates across two different drop-target types (a link's
-  // rectSortingStrategy grid and the rail's verticalListSortingStrategy) —
-  // dnd-kit's KEYBOARD sensor only reorders within ONE SortableContext at a
-  // time and has no keyboard equivalent for "move to a different list".
-  // That gesture is exercised via the equivalent, fully-supported bulk
-  // "Move to…" action instead (same underlying `moveLinkToEnd` repo call
-  // the drag handler uses — see lib/dnd.ts's `move-link` operation and
-  // BulkBar.tsx) — see e2e/README.md for the pointer-drag attempt notes.
+  // Menu-path coverage of the same `moveLinkToEnd` repo call the pointer
+  // drag above exercises directly (see lib/dnd.ts's `move-link` operation
+  // and BulkBar.tsx).
   const dashboard = cleanDashboard;
   await seedTwoCollectionsWithLinks(dashboard);
   // Seeding writes straight to IndexedDB via a raw connection, bypassing

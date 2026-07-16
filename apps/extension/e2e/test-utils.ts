@@ -80,6 +80,61 @@ export async function keyboardDragUntil(
     : new Error(`keyboardDragUntil: gesture did not take effect after ${attempts} attempts`);
 }
 
+/**
+ * Runs a real POINTER drag (the path actual users take, via dnd-kit's
+ * `PointerSensor`): press on `from`'s center, a small initial move to clear
+ * the sensor's 4px activation-distance threshold, a stepped glide to `to`'s
+ * center with a hover settle so dnd-kit's collision detection updates, then
+ * release. Retries the whole gesture if `verify` doesn't pass afterward, up
+ * to `attempts` times — same full-gesture-retry rationale as
+ * `keyboardDragUntil` above (synthetic-input timing under machine load, not
+ * a product bug: a drag that never cleared the activation threshold is a
+ * no-op — or at worst a plain click, which each caller's verify/reset
+ * accounts for — so re-running from scratch starts from a known state).
+ */
+export async function mouseDragUntil(
+  page: Page,
+  from: Locator,
+  to: Locator,
+  verify: () => Promise<void>,
+  attempts = 3,
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const fromBox = await from.boundingBox();
+    const toBox = await to.boundingBox();
+    if (!fromBox || !toBox) {
+      throw new Error("mouseDragUntil: source or target has no bounding box (hidden or detached)");
+    }
+    const startX = fromBox.x + fromBox.width / 2;
+    const startY = fromBox.y + fromBox.height / 2;
+    const endX = toBox.x + toBox.width / 2;
+    const endY = toBox.y + toBox.height / 2;
+
+    await page.mouse.move(startX, startY);
+    await page.waitForTimeout(50); // let hover-revealed affordances (grips) settle
+    await page.mouse.down();
+    // Clear PointerSensor's 4px activation distance with a deliberate small
+    // first move, then give the sensor a beat to flip into dragging state.
+    await page.mouse.move(startX + 10, startY + 10, { steps: 3 });
+    await page.waitForTimeout(100);
+    await page.mouse.move(endX, endY, { steps: 15 });
+    await page.waitForTimeout(150); // hover settle over the drop target
+    await page.mouse.up();
+
+    try {
+      await verify();
+      return;
+    } catch (err) {
+      lastError = err;
+      await page.waitForTimeout(300);
+    }
+  }
+  throw lastError instanceof Error
+    ? new Error(`mouseDragUntil: gesture did not take effect after ${attempts} attempts: ${lastError.message}`)
+    : new Error(`mouseDragUntil: gesture did not take effect after ${attempts} attempts`);
+}
+
 /** Collects console "error"-level messages logged while `run` executes. Empty array = clean. */
 export async function collectConsoleErrors(page: Page, run: () => Promise<void>): Promise<string[]> {
   const errors: string[] = [];

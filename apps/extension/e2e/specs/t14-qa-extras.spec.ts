@@ -61,12 +61,14 @@ test("popup DOMContentLoaded is fast in the harness (generous budget; real popup
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`, { waitUntil: "domcontentloaded" });
   const elapsed = Date.now() - start;
-  // Acceptance says "under 300ms" for the real toolbar popup; this harness
-  // measures a full Playwright page.goto() round-trip (navigation + CDP
-  // overhead) rather than a native popup open, so the budget here is
-  // deliberately generous (1500ms) — see the file docstring and
-  // e2e/README.md's perf-check notes.
-  expect(elapsed).toBeLessThan(1500);
+  // Acceptance says "under 300ms" for the real toolbar popup. This harness
+  // measures a full Playwright round-trip instead — context.newPage() (a
+  // whole new tab over CDP) + page.goto() navigation machinery — overhead a
+  // native popup open doesn't have, so a straight 300ms budget would fail
+  // on harness cost alone (observed locally: ~170-450ms total). 800ms keeps
+  // headroom for that overhead while still failing on any ~3x regression in
+  // the popup's actual load cost. See e2e/README.md's perf-check notes.
+  expect(elapsed).toBeLessThan(800);
   await popup.close();
 });
 

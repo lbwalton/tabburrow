@@ -91,23 +91,35 @@ highlight call, then get `goto()`'d into `popup.html` afterward.
 
 ## Drag-and-drop strategy
 
-Every reorder/move test in `t08-rail.spec.ts` and `t09-grid-dnd.spec.ts` uses
-dnd-kit's KEYBOARD-drag path — focus a row/card's grip handle, `Space` to
-pick up, `Arrow*` to move, `Space` to drop — rather than pointer-based mouse
-dragging. This was an honest, not a lazy, choice: pointer drag-and-drop
-across dnd-kit's `PointerSensor` (which gates pickup on a 4px activation
-distance) was flaky under Playwright's synthetic `mouse.move()` steps in
-manual verification — small timing/step-count differences from a real OS
-pointer meant sortable items sometimes didn't register the drag as started.
-dnd-kit's keyboard sensor is a first-class, fully-supported interaction (not
-just an a11y fallback), and using it gives deterministic, non-flaky
-coverage of the same underlying `resolveDragEnd`/`moveCollection`/`moveLink`
-logic a pointer drag would exercise. The one gesture keyboard-drag CANNOT
-reach — dropping a link card onto a different `SortableContext` (the rail)
-to MOVE it between collections — is covered instead through the equivalent,
-fully-supported bulk "Move to…" action (same underlying `moveLinkToEnd` repo
-call `lib/dnd.ts`'s `move-link` operation makes), in
-`t09-grid-dnd.spec.ts`.
+BOTH dnd-kit input paths are covered in `t08-rail.spec.ts` and
+`t09-grid-dnd.spec.ts`:
+
+- **Keyboard drags** (`keyboardDragUntil` in `test-utils.ts`): focus a
+  row/card's grip handle, `Space` to pick up, `Arrow*` to move, `Space` to
+  drop. dnd-kit's keyboard sensor is a first-class interaction, and this
+  path is the deterministic baseline for within-list reorders (rail
+  collections, grid links).
+- **Pointer drags** (`mouseDragUntil`): the path actual users take, via
+  dnd-kit's `PointerSensor` — press on the source's center, a small first
+  move to clear the sensor's 4px activation-distance threshold, a stepped
+  `mouse.move` glide to the target with a hover settle (so collision
+  detection updates), then release. Covers the rail-collection reorder, the
+  grid-link reorder, AND the one gesture keyboard-drag structurally cannot
+  reach: dropping a link card onto a rail `CollectionRow` (a different
+  `SortableContext`) to move it between collections — the direct exercise
+  of `lib/dnd.ts`'s `move-link` operation. The bulk "Move to…" menu test
+  covers the same underlying `moveLinkToEnd` repo call through the menu
+  path.
+
+Both helpers retry the FULL gesture (max 3 attempts, rethrow on exhaustion)
+if the verify step doesn't pass: dnd-kit's drag-start is async (React state
++ RAF-driven measurement) and can lose a race against synthetic input
+timing under machine load — observed directly across repeated full-suite
+runs. A pickup that never registered is a no-op (keyboard) or degrades to a
+plain click (pointer — on a link card that opens a background tab; the
+`cleanDashboard` fixture closes stray tabs), so re-running from scratch
+starts from a known state. This absorbs input-timing noise the way a human
+retrying a missed drag would; it does not loosen any assertion.
 
 ## Perf checks
 
@@ -115,12 +127,15 @@ call `lib/dnd.ts`'s `move-link` operation makes), in
   UI to create 200 links would itself dominate the test's runtime), then
   scrolls the collection panel to the bottom and asserts the last card
   renders within a generous 2s budget.
-- **Popup open speed**: measures a full `page.goto()` round-trip
-  (navigation + Playwright/CDP overhead) to `popup.html`'s
-  `domcontentloaded`, budgeted at 1500ms — deliberately generous versus the
-  acceptance criterion's "under 300ms" for a REAL toolbar popup open, which
-  has no CDP/navigation-event overhead in the mix. Treat a harness pass here
-  as "not obviously broken," not as the real number.
+- **Popup open speed**: measures a full Playwright round-trip —
+  `context.newPage()` (a new tab over CDP) plus `page.goto()` navigation
+  machinery — to `popup.html`'s `domcontentloaded`, budgeted at 800ms. The
+  acceptance criterion's "under 300ms" describes a REAL toolbar popup open,
+  which has none of that harness overhead (observed locally the round-trip
+  runs ~170-450ms total), so 300ms flat would fail on harness cost alone;
+  800ms still fails on any ~3x regression in the popup's actual load cost.
+  Treat a harness pass here as "not obviously regressed," not as the real
+  number.
 
 ## What's NOT covered here
 

@@ -1,5 +1,5 @@
 import { test, expect } from "../fixtures";
-import { collectConsoleErrors, computedBackground, finalScreenshot, tokenColor } from "../test-utils";
+import { collectConsoleErrors, computedBackground, finalScreenshot } from "../test-utils";
 
 /**
  * T6 — WXT scaffold + manifest. Acceptance (stories/stories.json):
@@ -28,8 +28,13 @@ test("popup opens showing a styled TabBurrow placeholder on the ground backgroun
   });
 
   const rootBg = await computedBackground(popup, "#root > div");
-  const groundToken = await tokenColor(popup, "--bg-ground");
-  expect(rootBg).toBe(groundToken);
+  // Intentionally pins the AC's literal expected value ("ground #16241E" ->
+  // rgb(22, 36, 30)) rather than resolving var(--bg-ground) and comparing to
+  // itself — that would be tautological (the token could drift to any color
+  // and still pass). The repo's no-hardcoded-hex rule governs UI code, not
+  // test EXPECTATIONS; this test's whole job is to fail loudly if the brand
+  // token's value drifts from what T6's acceptance criterion specifies.
+  expect(rootBg).toBe("rgb(22, 36, 30)");
 
   expect(errors).toEqual([]);
   await finalScreenshot(popup, "t06-popup-shell");
@@ -46,5 +51,7 @@ test("dashboard opens as a full tab via chrome.runtime.getURL(dashboard.html)", 
   // illustrated empty state, not a blank pane.
   await expect(dashboard.getByText("Nothing here yet")).toBeVisible();
   await expect(dashboard.getByRole("navigation", { name: "Collections" })).toBeVisible();
-  await finalScreenshot(dashboard, "t06-dashboard-shell");
+  // No screenshot here: this exact view (fresh empty dashboard) is already
+  // captured as t08-empty-state.png — a shot here was byte-identical to it.
+  // t06-popup-shell.png is this spec's representative screenshot.
 });
