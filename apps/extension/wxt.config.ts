@@ -10,7 +10,8 @@ export default defineConfig({
   manifest: {
     name: "TabBurrow: Tab & Bookmark Manager",
     permissions: ["tabs", "storage", "favicon", "identity", "alarms"],
-    host_permissions: [], // Supabase URL added in Task 15
+    // Supabase: local dev stack + any hosted/self-hosted *.supabase.co project (T15).
+    host_permissions: ["http://127.0.0.1:54321/*", "https://*.supabase.co/*"],
     commands: {
       "save-current-tab": { suggested_key: { default: "Alt+Shift+S" }, description: "Save current tab" },
       "save-all-tabs": { suggested_key: { default: "Alt+Shift+A" }, description: "Save all tabs" },

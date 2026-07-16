@@ -7,15 +7,14 @@ organize, sharing, and billing, running entirely on your own Supabase
 project and your own API keys.
 
 **Status note:** cloud sync, AI organize, sharing, and billing are still
-being built (stories T15–T23 in [`stories/stories.json`](stories/stories.json)).
+being built (stories T16–T23 in [`stories/stories.json`](stories/stories.json)).
 The steps below describe the intended self-hosting path and are written
 against the schema and functions as designed in
 [`docs/specs/2026-07-15-tabburrow-design.md`](docs/specs/2026-07-15-tabburrow-design.md#5-data-model).
-**The "Database schema" section below is verified against the schema in
-`supabase/migrations/`; that directory does not exist in the repo yet
-(it lands in T15). Once it does, re-verify this section's commands against
-the actual migration files before relying on it**; until then, treat this
-guide as a preview of the workflow, not a tested runbook.
+The database schema landed in T15: step 2 below is verified against the
+actual files in [`supabase/migrations/`](supabase/migrations/). The Edge
+Functions have **not** landed yet (they come with T19/T22/T23), so treat
+steps 3–4 as a preview of the workflow, not a tested runbook.
 
 ## What self-hosting gets you
 
@@ -50,28 +49,39 @@ guide as a preview of the workflow, not a tested runbook.
 ## 2. Run the database migrations
 
 Source of truth: [`supabase/migrations/`](supabase/migrations/) in this
-repo, **not there yet as of this writing; lands in story T15** (see the
-status note above). Once it does, push every migration to your project:
+repo (`0001_init.sql` for the schema, `0002_share_index.sql` for the
+share-page indexing opt-in). Push every migration to your project:
 
 ```sh
 supabase db push
 ```
 
-This creates the `collections`, `links`, `sessions`, and `profiles` tables
-described in [design spec §5](docs/specs/2026-07-15-tabburrow-design.md#5-data-model),
+This creates the `profiles`, `collections`, and `links` tables described
+in [design spec §5](docs/specs/2026-07-15-tabburrow-design.md#5-data-model),
 plus row-level security policies so every user can only read and write
 their own rows, and a trigger that creates a `profiles` row on sign-up.
-Verify with:
+(`sessions` are intentionally absent: session snapshots are local-only in
+v1 and never sync, so there is no cloud table for them.) Verify with:
 
 ```sh
 supabase db lint
 ```
 
+To try the schema locally before touching a hosted project (requires
+Docker), you can instead run the full stack on your machine:
+
+```sh
+supabase start     # boots local Postgres/Auth/API containers
+supabase db reset  # applies every migration in supabase/migrations/
+```
+
+`supabase status` then prints the local URL and keys.
+
 ## 3. Deploy the Edge Functions
 
 The backend logic ships as Supabase Edge Functions in
-[`supabase/functions/`](supabase/functions/), also not in the repo yet
-(lands alongside T15/T19/T22/T23):
+[`supabase/functions/`](supabase/functions/), not in the repo yet
+(lands with T19/T22/T23):
 
 | Function | Does |
 | --- | --- |
