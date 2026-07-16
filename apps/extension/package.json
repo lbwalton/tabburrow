@@ -2,6 +2,7 @@
   "name": "@tabburrow/extension",
   "version": "0.0.1",
   "private": true,
+  "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
     "predev": "node scripts/sync-env.mjs",
@@ -10,6 +11,7 @@
     "prebuild": "node scripts/sync-env.mjs",
     "build": "wxt build",
     "build:firefox": "wxt build -b firefox",
+    "build:e2e": "node scripts/sync-env.mjs && WXT_INCLUDE_LOCAL_HOSTS=1 wxt build",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "typecheck": "wxt prepare && tsc --noEmit",

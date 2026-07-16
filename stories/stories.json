@@ -300,7 +300,7 @@
     "id": "T26",
     "title": "Final bug bash + burn-down",
     "phase": 3,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "every AC from Tasks 6\u201325 verified end to end",
       "all defects logged to stories/fixes.json",

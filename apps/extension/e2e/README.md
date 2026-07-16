@@ -12,9 +12,19 @@ meant to keep being the harness for every future extension task.
 ## Setup
 
 ```sh
-pnpm --filter extension build           # produces .output/chrome-mv3 — REQUIRED, fresh, before every run
+pnpm --filter extension build:e2e       # produces .output/chrome-mv3 — REQUIRED, fresh, before every run
 npx playwright install chromium         # one-time (or after a Playwright version bump)
 ```
+
+`build:e2e` (not plain `build`) matters: this suite always drives the
+extension against the local Supabase stack (`http://127.0.0.1:54321`, see
+`supabase start`), and a real production build (`wxt build`'s default
+`mode: "production"`) omits that loopback origin from `host_permissions` —
+see `wxt.config.ts` — since no installed user's browser could ever reach it.
+`build:e2e` sets `WXT_INCLUDE_LOCAL_HOSTS=1` to opt back in. Building with
+plain `pnpm --filter extension build` will fail every networked spec
+(t16/t18/t20/t22/t23) with MV3 blocking the extension's fetches to the local
+stack.
 
 ## Running
 

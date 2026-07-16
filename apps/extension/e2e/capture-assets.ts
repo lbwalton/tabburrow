@@ -33,9 +33,12 @@ import { deleteAdminUser, deleteCloudDataForUser, findAdminUserByEmail, setUserP
  *   phase: all (default) | main | dashboard-grid | share | tile | hero | gif
  *
  * Requires:
- *  - `pnpm --filter extension build` already run (this script does not do
- *    the INITIAL build for you — same "REQUIRED, fresh, before every run"
- *    precedent e2e/README.md sets for the test suite itself). The "share"
+ *  - `pnpm --filter extension build:e2e` already run (this script does not
+ *    do the INITIAL build for you — same "REQUIRED, fresh, before every
+ *    run" precedent e2e/README.md sets for the test suite itself; `build:e2e`
+ *    rather than plain `build` because every phase here talks to the local
+ *    Supabase stack, and a production build's `host_permissions` no longer
+ *    includes that loopback origin — see wxt.config.ts). The "share"
  *    phase DOES rebuild the extension (twice — see t22-share.spec.ts's "env
  *    dance", duplicated here) and restores the normal build afterward.
  *  - the local Supabase stack running (`supabase start`) with
@@ -598,12 +601,17 @@ function runCommand(command: string, args: string[], cwd: string, extraEnv: Node
 async function buildExtensionWithSiteUrl(siteUrl: string, supabaseUrl: string, supabaseAnonKey: string): Promise<void> {
   const content = `WXT_SUPABASE_URL=${supabaseUrl}\nWXT_SUPABASE_ANON_KEY=${supabaseAnonKey}\nWXT_SITE_URL=${siteUrl}\n`;
   fs.writeFileSync(EXTENSION_ENV_LOCAL_PATH, content);
-  await runCommand("npx", ["wxt", "build"], EXTENSION_DIR);
+  // WXT_INCLUDE_LOCAL_HOSTS: this phase always targets the local Supabase
+  // stack (see the module docstring) — a plain production build's
+  // host_permissions would drop the loopback origin, see wxt.config.ts.
+  await runCommand("npx", ["wxt", "build"], EXTENSION_DIR, { WXT_INCLUDE_LOCAL_HOSTS: "1" });
 }
 
 async function restoreNormalExtensionBuild(): Promise<void> {
   await runCommand("node", ["scripts/sync-env.mjs"], EXTENSION_DIR);
-  await runCommand("npx", ["wxt", "build"], EXTENSION_DIR);
+  // Restores the build:e2e baseline this whole script requires as a
+  // precondition (see the module docstring), not a plain production build.
+  await runCommand("npx", ["wxt", "build"], EXTENSION_DIR, { WXT_INCLUDE_LOCAL_HOSTS: "1" });
 }
 
 let webServerProcess: ChildProcess | null = null;

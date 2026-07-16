@@ -263,7 +263,11 @@ WXT_SUPABASE_ANON_KEY=...
 which the extension reads at build time via `import.meta.env.WXT_SUPABASE_URL`/
 `WXT_SUPABASE_ANON_KEY` (see `apps/extension/lib/supabase.ts`). This script
 runs automatically as a `predev`/`prebuild` hook — you never need to run it
-by hand — so a plain build picks up whatever is in the root `.env`:
+by hand — so a plain build picks up whatever is in the root `.env`. **If
+your Supabase project is self-hosted on a custom domain** (not a
+`*.supabase.co` hostname), add that origin to `host_permissions` in
+`apps/extension/wxt.config.ts` before building, or the extension's cloud
+calls will be blocked by MV3:
 
 ```sh
 pnpm install
