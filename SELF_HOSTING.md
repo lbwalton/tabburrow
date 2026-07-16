@@ -113,6 +113,14 @@ supabase functions deploy share-resolve
 `checkout-session`, `stripe-webhook`, and `share-resolve`; sync and AI
 organize don't depend on them.)
 
+**Auth posture note:** `supabase/config.toml` sets `verify_jwt = false`
+for `ai-organize`, and that setting applies to your hosted deploy too;
+this is Supabase's recommended pattern for projects using the newer
+asymmetric (ES256) signing keys, and it means the gateway does no JWT
+check of its own, so authentication rests entirely on the function's
+in-code verification (`supabase/functions/_shared/auth.ts`), which every
+request goes through before anything else runs.
+
 **Testing `ai-organize` locally before deploying:** run the local stack
 (`supabase start`) and `supabase functions serve ai-organize --env-file <path-to-a-file-with-only-ANTHROPIC_API_KEY>`
 (never point `--env-file` at the repo's root `.env` directly, since that

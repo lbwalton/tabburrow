@@ -383,6 +383,7 @@ export async function handleRequest(req: Request): Promise<Response> {
   const meterRow = meterData as MeterRow | null;
 
   if (meterError || !meterRow) {
+    // Bounded edge (accepted): if the RPC committed but its response was lost, this 500s without a refund, a rare one-use phantom charge.
     return errorResponse("metering_failed", 500);
   }
 
@@ -396,6 +397,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     // Compensates the increment consume_ai_use already made; see
     // supabase/migrations/0004_ai_metering.sql's docstring for why this
     // stays race-safe.
+    // Bounded edge (accepted): racing a concurrent SUCCESS for the same user, this decrement can effectively cancel that success's increment instead (±1, favors the user).
     await serviceClient.rpc("refund_ai_use", { p_user_id: user.id });
     return errorResponse(organized.reason, 502);
   }
