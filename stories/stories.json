@@ -181,7 +181,7 @@
     "id": "T16",
     "title": "Extension auth",
     "phase": 2,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "Google sign-in completes inside the extension (no dangling tabs) and survives browser restart",
       "Email code flow works with a real inbox",
