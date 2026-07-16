@@ -137,10 +137,20 @@ export async function findOrCreateCustomerId(
  * creation behind one JWT-authed endpoint (this repo's design choice,
  * documented per task-23a's brief: "a NEW small function or reuse ... your
  * call, document it"). Reusing this function was preferred over a second
- * `portal-session` function because both branches need the exact same
- * preamble (auth, find-or-create customer) and Stripe already
- * distinguishes them structurally (`{portal: true}` vs `{interval}`) —
- * splitting them would just duplicate that preamble in two files.
+ * `portal-session` function because both branches need the same auth
+ * preamble and Stripe already distinguishes them structurally
+ * (`{portal: true}` vs `{interval}`) — splitting them would just
+ * duplicate that preamble in two files.
+ *
+ * Customer handling differs per branch (review fix pass 1, minor):
+ *  - checkout finds-or-CREATES the Stripe customer (`findOrCreateCustomerId`),
+ *    since a first-ever upgrade is exactly when the customer should come
+ *    into existence.
+ *  - portal only accepts an EXISTING `stripe_customer_id` — a user who
+ *    has never checked out has no billing history to manage, and minting
+ *    a throwaway customer just to open an empty portal would pollute
+ *    Stripe. Missing customer -> 400 `{error: "no_customer"}` (the web
+ *    account page maps this to a "upgrade first" message).
  */
 export async function handleRequest(req: Request): Promise<Response> {
   const preflight = handleCorsPreflight(req);
@@ -169,32 +179,38 @@ export async function handleRequest(req: Request): Promise<Response> {
   const stripe = getStripeClient();
   if (!stripe) return errorResponse("server_misconfigured", 500);
 
-  let priceId: string | null = null;
-  if (parsed.body.kind === "checkout") {
-    priceId = priceIdForInterval(parsed.body.interval);
-    if (!priceId) return errorResponse("server_misconfigured", 500);
-  }
-
   const serviceClient = createServiceRoleClient();
-  const customerResult = await findOrCreateCustomerId(serviceClient, stripe, {
-    id: user.id,
-    email: user.email ?? undefined,
-  });
-  if (!customerResult.ok) return errorResponse("upstream", 502);
 
   try {
     if (parsed.body.kind === "portal") {
+      const { data, error } = await serviceClient
+        .from("profiles")
+        .select("stripe_customer_id")
+        .eq("user_id", user.id)
+        .maybeSingle<ProfileCustomerRow>();
+      if (error || !data) return errorResponse("upstream", 502);
+      if (!data.stripe_customer_id) return errorResponse("no_customer", 400);
+
       const session = await stripe.billingPortal.sessions.create({
-        customer: customerResult.customerId,
+        customer: data.stripe_customer_id,
         return_url: `${site}/account`,
       });
       return jsonResponse({ url: session.url }, 200);
     }
 
+    const priceId = priceIdForInterval(parsed.body.interval);
+    if (!priceId) return errorResponse("server_misconfigured", 500);
+
+    const customerResult = await findOrCreateCustomerId(serviceClient, stripe, {
+      id: user.id,
+      email: user.email ?? undefined,
+    });
+    if (!customerResult.ok) return errorResponse("upstream", 502);
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerResult.customerId,
-      line_items: [{ price: priceId!, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${site}/upgrade/success`,
       cancel_url: `${site}/account`,
       client_reference_id: user.id,

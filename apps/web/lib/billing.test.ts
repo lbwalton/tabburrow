@@ -40,6 +40,12 @@ describe("parseCheckoutResponse", () => {
     if (!result.ok) expect(result.message).toMatch(/isn't configured/i);
   });
 
+  it("maps no_customer (portal without prior checkout) to a clear message", () => {
+    const result = parseCheckoutResponse(400, { error: "no_customer" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toMatch(/upgrade/i);
+  });
+
   it("falls back to a generic message for anything else", () => {
     const result = parseCheckoutResponse(502, { error: "upstream" });
     expect(result.ok).toBe(false);

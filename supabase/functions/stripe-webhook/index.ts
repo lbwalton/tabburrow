@@ -1,16 +1,40 @@
-// T23a: stripe-webhook Edge Function.
+// T23a (+ review fix pass 1): stripe-webhook Edge Function.
 //
-// Contract (.superpowers/sdd/task-23-brief.md, task-23a's decisions doc):
+// Contract (.superpowers/sdd/task-23-brief.md, task-23a's decisions doc,
+// review fix pass 1):
 //   POST from Stripe only. Verifies the `Stripe-Signature` header against
 //   `STRIPE_WEBHOOK_SECRET` (Stripe's own HMAC scheme, via stripe-node's
 //   `constructEventAsync` — the async variant is required in Deno's edge
 //   runtime, which only exposes the async Web Crypto API, not Node's
-//   synchronous `crypto`). Handles `checkout.session.completed`,
-//   `customer.subscription.updated`, `customer.subscription.deleted` ->
-//   flips `profiles.plan`/`profiles.stripe_subscription_id`. Unknown
-//   event types -> 200 `{ignored: true}` (Stripe sends far more event
-//   types than this app cares about; those aren't errors). Bad/missing
-//   signature -> 401.
+//   synchronous `crypto`). Bad/missing signature -> 401. Unknown event
+//   types -> 200 `{ignored: true}`.
+//
+// ORDERING DESIGN (fix pass 1 — the load-bearing part): Stripe does NOT
+// guarantee event delivery order, so a stale `customer.subscription.updated`
+// whose payload says `status: "active"` can arrive AFTER
+// `customer.subscription.deleted`. Deciding the plan from the event
+// payload (this function's original design) would let that stale payload
+// re-grant unpaid PRO forever. Instead, events are treated purely as
+// TRIGGERS: on any `customer.subscription.*` event, and on
+// `checkout.session.completed` when it carries a subscription id, the
+// subscription is RE-FETCHED LIVE from Stripe
+// (`stripe.subscriptions.retrieve` — a deleted subscription remains
+// retrievable with `status: "canceled"`) and the plan is derived from
+// that LIVE status via `planForStatus`, never from the payload. If the
+// live retrieve fails, this responds 5xx so Stripe retries later rather
+// than deciding entitlement from possibly-stale data. The ONE disclosed
+// exception: a `checkout.session.completed` with NO subscription id (a
+// payment-mode session — never produced by this repo's checkout-session,
+// which is always `mode: "subscription"`; the Stripe CLI's default
+// trigger fixture is one) has no subscription to consult and grants pro
+// from the event itself.
+//
+// ERROR SEMANTICS (fix pass 1): a genuine Postgres/update ERROR while
+// applying the decision responds 5xx (Stripe retries — a transient DB
+// blip must never silently strand a canceled user on PRO), while a
+// well-formed event that simply matches no profile row responds 200
+// `{ok: false, reason: "no_match"}` (terminal: retrying an event that
+// can never match would just be a retry storm).
 //
 // Auth posture is DIFFERENT from every other function in this repo, and
 // deliberately so: ai-organize and checkout-session set
@@ -28,9 +52,7 @@ import { getStripeClient, Stripe } from "../_shared/stripe.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.110.5";
 
 // ---------------------------------------------------------------------------
-// Event -> plan decision (pure, no Stripe SDK types required — a plain
-// shape is enough to decide, and it's what makes this trivially unit
-// testable with hand-built fixture objects; see test.ts).
+// Pure decision pieces (fixture-testable without network — see test.ts)
 // ---------------------------------------------------------------------------
 
 export interface StripeEventLike {
@@ -38,15 +60,22 @@ export interface StripeEventLike {
   data: { object: Record<string, unknown> };
 }
 
-export type PlanDecision =
-  | { kind: "update"; plan: "pro" | "free"; subscriptionId: string | null; userId: string | null; customerId: string | null }
+/**
+ * What an event points AT — never what to do about it. The plan is
+ * decided later, from the LIVE subscription state (see the module
+ * docstring's ordering design), so this deliberately does not carry the
+ * payload's own `status`.
+ */
+export type EventReference =
+  | { kind: "subscription"; subscriptionId: string; userId: string | null; customerId: string | null }
+  | { kind: "checkout_without_subscription"; userId: string | null; customerId: string | null }
   | { kind: "ignore" };
 
 function asString(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
 }
 
-/** `subscription_data.metadata.user_id` (set by checkout-session at Checkout creation, see checkout-session/index.ts) — Stripe copies subscription metadata onto every subsequent event for that subscription, so this is present on `customer.subscription.*` events too, not just the initial one. */
+/** `metadata.user_id` (set by checkout-session via `subscription_data.metadata` at Checkout creation) — carried on every subsequent event for that subscription. */
 function metadataUserId(obj: Record<string, unknown>): string | null {
   const metadata = obj.metadata;
   if (!metadata || typeof metadata !== "object") return null;
@@ -54,59 +83,40 @@ function metadataUserId(obj: Record<string, unknown>): string | null {
 }
 
 /**
- * The entire event -> plan mapping, as one pure function per
- * task-23a's brief ("extract `planForEvent(event)` — TDD"):
- *  - `checkout.session.completed`: the session's own
- *    `client_reference_id` (set by checkout-session to the user id) is
- *    tried first, falling back to `metadata.user_id` if absent -> pro,
- *    with the session's `subscription` id.
- *  - `customer.subscription.updated`: `active`/`trialing` -> pro,
- *    anything else (`past_due`, `canceled`, `unpaid`, `incomplete`,
- *    `incomplete_expired`, `paused`) -> free.
- *  - `customer.subscription.deleted`: always -> free.
- *  - everything else: `{kind: "ignore"}` (handled as a 200, see
- *    `handleRequest`).
- * `userId`/`customerId` on the result are BOTH carried through so
- * `applyPlanDecision` can resolve the profile row by whichever one is
- * actually present (see its own docstring for why metadata can be
- * absent).
+ * Maps an event to the subscription/customer/user it refers to:
+ *  - `checkout.session.completed`: user from `client_reference_id` (set
+ *    by checkout-session) falling back to `metadata.user_id`; a
+ *    `subscription` id routes it to the live-retrieve path, its absence
+ *    to the disclosed trust-the-event path (module docstring).
+ *  - `customer.subscription.updated`/`.deleted`: the subscription's own
+ *    id; user from the subscription's metadata when present.
+ *  - everything else (including a subscription event somehow missing its
+ *    id): ignore.
  */
-export function planForEvent(event: StripeEventLike): PlanDecision {
+export function referenceForEvent(event: StripeEventLike): EventReference {
   const obj = event.data.object;
   switch (event.type) {
     case "checkout.session.completed": {
       const userId = asString(obj.client_reference_id) ?? metadataUserId(obj);
-      return {
-        kind: "update",
-        plan: "pro",
-        subscriptionId: asString(obj.subscription),
-        userId,
-        customerId: asString(obj.customer),
-      };
+      const customerId = asString(obj.customer);
+      const subscriptionId = asString(obj.subscription);
+      if (subscriptionId) return { kind: "subscription", subscriptionId, userId, customerId };
+      return { kind: "checkout_without_subscription", userId, customerId };
     }
-    case "customer.subscription.updated": {
-      const status = obj.status;
-      const plan: "pro" | "free" = status === "active" || status === "trialing" ? "pro" : "free";
-      return {
-        kind: "update",
-        plan,
-        subscriptionId: asString(obj.id),
-        userId: metadataUserId(obj),
-        customerId: asString(obj.customer),
-      };
-    }
+    case "customer.subscription.updated":
     case "customer.subscription.deleted": {
-      return {
-        kind: "update",
-        plan: "free",
-        subscriptionId: asString(obj.id),
-        userId: metadataUserId(obj),
-        customerId: asString(obj.customer),
-      };
+      const subscriptionId = asString(obj.id);
+      if (!subscriptionId) return { kind: "ignore" };
+      return { kind: "subscription", subscriptionId, userId: metadataUserId(obj), customerId: asString(obj.customer) };
     }
     default:
       return { kind: "ignore" };
   }
+}
+
+/** The pure status -> plan decision core (fix pass 1): only a LIVE `active`/`trialing` subscription is PRO; every other status (`past_due`, `canceled`, `unpaid`, `incomplete`, `incomplete_expired`, `paused`) is free. */
+export function planForStatus(status: string): "pro" | "free" {
+  return status === "active" || status === "trialing" ? "pro" : "free";
 }
 
 // ---------------------------------------------------------------------------
@@ -114,55 +124,64 @@ export function planForEvent(event: StripeEventLike): PlanDecision {
 // user-facing write policy at all, see supabase/migrations/0001_init.sql)
 // ---------------------------------------------------------------------------
 
-export type ApplyResult = { ok: true; matchedBy: "user_id" | "customer_id" } | { ok: false; matchedBy: "none" };
+export interface PlanUpdate {
+  plan: "pro" | "free";
+  subscriptionId: string | null;
+  userId: string | null;
+  customerId: string | null;
+}
+
+export type ApplyResult =
+  | { ok: true; matchedBy: "user_id" | "customer_id" }
+  | { ok: false; reason: "no_match" | "db_error" };
 
 /**
  * Writes `{plan, stripe_subscription_id}` to the profile matching
- * `decision.userId` first, falling back to `decision.customerId` when no
- * `userId` was on the event (task-23a's brief: "Resolve the user by
- * stripe_customer_id when metadata is absent") — this covers
- * `customer.subscription.updated`/`.deleted` events that arrive without
- * `metadata.user_id`, e.g. a subscription created outside this app's own
- * checkout-session flow (self-hosters testing the Stripe dashboard
- * directly). Neither resolving -> `{ok: false, matchedBy: "none"}`,
- * which `handleRequest` still answers with 200 (see its docstring: a
- * permanently-unresolvable event isn't something retrying will fix, and a
- * non-2xx here would just make Stripe retry forever).
+ * `userId` first, falling back to `customerId` when no userId was
+ * resolvable (covers subscriptions created outside this app's own
+ * checkout flow, e.g. a self-hoster testing from the Stripe dashboard).
+ *
+ * Failure modes are deliberately distinct (fix pass 1):
+ *  - a Postgres ERROR on either UPDATE -> `db_error` immediately (the
+ *    handler turns this into a 5xx so Stripe retries; a transient DB
+ *    blip must never be swallowed as success).
+ *  - both filters ran cleanly but matched zero rows -> `no_match` (the
+ *    handler answers 200: retrying an event that structurally cannot
+ *    match any profile would only produce a retry storm).
  *
  * IDEMPOTENT by construction: both branches are single unconditional
  * `UPDATE ... SET plan = X, stripe_subscription_id = Y WHERE ...`
- * statements, not a read-modify-write increment (contrast with
- * `ai-organize`'s metering, which genuinely needs a row lock — see
- * `supabase/migrations/0004_ai_metering.sql`). Replaying the exact same
- * webhook event twice (Stripe's own at-least-once delivery guarantee)
- * always lands the same final `{plan, stripe_subscription_id}`, so no
- * event-id dedup ledger is needed here.
+ * statements, not a read-modify-write (contrast with ai-organize's
+ * metering, which genuinely needs a row lock — see
+ * supabase/migrations/0004_ai_metering.sql). Replaying the same event
+ * always lands the same final state, so no event-id dedup ledger is
+ * needed — and out-of-order deliveries are already neutralized upstream
+ * by deriving `plan` from the LIVE subscription state, not the payload.
  */
-export async function applyPlanDecision(
-  serviceClient: SupabaseClient,
-  decision: Extract<PlanDecision, { kind: "update" }>,
-): Promise<ApplyResult> {
-  const patch = { plan: decision.plan, stripe_subscription_id: decision.subscriptionId };
+export async function applyPlanDecision(serviceClient: SupabaseClient, update: PlanUpdate): Promise<ApplyResult> {
+  const patch = { plan: update.plan, stripe_subscription_id: update.subscriptionId };
 
-  if (decision.userId) {
+  if (update.userId) {
     const { data, error } = await serviceClient
       .from("profiles")
       .update(patch)
-      .eq("user_id", decision.userId)
+      .eq("user_id", update.userId)
       .select("user_id");
-    if (!error && data && data.length > 0) return { ok: true, matchedBy: "user_id" };
+    if (error) return { ok: false, reason: "db_error" };
+    if (data && data.length > 0) return { ok: true, matchedBy: "user_id" };
   }
 
-  if (decision.customerId) {
+  if (update.customerId) {
     const { data, error } = await serviceClient
       .from("profiles")
       .update(patch)
-      .eq("stripe_customer_id", decision.customerId)
+      .eq("stripe_customer_id", update.customerId)
       .select("user_id");
-    if (!error && data && data.length > 0) return { ok: true, matchedBy: "customer_id" };
+    if (error) return { ok: false, reason: "db_error" };
+    if (data && data.length > 0) return { ok: true, matchedBy: "customer_id" };
   }
 
-  return { ok: false, matchedBy: "none" };
+  return { ok: false, reason: "no_match" };
 }
 
 // ---------------------------------------------------------------------------
@@ -202,13 +221,47 @@ export async function handleRequest(req: Request): Promise<Response> {
     return errorResponse("unauthorized", 401);
   }
 
-  const decision = planForEvent(event);
-  if (decision.kind === "ignore") {
+  const ref = referenceForEvent(event);
+  if (ref.kind === "ignore") {
     return jsonResponse({ ignored: true }, 200);
   }
 
+  let update: PlanUpdate;
+  if (ref.kind === "subscription") {
+    // Source of truth: the LIVE subscription, never the event payload —
+    // see the module docstring's ordering design.
+    let sub: Stripe.Subscription;
+    try {
+      sub = await stripe.subscriptions.retrieve(ref.subscriptionId);
+    } catch {
+      // Live state unavailable: 502 so Stripe retries this delivery
+      // later, rather than deciding entitlement from possibly-stale data.
+      return errorResponse("subscription_retrieve_failed", 502);
+    }
+    update = {
+      plan: planForStatus(sub.status),
+      // A canceled subscription is not a live entitlement pointer — clear
+      // it (review fix pass 1 minor) instead of leaving a dangling id.
+      subscriptionId: sub.status === "canceled" ? null : sub.id,
+      // The live subscription's own metadata/customer are extra fallbacks
+      // beyond what the event payload carried.
+      userId: ref.userId ?? asString((sub.metadata as Record<string, unknown> | null)?.user_id),
+      customerId: ref.customerId ?? (typeof sub.customer === "string" ? sub.customer : null),
+    };
+  } else {
+    // checkout_without_subscription: the disclosed trust-the-event path
+    // (module docstring) — a payment-mode session has no subscription to
+    // consult, and this repo's own checkout flow never produces one.
+    update = { plan: "pro", subscriptionId: null, userId: ref.userId, customerId: ref.customerId };
+  }
+
   const serviceClient = createServiceRoleClient();
-  const applied = await applyPlanDecision(serviceClient, decision);
+  const applied = await applyPlanDecision(serviceClient, update);
+  if (!applied.ok && applied.reason === "db_error") {
+    // Transient DB failure: 502 so Stripe retries (fix pass 1 — this must
+    // never fall through to a 200 that Stripe treats as delivered).
+    return errorResponse("db_error", 502);
+  }
   return jsonResponse(applied, 200);
 }
 

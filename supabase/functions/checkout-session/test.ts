@@ -315,12 +315,24 @@ Deno.test("handleRequest: checkout for a new user returns a Checkout URL and cla
   createdStripeCustomerIds.add(profile.stripe_customer_id!);
 });
 
+Deno.test("handleRequest: portal with NO existing Stripe customer -> 400 no_customer, no throwaway customer minted", async () => {
+  // Review fix pass 1 (minor): the portal branch must never
+  // find-or-CREATE — a free user who has never checked out has no
+  // billing history to manage, and minting a Stripe customer just to
+  // open an empty portal would leave junk objects behind.
+  const { id, token } = await setupTestUser("portal-no-customer");
+  const res = await handleRequest(postRequest(token, { portal: true }));
+  assertEquals(res.status, 400, `expected 400, got ${res.status}: ${await res.clone().text()}`);
+  assertEquals((await res.json()).error, "no_customer");
+  const profile = await fetchProfile(id);
+  assertEquals(profile.stripe_customer_id, null, "no Stripe customer may be created by a portal request");
+});
+
 Deno.test("handleRequest: portal session for an existing customer returns a billing portal URL", async () => {
   const { id, email, token } = await setupTestUser("portal-happy");
   // Pre-create the customer directly (bypassing checkout) so this test
-  // exercises the "already has a customer id" branch of
-  // findOrCreateCustomerId, not the create-and-claim branch (already
-  // covered above).
+  // exercises the "profile already has a customer id" path the portal
+  // branch requires (fix pass 1: the portal never creates customers).
   const customer = await stripe.customers.create({ email, metadata: { user_id: id } });
   createdStripeCustomerIds.add(customer.id);
   await patchProfile(id, { stripe_customer_id: customer.id });

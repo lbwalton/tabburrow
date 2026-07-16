@@ -1,30 +1,35 @@
-// T23a: stripe-webhook Edge Function tests.
+// T23a (+ review fix pass 1): stripe-webhook Edge Function tests.
 //
 // Run with (local stack must be running, `supabase start`):
 //   deno test --allow-all supabase/functions/stripe-webhook/test.ts
 //
-// Fully self-contained: unlike checkout-session/test.ts, this file never
-// calls the real Stripe API. Signature generation/verification
-// (`stripe.webhooks.generateTestHeaderStringAsync`/`constructEventAsync`) is
-// pure local HMAC crypto against whatever `STRIPE_WEBHOOK_SECRET` this
-// process has in `Deno.env` — it doesn't matter whether that secret (or
-// the `STRIPE_SECRET_KEY` used only to construct the client) is real, so
-// this file uses generated placeholder values instead of the root .env's
-// real ones. That keeps the suite from depending on (or interfering
-// with) a live `stripe listen` session, per task-23a's brief: "unit-test
-// ... the signature-failure path ... with a generated test secret."
+// Fully self-contained: this file never calls the real Stripe API.
+//  - Signature generation/verification
+//    (`stripe.webhooks.generateTestHeaderStringAsync`/`constructEventAsync`)
+//    is pure local HMAC crypto against whatever `STRIPE_WEBHOOK_SECRET`
+//    this process has in `Deno.env` — this file uses generated
+//    placeholder values instead of the root .env's real ones, per
+//    task-23a's brief ("a generated test secret").
+//  - The handler's LIVE `stripe.subscriptions.retrieve` call (the
+//    source-of-truth re-fetch added in fix pass 1) is mocked by
+//    intercepting `globalThis.fetch` for api.stripe.com only, the same
+//    pattern ai-organize/test.ts uses for Anthropic. That's what makes
+//    the out-of-order-delivery case (a stale "active" event arriving
+//    AFTER the subscription was canceled) directly testable: the mock
+//    returns the LIVE canceled state while the event payload lies.
 //
-// `planForEvent`/`applyPlanDecision` are tested directly too (TDD per the
-// brief): the former with hand-built fixture events (pure, no network),
-// the latter against the REAL local Postgres via a service-role client
-// (same precedent as ai-organize/test.ts's metering tests — the point is
-// whether the SQL update actually lands, which a mock can't tell us).
+// `planForStatus`/`referenceForEvent` are pure (fixture-based, no
+// network); `applyPlanDecision` runs against the REAL local Postgres via
+// a service-role client (same precedent as ai-organize/test.ts's
+// metering tests — whether the SQL update actually lands, and whether a
+// genuine Postgres ERROR is distinguished from "no row matched", is
+// exactly what a mock can't tell us).
 
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1";
 import { createClient } from "npm:@supabase/supabase-js@2.110.5";
-import { applyPlanDecision, handleRequest, planForEvent } from "./index.ts";
+import { applyPlanDecision, handleRequest, planForStatus, referenceForEvent } from "./index.ts";
 import { getStripeClient, Stripe } from "../_shared/stripe.ts";
-import type { PlanDecision } from "./index.ts";
+import type { PlanUpdate } from "./index.ts";
 
 // ---------------------------------------------------------------------------
 // Root .env loading (duplicated per file, see ai-organize/test.ts)
@@ -67,7 +72,8 @@ if (!ANON_KEY || !SERVICE_ROLE_KEY) {
 
 // Deliberately NOT the root .env's real STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET
 // — see the file docstring. `getStripeClient()` only needs a non-empty
-// string to construct a client; nothing in this file makes a real API call.
+// string to construct a client; every Stripe API call in this file is
+// intercepted by the fetch mock below.
 const TEST_STRIPE_SECRET_KEY = "sk_test_fake_for_webhook_signature_tests_only";
 const TEST_WEBHOOK_SECRET = "whsec_test_fake_secret_for_deno_tests_only_1234567890";
 
@@ -79,6 +85,55 @@ Deno.env.set("STRIPE_WEBHOOK_SECRET", TEST_WEBHOOK_SECRET);
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 const stripe = getStripeClient()!;
+
+// ---------------------------------------------------------------------------
+// Stripe API fetch mocking (api.stripe.com only; Supabase Auth/PostgREST
+// calls pass through to the real local stack — same split as
+// ai-organize/test.ts's Anthropic mock)
+// ---------------------------------------------------------------------------
+
+const realFetch = globalThis.fetch;
+
+type Responder = () => Response | Promise<Response>;
+
+function mockStripeApi(responders: Responder[]): { callCount: () => number; restore: () => void } {
+  let calls = 0;
+  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith("https://api.stripe.com/")) {
+      const responder = responders[Math.min(calls, responders.length - 1)];
+      calls++;
+      return Promise.resolve(responder());
+    }
+    return realFetch(input as RequestInfo, init);
+  }) as typeof fetch;
+  return {
+    callCount: () => calls,
+    restore: () => {
+      globalThis.fetch = realFetch;
+    },
+  };
+}
+
+/** A live `GET /v1/subscriptions/:id` response body — the shape `stripe.subscriptions.retrieve` parses. */
+function subscriptionResponse(
+  id: string,
+  status: string,
+  customer: string,
+  metadata: Record<string, string> = {},
+): Response {
+  return new Response(JSON.stringify({ id, object: "subscription", status, customer, metadata }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function stripeErrorResponse(status = 500): Response {
+  return new Response(JSON.stringify({ error: { type: "api_error", message: "boom" } }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Admin REST helpers (service-role), mirrors ai-organize/test.ts
@@ -153,22 +208,42 @@ async function setupTestUser(
 }
 
 // ---------------------------------------------------------------------------
-// planForEvent: pure, fixture-based
+// planForStatus: the pure decision core (fix pass 1's TDD requirement)
+// ---------------------------------------------------------------------------
+
+Deno.test("planForStatus: active -> pro", () => {
+  assertEquals(planForStatus("active"), "pro");
+});
+
+Deno.test("planForStatus: trialing -> pro", () => {
+  assertEquals(planForStatus("trialing"), "pro");
+});
+
+for (const status of ["past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"]) {
+  Deno.test(`planForStatus: ${status} -> free`, () => {
+    assertEquals(planForStatus(status), "free");
+  });
+}
+
+// ---------------------------------------------------------------------------
+// referenceForEvent: pure, fixture-based. Events are TRIGGERS — they only
+// say which subscription/customer/user to look at, never the plan itself
+// (fix pass 1's source-of-truth redesign).
 // ---------------------------------------------------------------------------
 
 function event(type: string, object: Record<string, unknown>) {
   return { type, data: { object } };
 }
 
-Deno.test("planForEvent: checkout.session.completed resolves userId from client_reference_id -> pro", () => {
-  const decision = planForEvent(
+Deno.test("referenceForEvent: checkout.session.completed with a subscription id -> subscription reference", () => {
+  const ref = referenceForEvent(
     event("checkout.session.completed", { client_reference_id: "user-1", customer: "cus_1", subscription: "sub_1" }),
   );
-  assertEquals(decision, { kind: "update", plan: "pro", subscriptionId: "sub_1", userId: "user-1", customerId: "cus_1" });
+  assertEquals(ref, { kind: "subscription", subscriptionId: "sub_1", userId: "user-1", customerId: "cus_1" });
 });
 
-Deno.test("planForEvent: checkout.session.completed falls back to metadata.user_id when client_reference_id is absent", () => {
-  const decision = planForEvent(
+Deno.test("referenceForEvent: checkout.session.completed falls back to metadata.user_id", () => {
+  const ref = referenceForEvent(
     event("checkout.session.completed", {
       client_reference_id: null,
       customer: "cus_2",
@@ -176,54 +251,47 @@ Deno.test("planForEvent: checkout.session.completed falls back to metadata.user_
       metadata: { user_id: "user-2" },
     }),
   );
-  assertEquals(decision, { kind: "update", plan: "pro", subscriptionId: "sub_2", userId: "user-2", customerId: "cus_2" });
+  assertEquals(ref, { kind: "subscription", subscriptionId: "sub_2", userId: "user-2", customerId: "cus_2" });
 });
 
-Deno.test("planForEvent: customer.subscription.updated status active -> pro", () => {
-  const decision = planForEvent(
-    event("customer.subscription.updated", { id: "sub_3", status: "active", customer: "cus_3", metadata: { user_id: "user-3" } }),
+Deno.test("referenceForEvent: checkout.session.completed WITHOUT a subscription id -> checkout_without_subscription", () => {
+  const ref = referenceForEvent(
+    event("checkout.session.completed", { client_reference_id: "user-3", customer: "cus_3", subscription: null }),
   );
-  assertEquals(decision, { kind: "update", plan: "pro", subscriptionId: "sub_3", userId: "user-3", customerId: "cus_3" });
+  assertEquals(ref, { kind: "checkout_without_subscription", userId: "user-3", customerId: "cus_3" });
 });
 
-Deno.test("planForEvent: customer.subscription.updated status trialing -> pro", () => {
-  const decision = planForEvent(event("customer.subscription.updated", { id: "sub_4", status: "trialing", customer: "cus_4" }));
-  assertEquals(decision, { kind: "update", plan: "pro", subscriptionId: "sub_4", userId: null, customerId: "cus_4" });
-});
-
-for (const status of ["past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"]) {
-  Deno.test(`planForEvent: customer.subscription.updated status ${status} -> free`, () => {
-    const decision = planForEvent(event("customer.subscription.updated", { id: "sub_x", status, customer: "cus_x" }));
-    assertEquals(decision, { kind: "update", plan: "free", subscriptionId: "sub_x", userId: null, customerId: "cus_x" });
-  });
-}
-
-Deno.test("planForEvent: customer.subscription.deleted -> always free", () => {
-  const decision = planForEvent(
-    event("customer.subscription.deleted", { id: "sub_5", status: "canceled", customer: "cus_5", metadata: { user_id: "user-5" } }),
+Deno.test("referenceForEvent: customer.subscription.updated -> subscription reference (plan NOT decided from the payload)", () => {
+  const ref = referenceForEvent(
+    event("customer.subscription.updated", { id: "sub_4", status: "active", customer: "cus_4", metadata: { user_id: "user-4" } }),
   );
-  assertEquals(decision, { kind: "update", plan: "free", subscriptionId: "sub_5", userId: "user-5", customerId: "cus_5" });
+  assertEquals(ref, { kind: "subscription", subscriptionId: "sub_4", userId: "user-4", customerId: "cus_4" });
 });
 
-Deno.test("planForEvent: unknown event type -> ignore", () => {
-  assertEquals(planForEvent(event("invoice.paid", {})), { kind: "ignore" });
-  assertEquals(planForEvent(event("customer.created", {})), { kind: "ignore" });
+Deno.test("referenceForEvent: customer.subscription.deleted -> subscription reference", () => {
+  const ref = referenceForEvent(event("customer.subscription.deleted", { id: "sub_5", customer: "cus_5" }));
+  assertEquals(ref, { kind: "subscription", subscriptionId: "sub_5", userId: null, customerId: "cus_5" });
+});
+
+Deno.test("referenceForEvent: subscription event with a missing id -> ignore", () => {
+  assertEquals(referenceForEvent(event("customer.subscription.updated", { status: "active" })), { kind: "ignore" });
+});
+
+Deno.test("referenceForEvent: unknown event type -> ignore", () => {
+  assertEquals(referenceForEvent(event("invoice.paid", {})), { kind: "ignore" });
+  assertEquals(referenceForEvent(event("customer.created", {})), { kind: "ignore" });
 });
 
 // ---------------------------------------------------------------------------
-// applyPlanDecision: real local Postgres
+// applyPlanDecision: real local Postgres — including the fix-pass-1
+// distinction between "no row matched" (no_match -> 200) and a genuine
+// Postgres ERROR (db_error -> 5xx so Stripe retries)
 // ---------------------------------------------------------------------------
 
 Deno.test("applyPlanDecision: resolves by userId when present", async () => {
   const { id } = await setupTestUser("apply-by-user");
-  const decision: Extract<PlanDecision, { kind: "update" }> = {
-    kind: "update",
-    plan: "pro",
-    subscriptionId: "sub_apply_1",
-    userId: id,
-    customerId: null,
-  };
-  const result = await applyPlanDecision(admin, decision);
+  const update: PlanUpdate = { plan: "pro", subscriptionId: "sub_apply_1", userId: id, customerId: null };
+  const result = await applyPlanDecision(admin, update);
   assertEquals(result, { ok: true, matchedBy: "user_id" });
   const profile = await fetchProfile(id);
   assertEquals(profile.plan, "pro");
@@ -236,49 +304,47 @@ Deno.test("applyPlanDecision: falls back to customerId when userId is absent", a
     stripe_subscription_id: "sub_old",
     stripe_customer_id: "cus_apply_2",
   });
-  const decision: Extract<PlanDecision, { kind: "update" }> = {
-    kind: "update",
-    plan: "free",
-    subscriptionId: "sub_apply_2",
-    userId: null,
-    customerId: "cus_apply_2",
-  };
-  const result = await applyPlanDecision(admin, decision);
+  const update: PlanUpdate = { plan: "free", subscriptionId: "sub_apply_2", userId: null, customerId: "cus_apply_2" };
+  const result = await applyPlanDecision(admin, update);
   assertEquals(result, { ok: true, matchedBy: "customer_id" });
   const profile = await fetchProfile(id);
   assertEquals(profile.plan, "free");
 });
 
-Deno.test("applyPlanDecision: neither userId nor customerId resolves -> matchedBy none, nothing written", async () => {
-  const decision: Extract<PlanDecision, { kind: "update" }> = {
-    kind: "update",
+Deno.test("applyPlanDecision: neither userId nor customerId resolves -> no_match (NOT db_error)", async () => {
+  const update: PlanUpdate = {
     plan: "pro",
     subscriptionId: "sub_nowhere",
     userId: "00000000-0000-0000-0000-000000000000",
     customerId: "cus_does_not_exist",
   };
-  const result = await applyPlanDecision(admin, decision);
-  assertEquals(result, { ok: false, matchedBy: "none" });
+  const result = await applyPlanDecision(admin, update);
+  assertEquals(result, { ok: false, reason: "no_match" });
 });
 
-Deno.test("applyPlanDecision: idempotent, replaying the same decision twice lands the same state", async () => {
+Deno.test("applyPlanDecision: a genuine Postgres ERROR -> db_error (NOT no_match)", async () => {
+  // "not-a-uuid" makes the user_id equality filter fail with a real
+  // Postgres type error ("invalid input syntax for type uuid") — the
+  // class of DB failure fix pass 1 requires to be distinguished from "no
+  // row matched", so the handler can 5xx and Stripe retries instead of
+  // the event being silently dropped as a 200.
+  const update: PlanUpdate = { plan: "free", subscriptionId: null, userId: "not-a-uuid", customerId: null };
+  const result = await applyPlanDecision(admin, update);
+  assertEquals(result, { ok: false, reason: "db_error" });
+});
+
+Deno.test("applyPlanDecision: idempotent, replaying the same update twice lands the same state", async () => {
   const { id } = await setupTestUser("apply-idempotent");
-  const decision: Extract<PlanDecision, { kind: "update" }> = {
-    kind: "update",
-    plan: "pro",
-    subscriptionId: "sub_apply_3",
-    userId: id,
-    customerId: null,
-  };
-  await applyPlanDecision(admin, decision);
-  await applyPlanDecision(admin, decision);
+  const update: PlanUpdate = { plan: "pro", subscriptionId: "sub_apply_3", userId: id, customerId: null };
+  await applyPlanDecision(admin, update);
+  await applyPlanDecision(admin, update);
   const profile = await fetchProfile(id);
   assertEquals(profile.plan, "pro");
   assertEquals(profile.stripe_subscription_id, "sub_apply_3");
 });
 
 // ---------------------------------------------------------------------------
-// handleRequest: signature verification
+// handleRequest: signature verification (unchanged from the first pass)
 // ---------------------------------------------------------------------------
 
 // `generateTestHeaderStringAsync`, not the sync `generateTestHeaderString`:
@@ -329,57 +395,213 @@ Deno.test("handleRequest: missing STRIPE_WEBHOOK_SECRET env -> 401", async () =>
   }
 });
 
-Deno.test("handleRequest: valid signature, unknown event type -> 200 ignored", async () => {
-  const res = await handleRequest(await signedRequest(event("customer.created", { id: "cus_unused" })));
-  assertEquals(res.status, 200);
-  assertEquals(await res.json(), { ignored: true });
+// ---------------------------------------------------------------------------
+// handleRequest: live-state decisions (fix pass 1 — the LIVE subscription
+// retrieve, mocked at the fetch layer, is the source of truth; the event
+// payload's own status is never trusted)
+// ---------------------------------------------------------------------------
+
+Deno.test("handleRequest: valid signature, unknown event type -> 200 ignored, zero Stripe calls", async () => {
+  const mock = mockStripeApi([() => stripeErrorResponse(500)]);
+  try {
+    const res = await handleRequest(await signedRequest(event("customer.created", { id: "cus_unused" })));
+    assertEquals(res.status, 200);
+    assertEquals(await res.json(), { ignored: true });
+    assertEquals(mock.callCount(), 0);
+  } finally {
+    mock.restore();
+  }
 });
 
-Deno.test("handleRequest: valid signature, checkout.session.completed flips profile to pro", async () => {
-  const { id } = await setupTestUser("handle-checkout");
-  const payload = event("checkout.session.completed", {
-    client_reference_id: id,
-    customer: "cus_handle_1",
-    subscription: "sub_handle_1",
-  });
-  const res = await handleRequest(await signedRequest(payload));
-  assertEquals(res.status, 200, `expected 200, got ${res.status}: ${await res.clone().text()}`);
-  assertEquals(await res.json(), { ok: true, matchedBy: "user_id" });
-
-  const profile = await fetchProfile(id);
-  assertEquals(profile.plan, "pro");
-  assertEquals(profile.stripe_subscription_id, "sub_handle_1");
+Deno.test("handleRequest: checkout.session.completed WITHOUT a subscription id -> pro from the event, zero Stripe calls", async () => {
+  // Payment-mode sessions (the Stripe CLI's default trigger fixture is
+  // one) carry no subscription to consult — this is the one disclosed
+  // trust-the-event path; see the module docstring in index.ts.
+  const { id } = await setupTestUser("handle-checkout-nosub");
+  const mock = mockStripeApi([() => stripeErrorResponse(500)]);
+  try {
+    const payload = event("checkout.session.completed", {
+      client_reference_id: id,
+      customer: "cus_handle_nosub",
+      subscription: null,
+    });
+    const res = await handleRequest(await signedRequest(payload));
+    assertEquals(res.status, 200, `expected 200, got ${res.status}: ${await res.clone().text()}`);
+    assertEquals(mock.callCount(), 0);
+    const profile = await fetchProfile(id);
+    assertEquals(profile.plan, "pro");
+  } finally {
+    mock.restore();
+  }
 });
 
-Deno.test("handleRequest: valid signature, customer.subscription.deleted flips profile to free", async () => {
+Deno.test("handleRequest: checkout.session.completed WITH a subscription id retrieves live state -> pro", async () => {
+  const { id } = await setupTestUser("handle-checkout-live");
+  const mock = mockStripeApi([() => subscriptionResponse("sub_handle_1", "active", "cus_handle_1")]);
+  try {
+    const payload = event("checkout.session.completed", {
+      client_reference_id: id,
+      customer: "cus_handle_1",
+      subscription: "sub_handle_1",
+    });
+    const res = await handleRequest(await signedRequest(payload));
+    assertEquals(res.status, 200, `expected 200, got ${res.status}: ${await res.clone().text()}`);
+    assertEquals(await res.json(), { ok: true, matchedBy: "user_id" });
+    assertEquals(mock.callCount(), 1, "expected exactly one live subscription retrieve");
+    const profile = await fetchProfile(id);
+    assertEquals(profile.plan, "pro");
+    assertEquals(profile.stripe_subscription_id, "sub_handle_1");
+  } finally {
+    mock.restore();
+  }
+});
+
+Deno.test("handleRequest: customer.subscription.deleted -> live state canceled -> free, stripe_subscription_id CLEARED", async () => {
   const { id } = await setupTestUser("handle-deleted", {
     plan: "pro",
     stripe_subscription_id: "sub_handle_2",
     stripe_customer_id: "cus_handle_2",
   });
-  const payload = event("customer.subscription.deleted", { id: "sub_handle_2", customer: "cus_handle_2" });
-  const res = await handleRequest(await signedRequest(payload));
-  assertEquals(res.status, 200);
-  assertEquals(await res.json(), { ok: true, matchedBy: "customer_id" });
-
-  const profile = await fetchProfile(id);
-  assertEquals(profile.plan, "free");
+  const mock = mockStripeApi([() => subscriptionResponse("sub_handle_2", "canceled", "cus_handle_2")]);
+  try {
+    const payload = event("customer.subscription.deleted", { id: "sub_handle_2", customer: "cus_handle_2" });
+    const res = await handleRequest(await signedRequest(payload));
+    assertEquals(res.status, 200);
+    assertEquals(await res.json(), { ok: true, matchedBy: "customer_id" });
+    const profile = await fetchProfile(id);
+    assertEquals(profile.plan, "free");
+    assertEquals(profile.stripe_subscription_id, null, "a canceled subscription must not remain as a live pointer");
+  } finally {
+    mock.restore();
+  }
 });
 
-Deno.test("handleRequest: replaying the same checkout.session.completed event twice is idempotent", async () => {
-  const { id } = await setupTestUser("handle-replay");
-  const payload = event("checkout.session.completed", {
-    client_reference_id: id,
-    customer: "cus_handle_3",
-    subscription: "sub_handle_3",
+Deno.test("handleRequest: OUT-OF-ORDER delivery — a stale 'active' payload after deletion stays free (live state wins)", async () => {
+  // THE fix-pass-1 regression case: Stripe does not guarantee delivery
+  // order, so a customer.subscription.updated whose PAYLOAD says
+  // status=active can arrive after customer.subscription.deleted. The
+  // payload must not be trusted: the live retrieve (mocked here to the
+  // canceled state the subscription is really in) decides.
+  const { id } = await setupTestUser("handle-stale-order", {
+    plan: "pro",
+    stripe_subscription_id: "sub_stale_1",
+    stripe_customer_id: "cus_stale_1",
   });
-  const first = await handleRequest(await signedRequest(payload));
-  const second = await handleRequest(await signedRequest(payload));
-  assertEquals(first.status, 200);
-  assertEquals(second.status, 200);
-  const profile = await fetchProfile(id);
-  assertEquals(profile.plan, "pro");
-  assertEquals(profile.stripe_subscription_id, "sub_handle_3");
+  const mock = mockStripeApi([
+    // Both deliveries retrieve the same live truth: canceled.
+    () => subscriptionResponse("sub_stale_1", "canceled", "cus_stale_1", { user_id: id }),
+  ]);
+  try {
+    // 1) The deletion event lands: pro -> free.
+    const deleted = await handleRequest(
+      await signedRequest(event("customer.subscription.deleted", { id: "sub_stale_1", customer: "cus_stale_1" })),
+    );
+    assertEquals(deleted.status, 200);
+    assertEquals((await fetchProfile(id)).plan, "free");
+
+    // 2) A STALE update (payload claims active) arrives late.
+    const stale = await handleRequest(
+      await signedRequest(
+        event("customer.subscription.updated", {
+          id: "sub_stale_1",
+          status: "active", // the lie a stale payload tells
+          customer: "cus_stale_1",
+          metadata: { user_id: id },
+        }),
+      ),
+    );
+    assertEquals(stale.status, 200);
+    const profile = await fetchProfile(id);
+    assertEquals(profile.plan, "free", "a stale 'active' payload must NOT resurrect PRO — live state is canceled");
+    assertEquals(profile.stripe_subscription_id, null);
+    assertEquals(mock.callCount(), 2, "each delivery must consult live state once");
+  } finally {
+    mock.restore();
+  }
+});
+
+Deno.test("handleRequest: live subscription retrieve fails -> 502 so Stripe retries, nothing written", async () => {
+  const { id } = await setupTestUser("handle-retrieve-fail", {
+    plan: "pro",
+    stripe_subscription_id: "sub_fail_1",
+    stripe_customer_id: "cus_fail_1",
+  });
+  const mock = mockStripeApi([() => stripeErrorResponse(500)]);
+  try {
+    const res = await handleRequest(
+      await signedRequest(event("customer.subscription.deleted", { id: "sub_fail_1", customer: "cus_fail_1" })),
+    );
+    assertEquals(res.status, 502, "live state unavailable must be retryable, never a silent 200");
+    // Entitlement must not change on an unverifiable event.
+    const profile = await fetchProfile(id);
+    assertEquals(profile.plan, "pro");
+  } finally {
+    mock.restore();
+  }
+});
+
+Deno.test("handleRequest: DB error while applying -> 502 so Stripe retries (fix pass 1)", async () => {
+  // metadata.user_id is a non-uuid string: the profiles UPDATE errors at
+  // the Postgres level (uuid parse), which previously fell through
+  // identically to "no row matched" -> 200 and Stripe never retried.
+  const mock = mockStripeApi([
+    () => subscriptionResponse("sub_dberr_1", "canceled", "cus_that_matches_nobody", { user_id: "not-a-uuid" }),
+  ]);
+  try {
+    const res = await handleRequest(
+      await signedRequest(
+        event("customer.subscription.deleted", {
+          id: "sub_dberr_1",
+          customer: "cus_that_matches_nobody",
+          metadata: { user_id: "not-a-uuid" },
+        }),
+      ),
+    );
+    assertEquals(res.status, 502, "a Postgres error must surface as retryable, not swallowed as 200");
+  } finally {
+    mock.restore();
+  }
+});
+
+Deno.test("handleRequest: genuinely unmatchable event -> 200 no_match (terminal, no retry storm)", async () => {
+  const mock = mockStripeApi([() => subscriptionResponse("sub_nomatch_1", "active", "cus_that_matches_nobody")]);
+  try {
+    const res = await handleRequest(
+      await signedRequest(
+        event("customer.subscription.updated", {
+          id: "sub_nomatch_1",
+          status: "active",
+          customer: "cus_that_matches_nobody",
+          metadata: { user_id: "00000000-0000-0000-0000-000000000000" },
+        }),
+      ),
+    );
+    assertEquals(res.status, 200);
+    assertEquals(await res.json(), { ok: false, reason: "no_match" });
+  } finally {
+    mock.restore();
+  }
+});
+
+Deno.test("handleRequest: replaying the same event twice is idempotent", async () => {
+  const { id } = await setupTestUser("handle-replay");
+  const mock = mockStripeApi([() => subscriptionResponse("sub_handle_3", "active", "cus_handle_3")]);
+  try {
+    const payload = event("checkout.session.completed", {
+      client_reference_id: id,
+      customer: "cus_handle_3",
+      subscription: "sub_handle_3",
+    });
+    const first = await handleRequest(await signedRequest(payload));
+    const second = await handleRequest(await signedRequest(payload));
+    assertEquals(first.status, 200);
+    assertEquals(second.status, 200);
+    const profile = await fetchProfile(id);
+    assertEquals(profile.plan, "pro");
+    assertEquals(profile.stripe_subscription_id, "sub_handle_3");
+  } finally {
+    mock.restore();
+  }
 });
 
 // Sanity check that TEST_STRIPE_SECRET_KEY/TEST_WEBHOOK_SECRET really are

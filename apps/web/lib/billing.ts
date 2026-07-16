@@ -31,5 +31,13 @@ export function parseCheckoutResponse(status: number, body: unknown): CheckoutOu
   if (errorCode === "server_misconfigured") {
     return { ok: false, message: "Billing isn't configured on this server yet." };
   }
+  if (errorCode === "no_customer") {
+    // The portal branch requires an existing Stripe customer (someone who
+    // has been through checkout at least once) — see
+    // supabase/functions/checkout-session/index.ts. The UI only shows
+    // "Manage billing" to PRO users, so reaching this means the plan and
+    // the billing record disagree; "upgrade first" is the honest recovery.
+    return { ok: false, message: "No billing profile exists for this account yet. Upgrade to PRO first." };
+  }
   return { ok: false, message: "Couldn't start checkout. Try again in a moment." };
 }
