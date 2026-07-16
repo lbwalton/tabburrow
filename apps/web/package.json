@@ -8,13 +8,16 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "make-og-image": "node scripts/make-og-image.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.5",
     "@tabburrow/ui": "workspace:*",
     "next": "^15.5.20",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.2",
@@ -23,6 +26,7 @@
     "@types/react-dom": "^18.3.0",
     "sharp": "^0.35.3",
     "tailwindcss": "^4.3.2",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.0"
   }
 }

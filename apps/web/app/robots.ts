@@ -25,6 +25,14 @@ const AI_CRAWLERS = [
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
+      // `/s/[slug]` (T21b, public share pages) is intentionally NOT
+      // disallowed here: crawling and indexing are different controls.
+      // Each share page sets its own `robots: {index: allowIndex}` in
+      // generateMetadata (app/s/[slug]/page.tsx), defaulting to noindex
+      // unless the collection owner opts in; that per-page meta tag is
+      // the actual gate. Blocking `/s/` in robots.txt would additionally
+      // stop crawlers from ever reading that per-page directive at all,
+      // which is not what "default noindex" is supposed to mean.
       { userAgent: "*", allow: "/" },
       ...AI_CRAWLERS.map((userAgent) => ({ userAgent, allow: "/" })),
     ],

@@ -6,8 +6,46 @@ import { LinkButton } from "./LinkButton";
 import { BurrowMark, GitHubMark } from "./icons";
 import { CHROME_STORE_URL, GITHUB_URL, SITE_NAME, marketingNavLinks } from "../lib/site-config";
 
-export function SiteNav() {
+export interface SiteNavProps {
+  /**
+   * "full" (default) is the marketing nav: links + GitHub + mobile menu.
+   * "minimal" is for pages that aren't part of the marketing site's own
+   * navigation flow (share pages, T21b): just the wordmark (linking home)
+   * and a single "Get TabBurrow" CTA, no nav links or mobile toggle.
+   */
+  variant?: "full" | "minimal";
+}
+
+export function SiteNav({ variant = "full" }: SiteNavProps = {}) {
   const [open, setOpen] = useState(false);
+
+  if (variant === "minimal") {
+    return (
+      <header className="sticky top-0 z-40 border-b border-[var(--line)] bg-[var(--bg-ground)]/95 backdrop-blur">
+        <nav
+          aria-label="Primary"
+          className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4"
+        >
+          <Link
+            href="/"
+            className="flex items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          >
+            <BurrowMark className="h-7 w-7" />
+            <span
+              className="text-lg font-bold text-[var(--text)]"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              {SITE_NAME}
+            </span>
+          </Link>
+
+          <LinkButton href={CHROME_STORE_URL} size="sm" className="h-9">
+            Get TabBurrow
+          </LinkButton>
+        </nav>
+      </header>
+    );
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--line)] bg-[var(--bg-ground)]/95 backdrop-blur">
