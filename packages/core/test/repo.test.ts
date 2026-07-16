@@ -143,17 +143,31 @@ describe("collections repo", () => {
 
   it("generateShareSlug: 200 generated slugs all conform to the web share page's ^[a-z0-9]{10}$ alphabet/length", () => {
     // apps/web/lib/share.ts's isValidShareSlug validates incoming slugs
-    // against exactly this pattern (lowercase alnum, 10 chars) — nanoid's
-    // DEFAULT alphabet includes uppercase, "_", and "-", which that regex
-    // rejects, so this is what proves generateShareSlug is restricted to
-    // customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 10) rather than
-    // nanoid's default. 200 samples, not 1, to make the alphabet violation
-    // (not just the length) hard to miss by chance.
+    // against exactly this pattern (lowercase alnum, 10 chars) — a generator
+    // emitting ANY character outside the 36-char lowercase-alnum alphabet
+    // (uppercase, "_", "-", ...) would produce slugs that 404 on their own
+    // share page. 200 samples, not 1, to make an alphabet violation (not
+    // just the length) hard to miss by chance.
     const pattern = /^[a-z0-9]{10}$/;
     for (let i = 0; i < 200; i++) {
       const slug = generateShareSlug();
       expect(slug).toMatch(pattern);
     }
+  });
+
+  it("generateShareSlug: every one of the 36 alphabet characters appears across 5000 samples (distribution sanity)", () => {
+    // Catches a truncated or unreachable-character mapping the regex test
+    // above can't (e.g. an off-by-one that can never emit "z" still passes
+    // ^[a-z0-9]{10}$ on every sample). 5000 samples x 10 chars = 50k draws;
+    // each of the 36 characters is expected ~1389 times, so any character
+    // that CAN appear failing to show up even once is effectively
+    // impossible ((35/36)^50000 ~ 10^-612) — a miss means a real bug, not
+    // bad luck.
+    const seen = new Set<string>();
+    for (let i = 0; i < 5000; i++) {
+      for (const ch of generateShareSlug()) seen.add(ch);
+    }
+    expect(Array.from(seen).sort().join("")).toBe("0123456789abcdefghijklmnopqrstuvwxyz");
   });
 
   it("moveCollection reorders via positionBetween using neighbor ids", async () => {

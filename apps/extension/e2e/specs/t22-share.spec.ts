@@ -228,11 +228,11 @@ async function pollUntil404(
   return false;
 }
 
-test("PRO round-trip: sharing a 3-link collection serves the live public page; Stop sharing 404s the same URL", async ({
+test("PRO round-trip: sharing a 3-link collection serves the live public page; rotate kills the old URL and serves the new; Stop sharing 404s it; the busy state is non-dismissable", async ({
   request,
 }) => {
   test.skip(!SERVICE_ROLE_KEY, "SUPABASE_SERVICE_ROLE_KEY not set in root .env — see SELF_HOSTING.md");
-  test.setTimeout(150_000);
+  test.setTimeout(180_000);
 
   const email = "e2e-share-pro@tabburrow.test";
   await cleanupStrayUser(email);
@@ -277,18 +277,30 @@ test("PRO round-trip: sharing a 3-link collection serves the live public page; S
     await expect(dialog).toBeVisible();
     await expect(
       dialog.getByText(
-        "Anyone with the link can see this collection's names, links, notes, and tags. Nothing else is shared.",
+        "Anyone with the link can see this collection's name, color, links, notes, and tags. Nothing else is shared.",
       ),
     ).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Share this collection" })).toBeVisible();
 
     // Case 1 setup: share, waiting out the visible busy state (delayed REST
     // makes the otherwise sub-second local sync cycle observable) before the
-    // URL is revealed. One route registration spans BOTH the share and the
-    // stop-sharing actions below (see delayRestCalls's docstring for why).
-    await delayRestCalls(context, 700);
+    // URL is revealed. One route registration spans ALL THREE actions below
+    // (share/rotate/stop — see delayRestCalls's docstring for why one span,
+    // not per-action churn).
+    await delayRestCalls(context, 1_000);
     await dialog.getByRole("button", { name: "Share this collection" }).click();
     await expect(dialog.getByText(/Sharing this collection and syncing to the cloud/)).toBeVisible();
+
+    // Fix-pass regression check: the busy state is NON-dismissable and
+    // renders no buttons at all. Escape must not close the dialog (a closed
+    // dialog would read as "called off" while the uncancelable action
+    // completes in the background), and there is no Cancel/×/anything to
+    // click. Asserted inside the delayed-REST busy window.
+    await dash.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText(/Sharing this collection and syncing to the cloud/)).toBeVisible();
+    expect(await dialog.getByRole("button").count()).toBe(0);
+
     const urlInput = dialog.getByLabel("Share link");
     await expect(urlInput).toBeVisible({ timeout: 30_000 });
     const shareUrl = await urlInput.inputValue();
@@ -309,7 +321,35 @@ test("PRO round-trip: sharing a 3-link collection serves the live public page; S
     for (const title of linkTitles) expect(shareBody).toContain(title);
     await finalScreenshot(dash, "t22-share-dialog-shared");
 
-    // --- Acceptance (2): Stop sharing -> the SAME url 404s within one sync cycle. ---
+    // --- Rotate: Generate new link -> old URL dies, new URL serves the
+    // same content. Same busy-wait mechanics as the share above. ---
+    await dialog.getByRole("button", { name: "Generate new link" }).click();
+    await expect(dialog.getByText(/Generating a new link and syncing to the cloud/)).toBeVisible();
+    await expect(urlInput).toBeVisible({ timeout: 30_000 });
+    await expect(urlInput).not.toHaveValue(shareUrl, { timeout: 30_000 });
+    const rotatedUrl = await urlInput.inputValue();
+    expect(rotatedUrl).toMatch(/^http:\/\/localhost:3100\/s\/[a-z0-9]{10}$/);
+    expect(rotatedUrl).not.toBe(shareUrl);
+
+    // Cloud row rotated too (not just the local UI).
+    const cloudAfterRotate = await fetchCollectionsForUser(SUPABASE_URL, SERVICE_ROLE_KEY!, authUser!.id);
+    const rotatedRow = cloudAfterRotate.find((c) => c.id === collectionId);
+    expect(rotatedRow?.is_shared).toBe(true);
+    expect(rotatedRow?.share_slug).toBeTruthy();
+    expect(rotatedRow?.share_slug).not.toBe(sharedRow!.share_slug);
+    expect(rotatedUrl.endsWith(`/s/${rotatedRow!.share_slug}`)).toBe(true);
+
+    // New URL serves the same live content; the OLD one 404s (same
+    // propagation budget as the stop-sharing check below).
+    const rotatedResponse = await request.get(rotatedUrl);
+    expect(rotatedResponse.status()).toBe(200);
+    const rotatedBody = await rotatedResponse.text();
+    expect(rotatedBody).toContain("Share Test Collection");
+    for (const title of linkTitles) expect(rotatedBody).toContain(title);
+    const oldUrlDied = await pollUntil404(request, shareUrl);
+    expect(oldUrlDied, "old share URL did not 404 within the polling budget after Generate new link").toBe(true);
+
+    // --- Acceptance (2): Stop sharing -> the CURRENT url 404s within one sync cycle. ---
     await dialog.getByRole("button", { name: "Stop sharing" }).click();
     await expect(dialog.getByText(/Stopping sharing and syncing to the cloud/)).toBeVisible();
     await context.unroute(REST_ROUTE_PATTERN);
@@ -330,7 +370,7 @@ test("PRO round-trip: sharing a 3-link collection serves the live public page; S
     // changes; the ~90s budget mirrors the acceptance criterion's "one sync
     // cycle" language and would also cover a real production-cache wait if
     // this ever runs against a built site instead.
-    const became404 = await pollUntil404(request, shareUrl);
+    const became404 = await pollUntil404(request, rotatedUrl);
     expect(became404, "share URL did not 404 within the polling budget after Stop sharing").toBe(true);
     await finalScreenshot(dash, "t22-share-dialog-unshared");
 

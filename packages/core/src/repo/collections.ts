@@ -1,4 +1,3 @@
-import { customAlphabet } from "nanoid";
 import type { BurrowDB } from "../db";
 import { getDB } from "../db";
 import type { Collection } from "../types";
@@ -65,19 +64,48 @@ export async function setCollectionAccent(
   });
 }
 
+const SHARE_SLUG_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
+const SHARE_SLUG_LENGTH = 10;
 /**
- * Generates a share slug for `setShare`. Restricted to a lowercase
- * alphanumeric alphabet (never nanoid's default, which includes uppercase,
- * "_", and "-") because it MUST match the public web share page's slug
- * validator (`apps/web/lib/share.ts`'s `isValidShareSlug`, `/^[a-z0-9]{10}$/`)
- * — a slug outside that shape would 404 on its own share page the instant
- * it synced. `customAlphabet` is built once at module scope (its own
- * recommended usage) rather than per call.
+ * The largest multiple of the alphabet size that fits in a byte
+ * (36 * 7 = 252). Bytes >= this are REJECTED rather than mapped: a plain
+ * `byte % 36` over all 256 byte values would map them unevenly (the first
+ * 256 % 36 = 4 characters would each have 8 source bytes, the other 32 only
+ * 7), biasing slugs toward "0"-"3". Rejection sampling keeps every character
+ * at exactly 7 source bytes — a uniform distribution.
  */
-const nanoidLowerAlnum10 = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 10);
+const SHARE_SLUG_REJECTION_BOUND = SHARE_SLUG_ALPHABET.length * Math.floor(256 / SHARE_SLUG_ALPHABET.length);
 
+/**
+ * Generates a share slug for `setShare`: 10 characters, uniformly random
+ * over the lowercase-alphanumeric alphabet, via `crypto.getRandomValues`
+ * with rejection sampling (see `SHARE_SLUG_REJECTION_BOUND`). Dependency-free
+ * on purpose — `crypto.getRandomValues` exists in every runtime core targets
+ * (browsers, extension pages/workers, and Node 20+ under vitest), whereas
+ * the obvious library choice (nanoid v6) requires Node >= 22, above this
+ * repo's engine floor and CI's pinned Node 20. The alphabet/length MUST
+ * match the public web share page's slug validator (`apps/web/lib/share.ts`'s
+ * `isValidShareSlug`, `/^[a-z0-9]{10}$/`) — a slug outside that shape would
+ * 404 on its own share page the instant it synced. Both properties are
+ * pinned by tests in test/repo.test.ts: an alphabet-conformance property
+ * test (200 samples) and a distribution sanity test (all 36 characters
+ * appear across 5000 samples).
+ */
 export function generateShareSlug(): string {
-  return nanoidLowerAlnum10();
+  let slug = "";
+  while (slug.length < SHARE_SLUG_LENGTH) {
+    // 2x oversampling per round: 252/256 of bytes are accepted, so one round
+    // nearly always fills the remainder; the while loop guards the rare
+    // shortfall (never an infinite spin — each accepted byte makes progress,
+    // and P(all 20 bytes rejected) = (4/256)^20).
+    const bytes = crypto.getRandomValues(new Uint8Array((SHARE_SLUG_LENGTH - slug.length) * 2));
+    for (const byte of bytes) {
+      if (byte >= SHARE_SLUG_REJECTION_BOUND) continue; // rejected — see the bound's docstring
+      slug += SHARE_SLUG_ALPHABET[byte % SHARE_SLUG_ALPHABET.length]!;
+      if (slug.length === SHARE_SLUG_LENGTH) break;
+    }
+  }
+  return slug;
 }
 
 /**

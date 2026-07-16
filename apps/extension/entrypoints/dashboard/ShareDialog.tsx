@@ -9,6 +9,7 @@ import type { AuthUser, Plan } from "../../lib/auth";
 import { shareUrlFor } from "../../lib/share-url";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { requestSync } from "../../lib/sync-controller";
+import { BurrowDiggingAnimation } from "./BurrowDiggingAnimation";
 
 export interface ShareDialogProps {
   open: boolean;
@@ -32,6 +33,12 @@ const BUSY_MESSAGE: Record<ShareAction, string> = {
 };
 
 const DEFAULT_ERROR_MESSAGE = "Couldn't sync this change to the cloud. Try again.";
+/** What a `{skipped: "skip-free"}` sync result means to THIS dialog: the plan check inside `requestSync` no longer confirms PRO (e.g. the 12h plan cache expired and re-fetched a downgraded plan mid-action) — a plan problem, not a network one, so it gets plan-shaped copy instead of the generic network-sounding error. */
+const PLAN_LAPSED_ERROR_MESSAGE = "Your plan no longer includes sharing.";
+
+/** Exactly what a share page makes public, listed in full — rendered in the consent explanation AND the shared state. The accent (color or emoji) IS shown publicly (apps/web/lib/share.ts returns `accent` and the page renders it), so "color" must be in this list for "Nothing else is shared." to be literally true. */
+const SHARE_VISIBILITY_SENTENCE =
+  "Anyone with the link can see this collection's name, color, links, notes, and tags. Nothing else is shared.";
 
 /**
  * Collection-header "Share" control (opened next to "Organize with AI" —
@@ -42,22 +49,26 @@ const DEFAULT_ERROR_MESSAGE = "Couldn't sync this change to the cloud. Try again
  *  - FREE (signed in, not PRO): upsell, no toggle at all.
  *  - PRO, unshared: the plain-language visibility explanation + a
  *    "Share this collection" button.
- *  - PRO, an action (share/stop/rotate) in flight: a visible busy state
- *    with a Cancel (closes the dialog; does NOT abort the in-flight
- *    `setShare`+`requestSync` — there is no cancellation plumbing in
- *    `requestSync`, and the write already committed locally by the time
- *    this state renders, so "cancel" means "stop watching", not "undo").
+ *  - PRO, an action (share/stop/rotate) in flight: a NON-DISMISSABLE busy
+ *    state — no footer buttons, and Escape/backdrop/the × button are all
+ *    disabled (`Dialog dismissable={false}` plus a no-op onClose as the
+ *    second layer; see Dialog.tsx's cancel-listener note on why both).
+ *    Spinner + "This takes a few seconds." The action is genuinely
+ *    uncancelable (`setShare` commits locally before any human could react,
+ *    and `requestSync` has no abort plumbing), so offering ANY dismissal
+ *    here would be a lie — the user would believe they called it off while
+ *    sharing went live in the background. The dialog stays visibly present
+ *    until the action resolves, then shows the result state.
  *  - PRO, shared: the URL (read-only input + Copy), Stop sharing, and
  *    Generate new link.
  *
  * The one hard rule every action here follows: `setShare` writes local
- * state FIRST (so it survives even if the dialog is closed mid-sync), then
- * `requestSync("manual")` is awaited before the busy state clears. On a
- * failed/skipped sync the local write is reverted to what it was BEFORE
- * this action (captured as `previous` right before the write) — the public
- * page can only ever reflect what actually reached the cloud, so a device
- * that couldn't sync must not keep showing itself as sharing/not-sharing a
- * slug nothing else in the world can resolve.
+ * state FIRST, then `requestSync("manual")` is awaited before the busy
+ * state clears. On a failed/skipped sync the local write is reverted to
+ * what it was BEFORE this action (captured as `previous` right before the
+ * write) — the public page can only ever reflect what actually reached the
+ * cloud, so a device that couldn't sync must not keep showing itself as
+ * sharing/not-sharing a slug nothing else in the world can resolve.
  */
 export function ShareDialog({ open, onClose, collection }: ShareDialogProps) {
   const db = getDB();
@@ -119,7 +130,15 @@ export function ShareDialog({ open, onClose, collection }: ShareDialogProps) {
     // reached the cloud. Revert so this device's local state matches what
     // the public page (and every other device) actually has.
     await setShare(collection.id, previous, db);
-    const message = "error" in result && result.error ? result.error : DEFAULT_ERROR_MESSAGE;
+    // A "skip-free" gate result is a PLAN problem (the mid-action plan
+    // re-check no longer confirms PRO), not a transient network one — say
+    // so, instead of the generic error implying a retry might work.
+    const message =
+      "skipped" in result && result.skipped === "skip-free"
+        ? PLAN_LAPSED_ERROR_MESSAGE
+        : "error" in result && result.error
+          ? result.error
+          : DEFAULT_ERROR_MESSAGE;
     setBusy(null);
     setError({ action, message });
   }
@@ -182,7 +201,7 @@ export function ShareDialog({ open, onClose, collection }: ShareDialogProps) {
   } else if (!user) {
     body = (
       <p className="text-sm text-[var(--text)]">
-        Sign in to share a collection: anyone with the link can see its names, links, notes, and tags.
+        Sign in to share a collection: anyone with the link can see its name, color, links, notes, and tags.
       </p>
     );
     footer = (
@@ -215,12 +234,18 @@ export function ShareDialog({ open, onClose, collection }: ShareDialogProps) {
       </>
     );
   } else if (busy) {
-    body = <p className="py-2 text-sm text-[var(--text-2)]">{BUSY_MESSAGE[busy]}</p>;
-    footer = (
-      <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-        Cancel
-      </Button>
+    // Deliberately NO buttons of any kind, and the Dialog itself is
+    // non-dismissable while this renders (see the `dismissable`/`onClose`
+    // wiring at the bottom) — this action cannot be canceled, so nothing
+    // here may claim otherwise. See the module docstring's busy-state note.
+    body = (
+      <div className="flex flex-col items-center gap-2 py-2">
+        <BurrowDiggingAnimation />
+        <p className="text-sm text-[var(--text-2)]">{BUSY_MESSAGE[busy]}</p>
+        <p className="text-xs text-[var(--text-2)]">This takes a few seconds.</p>
+      </div>
     );
+    footer = null;
   } else if (error) {
     body = <p className="text-sm text-[var(--text)]">{error.message}</p>;
     footer = (
@@ -237,9 +262,7 @@ export function ShareDialog({ open, onClose, collection }: ShareDialogProps) {
     const url = shareUrlFor(collection.shareSlug);
     body = (
       <div className="flex flex-col gap-3">
-        <p className="text-sm text-[var(--text)]">
-          Anyone with the link can see this collection&apos;s names, links, notes, and tags. Nothing else is shared.
-        </p>
+        <p className="text-sm text-[var(--text)]">{SHARE_VISIBILITY_SENTENCE}</p>
         <div className="flex items-center gap-2">
           <Input
             readOnly
@@ -269,11 +292,7 @@ export function ShareDialog({ open, onClose, collection }: ShareDialogProps) {
       </>
     );
   } else {
-    body = (
-      <p className="text-sm text-[var(--text)]">
-        Anyone with the link can see this collection&apos;s names, links, notes, and tags. Nothing else is shared.
-      </p>
-    );
+    body = <p className="text-sm text-[var(--text)]">{SHARE_VISIBILITY_SENTENCE}</p>;
     footer = (
       <>
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
@@ -286,8 +305,21 @@ export function ShareDialog({ open, onClose, collection }: ShareDialogProps) {
     );
   }
 
+  // While an action is in flight the dialog is hard-locked open:
+  // `dismissable={false}` disables Escape/backdrop/× at the Dialog level
+  // (Dialog itself also self-reopens against Chromium's rapid-double-Escape
+  // force-close — see its close-handler comment), and the no-op onClose is
+  // a defensive second layer so no dismissal path, known or future, can
+  // flip this component's owner state mid-action. Both restore the instant
+  // `busy` clears.
   return (
-    <Dialog open={open} onClose={onClose} title="Share collection" footer={footer}>
+    <Dialog
+      open={open}
+      onClose={busy ? () => {} : onClose}
+      dismissable={!busy}
+      title="Share collection"
+      footer={footer}
+    >
       {body}
     </Dialog>
   );
