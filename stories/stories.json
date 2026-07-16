@@ -220,7 +220,7 @@
     "id": "T19",
     "title": "ai-organize Edge Function",
     "phase": 2,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "quota 402 at 30 uses for free tier",
       "PRO tier bypasses quota",
