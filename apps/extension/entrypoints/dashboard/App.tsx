@@ -106,7 +106,7 @@ export function App() {
   const collectionsLoaded = collectionsRaw !== undefined;
 
   const collectionIds = useMemo(() => collections.map((c) => c.id), [collections]);
-  const route = useRoute(collectionIds);
+  const { route, organizeRequested } = useRoute(collectionIds);
   const activeCollectionId = route.kind === "collection" ? route.id : null;
 
   const linkCounts = useLiveQuery(() => countLinksByCollection(db), []) ?? EMPTY_COUNTS;
@@ -164,6 +164,10 @@ export function App() {
   // stacking multiple pending-undo toasts of the same kind.
   const [pendingLinkDelete, setPendingLinkDelete] = useState<PendingLinkDelete | null>(null);
   const [crashRestoring, setCrashRestoring] = useState(false);
+  // T20: AiOrganizeDialog's "done" toast — same {id, message} shape/timestamp-key
+  // convention as linkOpError above, so a second organize during the first
+  // toast's window restarts it instead of being swallowed.
+  const [aiToast, setAiToast] = useState<{ id: number; message: string } | null>(null);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -256,6 +260,10 @@ export function App() {
 
   function handleLinkError(message: string) {
     setLinkOpError({ id: Date.now(), message });
+  }
+
+  function handleAiOrganized(message: string) {
+    setAiToast({ id: Date.now(), message });
   }
 
   function handleLinksDeleted(ids: string[]) {
@@ -383,6 +391,8 @@ export function App() {
               onLinkError={handleLinkError}
               onLinksDeleted={handleLinksDeleted}
               onCreateFirstCollection={handleCreateFirstCollection}
+              autoOpenOrganize={organizeRequested}
+              onOrganized={handleAiOrganized}
             />
           </div>
         </main>
@@ -421,6 +431,14 @@ export function App() {
               onAction={handleUndoLinkDelete}
               durationMs={6000}
               onDismiss={() => setPendingLinkDelete(null)}
+            />
+          ) : null}
+          {aiToast ? (
+            <Toast
+              key={aiToast.id}
+              message={aiToast.message}
+              durationMs={6000}
+              onDismiss={() => setAiToast(null)}
             />
           ) : null}
         </div>

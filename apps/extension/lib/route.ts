@@ -40,6 +40,39 @@ export function parseHash(hash: string): ParsedRoute {
   return { kind: "root" };
 }
 
+/**
+ * T20: the popup's "Save all + organize" secondary action deep-links into
+ * the dashboard as `#/c/<id>?organize=1` — a query string glued onto the
+ * HASH itself (this is a hash router; there is no real `location.search`
+ * hop here), so it needs its own parse step separate from `parseHash`
+ * above. `useRoute` checks this on the RAW hash before stripping it (so
+ * `parseHash`/`resolveRoute` only ever see a clean `#/c/<id>`), consumes it
+ * exactly once, then calls `stripOrganizeFlag` to rewrite `location.hash` —
+ * so a page reload, back-navigation, or a second look at the same URL never
+ * replays the auto-open.
+ */
+const ORGANIZE_FLAG_PARAM = "organize";
+const ORGANIZE_FLAG_VALUE = "1";
+
+/** True when `hash` carries a "?organize=1" suffix. Pure. */
+export function hasOrganizeFlag(hash: string): boolean {
+  const qIndex = hash.indexOf("?");
+  if (qIndex === -1) return false;
+  const query = new URLSearchParams(hash.slice(qIndex + 1));
+  return query.get(ORGANIZE_FLAG_PARAM) === ORGANIZE_FLAG_VALUE;
+}
+
+/** Removes the "organize" param from `hash`'s query suffix (dropping the "?" entirely once nothing's left in it) — the exact inverse of however the flag got added. Pure. Any OTHER query param survives, though nothing in this codebase sets one today. */
+export function stripOrganizeFlag(hash: string): string {
+  const qIndex = hash.indexOf("?");
+  if (qIndex === -1) return hash;
+  const base = hash.slice(0, qIndex);
+  const query = new URLSearchParams(hash.slice(qIndex + 1));
+  query.delete(ORGANIZE_FLAG_PARAM);
+  const rest = query.toString();
+  return rest ? `${base}?${rest}` : base;
+}
+
 export type ResolvedRoute =
   | { kind: "collection"; id: string }
   | { kind: "sessions" }

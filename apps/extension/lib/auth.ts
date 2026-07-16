@@ -165,6 +165,26 @@ export async function getUser(): Promise<AuthUser | null> {
 }
 
 /**
+ * The current session's access token (JWT), or `null` when cloud isn't
+ * configured or nobody is signed in — same "quiet null, never throw for the
+ * unconfigured/signed-out cases" convention as `getUser()`. Reads from local
+ * storage (no network round trip; supabase-js refreshes the stored session
+ * before it expires via `autoRefreshToken` — see lib/supabase.ts). The one
+ * consumer today is `lib/ai.ts`'s `organizeLinks`, which calls the
+ * `ai-organize` Edge Function directly via `fetch` (bypassing supabase-js's
+ * `functions.invoke` so the raw response body — used to tell a 402 quota
+ * body from a 502 upstream body apart — is trivial to read) and needs the
+ * bearer token itself, not just a yes/no signed-in check.
+ */
+export async function getAccessToken(): Promise<string | null> {
+  const client = getClient();
+  if (!client) return null;
+  const { data, error } = await client.auth.getSession();
+  if (error) return null;
+  return data.session?.access_token ?? null;
+}
+
+/**
  * Wraps `supabase.auth.onAuthStateChange`, translating each event into a
  * plain `AuthUser | null` — this is the ONLY thing UI (AccountPane, the
  * popup footer) subscribes to for auth state; there is no polling anywhere.

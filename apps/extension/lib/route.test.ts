@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseHash, resolveRoute } from "./route";
+import { hasOrganizeFlag, parseHash, resolveRoute, stripOrganizeFlag } from "./route";
 
 describe("parseHash", () => {
   it("parses a collection route", () => {
@@ -62,5 +62,41 @@ describe("resolveRoute", () => {
 
   it("resolves root to empty when there are no collections", () => {
     expect(resolveRoute({ kind: "root" }, [])).toEqual({ kind: "empty" });
+  });
+});
+
+describe("hasOrganizeFlag", () => {
+  it("detects ?organize=1 appended to a collection hash", () => {
+    expect(hasOrganizeFlag("#/c/abc-123?organize=1")).toBe(true);
+  });
+
+  it("is false with no query suffix at all", () => {
+    expect(hasOrganizeFlag("#/c/abc-123")).toBe(false);
+    expect(hasOrganizeFlag("")).toBe(false);
+  });
+
+  it("is false for a query suffix that isn't organize=1", () => {
+    expect(hasOrganizeFlag("#/c/abc-123?organize=0")).toBe(false);
+    expect(hasOrganizeFlag("#/c/abc-123?foo=1")).toBe(false);
+  });
+});
+
+describe("stripOrganizeFlag", () => {
+  it("removes the flag, dropping the '?' entirely when nothing else remains", () => {
+    expect(stripOrganizeFlag("#/c/abc-123?organize=1")).toBe("#/c/abc-123");
+  });
+
+  it("is a no-op when there's no query suffix", () => {
+    expect(stripOrganizeFlag("#/c/abc-123")).toBe("#/c/abc-123");
+    expect(stripOrganizeFlag("")).toBe("");
+  });
+
+  it("preserves any OTHER query param, dropping only 'organize'", () => {
+    expect(stripOrganizeFlag("#/c/abc-123?organize=1&foo=bar")).toBe("#/c/abc-123?foo=bar");
+  });
+
+  it("round-trips with hasOrganizeFlag: the stripped hash never re-triggers it", () => {
+    const stripped = stripOrganizeFlag("#/c/abc-123?organize=1");
+    expect(hasOrganizeFlag(stripped)).toBe(false);
   });
 });

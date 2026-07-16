@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { Collection, Link } from "@tabburrow/core";
 import { getDB, renameCollection } from "@tabburrow/core";
@@ -5,6 +6,9 @@ import { Button, EmptyState } from "@tabburrow/ui";
 import type { ResolvedRoute } from "../../lib/route";
 import { collectionHash } from "../../lib/dashboard";
 import type { SortMode } from "../../lib/links";
+import { onAuthChange } from "../../lib/auth";
+import { isSupabaseConfigured } from "../../lib/supabase";
+import { AiOrganizeDialog } from "./AiOrganizeDialog";
 import { BurrowIllustration } from "./BurrowIllustration";
 import { useInlineRename } from "./useInlineRename";
 import { LinkGrid } from "./LinkGrid";
@@ -26,6 +30,10 @@ export interface DashboardMainProps {
   /** Notifies `App` after a link-delete succeeds, so it can show the 6s Undo toast. */
   onLinksDeleted: (ids: string[]) => void;
   onCreateFirstCollection: () => void;
+  /** T20: pulses `true` once when the popup's "Save all + organize" deep link (`?organize=1`, consumed by `useRoute`) targets THIS route — CollectionPanel auto-opens AiOrganizeDialog in response. */
+  autoOpenOrganize: boolean;
+  /** T20: notifies `App` after AI organize applies, so it can show the "Organized N links into M collections" toast. */
+  onOrganized: (message: string) => void;
 }
 
 /** The dashboard's main area: routes to a collection panel, the sessions pane, the settings pane, or one of the empty states. */
@@ -40,6 +48,8 @@ export function DashboardMain({
   onLinkError,
   onLinksDeleted,
   onCreateFirstCollection,
+  autoOpenOrganize,
+  onOrganized,
 }: DashboardMainProps) {
   if (route.kind === "sessions") {
     return <SessionsPane onError={onLinkError} />;
@@ -99,6 +109,8 @@ export function DashboardMain({
       onSortModeChange={onSortModeChange}
       onLinkError={onLinkError}
       onLinksDeleted={onLinksDeleted}
+      autoOpenOrganize={autoOpenOrganize}
+      onOrganized={onOrganized}
     />
   );
 }
@@ -117,6 +129,8 @@ interface CollectionPanelProps {
   onSortModeChange: (mode: SortMode) => void;
   onLinkError: (message: string) => void;
   onLinksDeleted: (ids: string[]) => void;
+  autoOpenOrganize: boolean;
+  onOrganized: (message: string) => void;
 }
 
 function CollectionPanel({
@@ -129,12 +143,29 @@ function CollectionPanel({
   onSortModeChange,
   onLinkError,
   onLinksDeleted,
+  autoOpenOrganize,
+  onOrganized,
 }: CollectionPanelProps) {
   const db = getDB();
   const rename = useInlineRename({
     value: collection.name,
     onCommit: (name) => void renameCollection(collection.id, name, db),
   });
+
+  // T20: "Organize with AI" — own its open state (like RestoreAllButton's
+  // confirm dialog) AND respond to the popup deep link's one-shot pulse.
+  // `signedIn` is ONLY for the trigger button's lock glyph; AiOrganizeDialog
+  // subscribes to auth itself for its own view logic (same "leaf components
+  // own their auth state" precedent AccountPane/popup's App already set).
+  const [aiOpen, setAiOpen] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    return onAuthChange((user) => setSignedIn(!!user));
+  }, []);
+  useEffect(() => {
+    if (autoOpenOrganize) setAiOpen(true);
+  }, [autoOpenOrganize]);
 
   return (
     <div className="flex h-full flex-col px-8 py-8">
@@ -166,6 +197,9 @@ function CollectionPanel({
         {linksLoaded && links.length > 0 ? (
           <div className="flex items-center gap-2">
             <RestoreAllButton links={links} onError={onLinkError} />
+            <Button type="button" variant="ghost" size="sm" onClick={() => setAiOpen(true)}>
+              {signedIn ? "Organize with AI" : "🔒 Organize with AI"}
+            </Button>
             <SortMenu value={sortMode} onChange={onSortModeChange} />
           </div>
         ) : null}
@@ -190,6 +224,17 @@ function CollectionPanel({
           />
         )}
       </div>
+
+      <AiOrganizeDialog
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        collectionId={collection.id}
+        collectionName={collection.name}
+        links={links}
+        collections={collections}
+        onError={onLinkError}
+        onOrganized={onOrganized}
+      />
     </div>
   );
 }

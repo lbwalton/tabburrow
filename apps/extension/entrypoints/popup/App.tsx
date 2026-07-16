@@ -10,11 +10,12 @@ import type { PopupState, SaveAction } from "../../lib/popupState";
 import type { SearchResults } from "../../lib/search";
 import { emptyStateFor, searchAll } from "../../lib/search";
 import { nextHighlight, resolveHighlight } from "../../lib/searchNav";
-import { dashboardCollectionUrl, dashboardSettingsUrl } from "../../lib/dashboard";
+import { dashboardCollectionOrganizeUrl, dashboardCollectionUrl, dashboardSettingsUrl } from "../../lib/dashboard";
 import { formatHost } from "../../lib/links";
 import { getPlan, onAuthChange } from "../../lib/auth";
 import type { AuthUser, Plan } from "../../lib/auth";
 import { isSupabaseConfigured } from "../../lib/supabase";
+import { aiOrganizeCtaAvailable, getAiUsesThisMonth } from "../../lib/ai";
 import { sendSyncNudge } from "../../lib/sync-nudge";
 import {
   isPendingCommandFresh,
@@ -138,6 +139,24 @@ export function App() {
       cancelled = true;
     };
   }, [authUser]);
+
+  // T20: the "Save all + organize" secondary action's gate — see
+  // lib/ai.ts's aiOrganizeCtaAvailable docstring for why plan===null (not
+  // yet resolved) never shows it.
+  const [aiUsesThisMonth, setAiUsesThisMonth] = useState(0);
+  useEffect(() => {
+    if (!authUser) {
+      setAiUsesThisMonth(0);
+      return;
+    }
+    let cancelled = false;
+    void getAiUsesThisMonth(authUser.id, db).then((n) => {
+      if (!cancelled) setAiUsesThisMonth(n);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser, db]);
 
   // Snapshot the current window's tabs + last-used target once, on open. The
   // popup is a fresh document every time it opens, so a one-shot fetch is
@@ -305,6 +324,11 @@ export function App() {
     return created;
   }
 
+  /** T20's "Save all + organize" secondary action: the tabs are already saved by the time this renders (it lives in the post-save confirm view) — this just deep-links into the dashboard, which auto-opens AiOrganizeDialog for that collection (see lib/route.ts's organize-flag handling, consumed by the dashboard's useRoute). */
+  function handleSaveAllAndOrganize(collectionId: string) {
+    chrome.tabs.create({ url: dashboardCollectionOrganizeUrl(collectionId) });
+  }
+
   async function handleCloseSavedTabs() {
     if (state.view !== "confirm" || busy) return;
     setBusy(true);
@@ -380,7 +404,8 @@ export function App() {
         // Toast's visual language (tokens, spacing, role="status"), rendered
         // inline in normal document flow rather than the floating <Toast>
         // component itself — Toast only offers a single action slot and this
-        // state needs two (Close saved tabs / Done).
+        // state needs up to three (Close saved tabs / Save all + organize /
+        // Done).
         <div
           role="status"
           className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3 shadow-lg"
@@ -389,7 +414,7 @@ export function App() {
             <span className="text-[var(--accent)]">&#10003;</span> Saved {state.count}{" "}
             {state.count === 1 ? "tab" : "tabs"} to {state.collectionName}
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {state.action === "all" ? (
               <Button
                 variant="danger"
@@ -398,6 +423,19 @@ export function App() {
                 disabled={busy}
               >
                 Close saved tabs
+              </Button>
+            ) : null}
+            {/* T20: only once we KNOW there's quota to spend — signed out, an
+                unresolved plan, or a free user already at the limit all show
+                nothing here rather than a button that would just 402. */}
+            {state.action === "all" && targetId && authUser && aiOrganizeCtaAvailable(plan, aiUsesThisMonth) ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleSaveAllAndOrganize(targetId)}
+                disabled={busy}
+              >
+                Save all + organize
               </Button>
             ) : null}
             <Button

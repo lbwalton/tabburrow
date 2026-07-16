@@ -19,11 +19,13 @@ now real and verified — the extension DOES read `SUPABASE_URL`/
 in T19: it exists at `supabase/functions/ai-organize/`, is covered by a
 `deno test` suite, and was verified end to end against a real Anthropic
 call on the local stack, so step 3's `ai-organize` row and step 4's
-`ANTHROPIC_API_KEY` secret are now a tested runbook, not a preview. The
-extension itself doesn't call it yet (that UI wiring is T20), so there's
-no in-app way to trigger it until then. `checkout-session`,
-`stripe-webhook`, and `share-resolve` have **not** landed yet (T21/T22/T23),
-so their rows in step 3 stay a preview of the workflow.
+`ANTHROPIC_API_KEY` secret are now a tested runbook, not a preview. T20
+wired the extension UI to it (the collection header's "Organize with AI"
+and the popup's "Save all + organize"), so self-hosters can now actually
+trigger it end to end from the built extension, not just via a raw
+function call. `checkout-session`, `stripe-webhook`, and `share-resolve`
+have **not** landed yet (T21/T22/T23), so their rows in step 3 stay a
+preview of the workflow.
 
 ## What self-hosting gets you
 
@@ -198,9 +200,10 @@ mode**, not an error: `hasSupabaseEnv()` detects the missing config and every
 cloud-touching UI (Settings' Account section, the popup footer) renders a
 quiet "Cloud features are not configured" state with zero network calls —
 save/organize/sessions/search/import-export all keep working exactly as
-before. AI organize/sharing/billing env vars (`ANTHROPIC_API_KEY`,
-`STRIPE_*`) still aren't read by the extension yet — that lands with
-T19/T20/T22/T23.
+before. AI organize now works end to end (T19/T20) — `ANTHROPIC_API_KEY`
+is read server-side, by the `ai-organize` Edge Function, never by the
+extension itself. Sharing/billing env vars (`STRIPE_*`, share-related
+secrets) still aren't read by anything yet — that lands with T21/T22/T23.
 
 Keep the Supabase project and keys from steps 1–4 around; once you've set
 them, re-run the extension build (or `pnpm --filter extension dev`) and

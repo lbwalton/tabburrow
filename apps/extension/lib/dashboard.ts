@@ -19,6 +19,17 @@ export function dashboardCollectionUrl(id: string): string {
   return chrome.runtime.getURL(`/${dashboardCollectionPath(id)}`);
 }
 
+/**
+ * Full extension-origin URL for a collection with the T20 auto-open flag
+ * appended (`#/c/<id>?organize=1`) — the popup's "Save all + organize"
+ * secondary action opens exactly this, and the dashboard's `useRoute`
+ * (lib/route.ts's `hasOrganizeFlag`/`stripOrganizeFlag`) consumes it to
+ * auto-open AiOrganizeDialog for that collection.
+ */
+export function dashboardCollectionOrganizeUrl(id: string): string {
+  return chrome.runtime.getURL(`/dashboard.html${collectionHash(id)}?organize=1`);
+}
+
 /** dashboard.html hash-route for Settings — see lib/route.ts's `parseHash`. */
 export function dashboardSettingsPath(): string {
   return "dashboard.html#/settings";

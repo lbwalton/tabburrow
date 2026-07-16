@@ -38,3 +38,40 @@
     opacity: 0;
   }
 }
+
+/* AiOrganizeDialog's "loading" state (BurrowDiggingAnimation.tsx): three
+   dirt-clump dots bouncing in sequence while the ai-organize function runs.
+   Token color only (--accent), no new hex. */
+.burrow-dig-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--accent);
+  animation: burrow-dig-bounce 900ms ease-in-out infinite;
+}
+
+@keyframes burrow-dig-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.6;
+  }
+  40% {
+    transform: translateY(-8px);
+    opacity: 1;
+  }
+}
+
+/* Motion-reduced: a static, dimmed dot still reads as "working" without any
+   animation — this repo's one other transition (.bulk-bar above) is a
+   single 200ms mount effect the OS's reduce-motion setting doesn't
+   typically suppress, but an INFINITE loop is exactly the kind of motion
+   that setting exists to opt out of. */
+@media (prefers-reduced-motion: reduce) {
+  .burrow-dig-dot {
+    animation: none;
+    opacity: 0.85;
+  }
+}
