@@ -30,7 +30,7 @@ import { deleteAdminUser, deleteCloudDataForUser, findAdminUserByEmail, setUserP
  *
  * Run (from apps/extension):
  *   npx tsx e2e/capture-assets.ts [phase]
- *   phase: all (default) | main | share | tile | hero | gif
+ *   phase: all (default) | main | dashboard-grid | share | tile | hero | gif
  *
  * Requires:
  *  - `pnpm --filter extension build` already run (this script does not do
@@ -40,8 +40,11 @@ import { deleteAdminUser, deleteCloudDataForUser, findAdminUserByEmail, setUserP
  *    dance", duplicated here) and restores the normal build afterward.
  *  - the local Supabase stack running (`supabase start`) with
  *    SUPABASE_SERVICE_ROLE_KEY and ANTHROPIC_API_KEY set in the root
- *    `.env` — the "main" phase's AI-organize shot and the "share" phase
- *    both need live infra, same as t20/t22's specs.
+ *    `.env` — the "main" phase's dashboard-grid (shot 02, signed-in PRO —
+ *    see phaseDashboardGrid) and AI-organize (shot 03) shots, and the
+ *    "share" phase, all need live infra, same as t18/t20/t22's specs.
+ *    "dashboard-grid" is also its own standalone phase, for re-capturing
+ *    just that one shot.
  */
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -291,13 +294,121 @@ function toSeedLinks(collectionId: string, items: Array<{ title: string; url: st
   }));
 }
 
+/** Seeds the five rail collections (4-6 per listing.md's shot 2 spec) shared by shots 01, 02, and 04 — one source of truth for phaseMain()'s own `dash` page AND phaseDashboardGrid()'s separate standalone session below, instead of two copies of this data drifting apart. */
+async function seedMainCollections(dash: Page) {
+  const kitchenRenoId = randomUUID();
+  const competitorId = randomUUID();
+  const portlandId = randomUUID();
+  const devDocsId = randomUUID();
+  const recipesId = randomUUID();
+
+  const collections: SeedCollection[] = [
+    { id: kitchenRenoId, name: "Kitchen reno research", accent: "var(--accent)", position: seedPosition(0) },
+    { id: competitorId, name: "Q3 competitor teardown", accent: "var(--accent-2)", position: seedPosition(1) },
+    { id: portlandId, name: "Weekend in Portland", accent: "color-mix(in srgb, var(--accent) 50%, var(--accent-2) 50%)", position: seedPosition(2) },
+    { id: devDocsId, name: "Dev docs I keep rereading", accent: "color-mix(in srgb, var(--muted) 60%, var(--text) 40%)", position: seedPosition(3) },
+    { id: recipesId, name: "Recipes worth repeating", accent: "color-mix(in srgb, var(--accent) 70%, var(--text) 30%)", position: seedPosition(4) },
+  ];
+  const links: SeedLink[] = [
+    ...toSeedLinks(kitchenRenoId, KITCHEN_RENO_LINKS),
+    ...toSeedLinks(competitorId, COMPETITOR_TEARDOWN_LINKS),
+    ...toSeedLinks(portlandId, PORTLAND_LINKS),
+    ...toSeedLinks(devDocsId, DEV_DOCS_LINKS),
+    ...toSeedLinks(recipesId, RECIPES_LINKS),
+  ];
+  await seedCollectionsAndLinks(dash, collections, links);
+  await seedMeta(dash, { lastUsedCollectionId: kitchenRenoId }); // duplicated literal — see lib/commands.ts's LAST_USED_COLLECTION_META_KEY
+  await dash.reload();
+
+  return { kitchenRenoId, competitorId, portlandId, devDocsId, recipesId };
+}
+
 // ---------------------------------------------------------------------------
-// Phase: main (shots 1, 2, 4 on the normal build; shot 3 needs sign-in for
-// the live AI-organize call)
+// Phase: dashboard-grid (shot 02) — its own persistent context/session,
+// deliberately NOT sharing phaseMain()'s `dash` page used for shots 01/04, so
+// signing in here can never leak into (and change the appearance of) those
+// other, intentionally-signed-out shots. Signed-in + plan-flipped PRO (same
+// OTP + admin-API plan-flip helpers phaseShare() uses for shot 05): the
+// dashboard grid is the store listing's most-viewed screenshot, and
+// DashboardMain.tsx's "Organize with AI"/"Share" header buttons render a
+// literal "🔒" glyph whenever `signedIn` is false, which made both headline
+// features look paywalled in a signed-out capture. PRO is flipped too (not
+// just signed in) so the account state is fully truthful, not merely
+// unlocked-looking.
+//
+// Callable standalone (`npx tsx e2e/capture-assets.ts dashboard-grid`) to
+// re-capture ONLY this one shot without also re-running shots 01/03/04 (03
+// makes a live, costlier Anthropic call). phaseMain() also calls this
+// directly so a full "main"/"all" run still produces all four "main" shots.
+// ---------------------------------------------------------------------------
+
+const DASHBOARD_GRID_EMAIL = "capture-dashboard-grid@tabburrow.test";
+
+async function phaseDashboardGrid(): Promise<void> {
+  log("Phase dashboard-grid: shot 02 (signed-in, PRO)");
+  const { context, extensionId, userDataDir } = await launchExtensionContextAt();
+
+  try {
+    const dash = await context.newPage();
+    await dash.goto(`chrome-extension://${extensionId}/dashboard.html`);
+    await resetData(dash);
+
+    const { kitchenRenoId } = await seedMainCollections(dash);
+
+    const env = loadRootEnv();
+    const SUPABASE_URL = env.SUPABASE_URL || "http://127.0.0.1:54321";
+    const SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!SERVICE_ROLE_KEY) {
+      console.warn("  02-dashboard-grid: capturing SIGNED OUT — SUPABASE_SERVICE_ROLE_KEY not set in root .env, so Organize with AI / Share will show locked.");
+    } else {
+      const existing = await findAdminUserByEmail(SUPABASE_URL, SERVICE_ROLE_KEY, DASHBOARD_GRID_EMAIL);
+      if (existing) await deleteAdminUser(SUPABASE_URL, SERVICE_ROLE_KEY, existing.id);
+
+      await dash.goto(`chrome-extension://${extensionId}/dashboard.html#/settings`);
+      await signInWithEmailOtp(dash, DASHBOARD_GRID_EMAIL);
+      const authUser = await findAdminUserByEmail(SUPABASE_URL, SERVICE_ROLE_KEY, DASHBOARD_GRID_EMAIL);
+      if (!authUser) throw new Error("expected an auth.users row after sign-in");
+      await setUserPlan(SUPABASE_URL, SERVICE_ROLE_KEY, authUser.id, "pro");
+      await dash.getByRole("button", { name: "Refresh status" }).click();
+      await expect(dash.getByText("PRO", { exact: true })).toBeVisible();
+    }
+
+    // --- Shot 02: dashboard grid ---
+    await dash.goto(`chrome-extension://${extensionId}/dashboard.html#/c/${kitchenRenoId}`);
+    await expect(dash.getByRole("heading", { name: "Kitchen reno research" })).toBeVisible();
+    await expect(dash.getByRole("listbox", { name: "Links" }).getByRole("option")).toHaveCount(KITCHEN_RENO_LINKS.length);
+    if (SERVICE_ROLE_KEY) {
+      await expect(dash.getByRole("button", { name: "Organize with AI", exact: true })).toBeVisible();
+      await expect(dash.getByRole("button", { name: "Share", exact: true })).toBeVisible();
+    }
+    // Move the mouse off-canvas before the shot — its last position (from
+    // clicking "Refresh status" on the Settings route above) can otherwise
+    // still land over the first grid card after navigating here, leaving a
+    // stray hover state (drag-grip + rename-pencil icons, underlined title)
+    // baked into the screenshot.
+    await dash.mouse.move(0, 0);
+    await dash.waitForTimeout(300); // let favicon fallbacks (broken -> globe SVG) settle, and any hover state clear, before the shot
+    await dash.screenshot({ path: path.join(SCREENSHOTS_DIR, "02-dashboard-grid.png") });
+    console.log("  wrote screenshots/02-dashboard-grid.png (1280x800)");
+
+    if (SERVICE_ROLE_KEY) {
+      const authUser = await findAdminUserByEmail(SUPABASE_URL, SERVICE_ROLE_KEY, DASHBOARD_GRID_EMAIL);
+      if (authUser) await deleteAdminUser(SUPABASE_URL, SERVICE_ROLE_KEY, authUser.id);
+    }
+  } finally {
+    await closeExtensionContext(context, userDataDir);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase: main (shots 1, 4 on the normal build, signed out; shot 2 is
+// captured separately by phaseDashboardGrid — signed-in PRO, its own
+// session; shot 3 needs sign-in for the live AI-organize call)
 // ---------------------------------------------------------------------------
 
 async function phaseMain(): Promise<void> {
-  log("Phase main: shots 01, 02, 03, 04");
+  log("Phase main: shots 01, 02 (via phaseDashboardGrid), 03, 04");
   const localServer = await startLocalServer();
   const { context, extensionId, userDataDir } = await launchExtensionContextAt();
 
@@ -307,37 +418,10 @@ async function phaseMain(): Promise<void> {
     await resetData(dash);
 
     // --- Seed the five rail collections (4-6 per listing.md's shot 2 spec) ---
-    const kitchenRenoId = randomUUID();
-    const competitorId = randomUUID();
-    const portlandId = randomUUID();
-    const devDocsId = randomUUID();
-    const recipesId = randomUUID();
+    const { kitchenRenoId } = await seedMainCollections(dash);
 
-    const collections: SeedCollection[] = [
-      { id: kitchenRenoId, name: "Kitchen reno research", accent: "var(--accent)", position: seedPosition(0) },
-      { id: competitorId, name: "Q3 competitor teardown", accent: "var(--accent-2)", position: seedPosition(1) },
-      { id: portlandId, name: "Weekend in Portland", accent: "color-mix(in srgb, var(--accent) 50%, var(--accent-2) 50%)", position: seedPosition(2) },
-      { id: devDocsId, name: "Dev docs I keep rereading", accent: "color-mix(in srgb, var(--muted) 60%, var(--text) 40%)", position: seedPosition(3) },
-      { id: recipesId, name: "Recipes worth repeating", accent: "color-mix(in srgb, var(--accent) 70%, var(--text) 30%)", position: seedPosition(4) },
-    ];
-    const links: SeedLink[] = [
-      ...toSeedLinks(kitchenRenoId, KITCHEN_RENO_LINKS),
-      ...toSeedLinks(competitorId, COMPETITOR_TEARDOWN_LINKS),
-      ...toSeedLinks(portlandId, PORTLAND_LINKS),
-      ...toSeedLinks(devDocsId, DEV_DOCS_LINKS),
-      ...toSeedLinks(recipesId, RECIPES_LINKS),
-    ];
-    await seedCollectionsAndLinks(dash, collections, links);
-    await seedMeta(dash, { lastUsedCollectionId: kitchenRenoId }); // duplicated literal — see lib/commands.ts's LAST_USED_COLLECTION_META_KEY
-    await dash.reload();
-
-    // --- Shot 02: dashboard grid ---
-    await dash.goto(`chrome-extension://${extensionId}/dashboard.html#/c/${kitchenRenoId}`);
-    await expect(dash.getByRole("heading", { name: "Kitchen reno research" })).toBeVisible();
-    await expect(dash.getByRole("listbox", { name: "Links" }).getByRole("option")).toHaveCount(KITCHEN_RENO_LINKS.length);
-    await dash.waitForTimeout(300); // let favicon fallbacks (broken -> globe SVG) settle before the shot
-    await dash.screenshot({ path: path.join(SCREENSHOTS_DIR, "02-dashboard-grid.png") });
-    console.log("  wrote screenshots/02-dashboard-grid.png (1280x800)");
+    // --- Shot 02: dashboard grid — own separate context/session, signed-in PRO (see phaseDashboardGrid's docstring above) ---
+    await phaseDashboardGrid();
 
     // --- Shot 01: popup save (mid-flow, picker open, over a real tab) ---
     const bgPage = await context.newPage();
@@ -655,13 +739,23 @@ async function phaseTile(): Promise<void> {
     console.warn("  SKIPPING icon-128.png: .output/chrome-mv3/icons/128.png missing — run `pnpm --filter extension build` first");
   }
 
+  // Text column budget: 440 - 32(left pad) - 132(icon) - 28(gap) - 32(right
+  // pad) = 216px. At the original 40px Syne Bold, "TabBurrow" measures
+  // ~241.8px wide — wider than that budget, so the flex item (no max-width,
+  // default overflow:visible) rendered past the right padding and nearly to
+  // the canvas edge (~6px margin, measured via a headless render's
+  // getBoundingClientRect). 36px measures ~217.6px, fitting inside a 220px
+  // cap (matching .tagline's own existing max-width) with a comfortable
+  // ~28px right margin — `max-width` on `.text` + `overflow:hidden` on
+  // `.wordmark` are a belt-and-suspenders clip so a future copy/font change
+  // can't silently reintroduce the edge-touching bleed.
   const html = `<!doctype html><html><head><style>
     ${brandFontFaces()}
     html,body{margin:0;padding:0;width:440px;height:280px;background:${BRAND_GROUND};overflow:hidden;}
     .wrap{display:flex;align-items:center;gap:28px;width:440px;height:280px;padding:0 32px;box-sizing:border-box;}
     .icon{width:132px;height:132px;flex-shrink:0;}
-    .text{display:flex;flex-direction:column;gap:10px;}
-    .wordmark{font-family:"Syne",sans-serif;font-weight:700;font-size:40px;line-height:1;color:${BRAND_CREAM};margin:0;}
+    .text{display:flex;flex-direction:column;gap:10px;max-width:220px;}
+    .wordmark{font-family:"Syne",sans-serif;font-weight:700;font-size:36px;line-height:1;color:${BRAND_CREAM};margin:0;white-space:nowrap;overflow:hidden;}
     .tagline{font-family:"Inter",sans-serif;font-weight:400;font-size:16px;line-height:1.3;color:${BRAND_CREAM_DIM};margin:0;max-width:220px;}
   </style></head><body>
     <div class="wrap">
@@ -918,17 +1012,20 @@ async function main(): Promise<void> {
   const phase = process.argv[2] ?? "all";
   const run: Record<string, () => Promise<void>> = {
     main: phaseMain,
+    "dashboard-grid": phaseDashboardGrid,
     share: phaseShare,
     tile: phaseTile,
     hero: phaseHero,
     gif: phaseGif,
   };
   if (phase === "all") {
+    // "dashboard-grid" (shot 02) is NOT listed separately here — phaseMain()
+    // already calls it directly so shot 02 is still produced exactly once.
     for (const key of ["main", "share", "tile", "hero", "gif"]) await run[key]!();
   } else if (run[phase]) {
     await run[phase]!();
   } else {
-    console.error(`Unknown phase "${phase}". Expected one of: all, main, share, tile, hero, gif`);
+    console.error(`Unknown phase "${phase}". Expected one of: all, main, dashboard-grid, share, tile, hero, gif`);
     process.exitCode = 1;
     return;
   }
