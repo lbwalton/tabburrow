@@ -256,7 +256,7 @@
     "id": "T22",
     "title": "Share controls in extension",
     "phase": 3,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "Share \u2192 URL opens the live page with current links",
       "Stop sharing \u2192 same URL 404s within one sync cycle",
