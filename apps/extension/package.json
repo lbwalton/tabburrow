@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/sync-env.mjs",
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
+    "prebuild": "node scripts/sync-env.mjs",
     "build": "wxt build",
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
@@ -14,12 +16,14 @@
     "test": "vitest run",
     "postinstall": "wxt prepare",
     "make-icons": "node scripts/make-icons.mjs",
+    "sync-env": "node scripts/sync-env.mjs",
     "e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@supabase/supabase-js": "^2.110.5",
     "@tabburrow/core": "workspace:*",
     "@tabburrow/ui": "workspace:*",
     "dexie": "^4.0.8",

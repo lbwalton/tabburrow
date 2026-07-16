@@ -7,14 +7,17 @@ organize, sharing, and billing, running entirely on your own Supabase
 project and your own API keys.
 
 **Status note:** cloud sync, AI organize, sharing, and billing are still
-being built (stories T16–T23 in [`stories/stories.json`](stories/stories.json)).
+being built (stories T17–T23 in [`stories/stories.json`](stories/stories.json)).
 The steps below describe the intended self-hosting path and are written
 against the schema and functions as designed in
 [`docs/specs/2026-07-15-tabburrow-design.md`](docs/specs/2026-07-15-tabburrow-design.md#5-data-model).
 The database schema landed in T15: step 2 below is verified against the
-actual files in [`supabase/migrations/`](supabase/migrations/). The Edge
-Functions have **not** landed yet (they come with T19/T22/T23), so treat
-steps 3–4 as a preview of the workflow, not a tested runbook.
+actual files in [`supabase/migrations/`](supabase/migrations/). Extension
+auth (email code + Google OAuth scaffold) landed in T16: step 5 below is
+now real and verified — the extension DOES read `SUPABASE_URL`/
+`SUPABASE_ANON_KEY` at build time. The Edge Functions have **not** landed
+yet (they come with T19/T22/T23), so treat steps 3–4 as a preview of the
+workflow, not a tested runbook.
 
 ## What self-hosting gets you
 
@@ -125,7 +128,9 @@ ready to charge real cards).
 
 ## 5. Build the extension with your own environment
 
-The full variable reference lives in [`.env.example`](.env.example):
+The full variable reference lives in [`.env.example`](.env.example) —
+fill in the root `.env` (repo root, NOT `apps/extension/`) with your
+project's values:
 
 ```sh
 # Supabase (hosted or self-hosted project)
@@ -143,32 +148,43 @@ STRIPE_PRICE_YEARLY=         # $29/yr price id
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
-**Honest status:** as of this writing, none of these variables are read
-by `apps/extension` yet; the extension has no build-time env
-injection point for `SUPABASE_URL`/`SUPABASE_ANON_KEY` because sync and
-auth (stories T15–T18) haven't landed. **A local build needs no env at
-all**: `pnpm --filter extension build` works out of the box, entirely
-offline. `apps/web` currently reads only `NEXT_PUBLIC_SITE_URL` (used for
-canonical URLs and JSON-LD, see `apps/web/lib/site-config.ts`); it does
-not yet call Supabase either.
+**As of T16, the extension DOES read two of these** — `SUPABASE_URL` and
+`SUPABASE_ANON_KEY`, and nothing else (never the service-role key or any
+other secret). The wiring: `apps/extension/scripts/sync-env.mjs` reads the
+root `.env` and writes `apps/extension/.env.local` (gitignored, WXT's
+`.env.local` convention) containing only:
 
-Once sync/auth/AI/sharing land, this section will document exactly which
-`.env` file each variable belongs in (extension vs. `apps/web`) and how
-each is injected (WXT's `import.meta.env.WXT_*` convention for the
-extension, Next's `NEXT_PUBLIC_*` convention for the web app); check back
-here, or watch `stories/stories.json` for T16/T18/T19/T21/T22/T23 landing.
+```sh
+WXT_SUPABASE_URL=...
+WXT_SUPABASE_ANON_KEY=...
+```
 
-For now, the build itself doesn't need any of it; an `.env` file with
-your keys filled in has no effect on the extension yet, since nothing
-reads it:
+which the extension reads at build time via `import.meta.env.WXT_SUPABASE_URL`/
+`WXT_SUPABASE_ANON_KEY` (see `apps/extension/lib/supabase.ts`). This script
+runs automatically as a `predev`/`prebuild` hook — you never need to run it
+by hand — so a plain build picks up whatever is in the root `.env`:
 
 ```sh
 pnpm install
 pnpm --filter extension build
 ```
 
-Keep the Supabase project and keys from steps 1–4 around; they'll be
-what you plug in once T16/T18/T19 land.
+**No `.env` at all (or blank Supabase values) is still a fully supported
+mode**, not an error: `hasSupabaseEnv()` detects the missing config and every
+cloud-touching UI (Settings' Account section, the popup footer) renders a
+quiet "Cloud features are not configured" state with zero network calls —
+save/organize/sessions/search/import-export all keep working exactly as
+before. AI organize/sharing/billing env vars (`ANTHROPIC_API_KEY`,
+`STRIPE_*`) still aren't read by the extension yet — that lands with
+T19/T20/T22/T23.
+
+Keep the Supabase project and keys from steps 1–4 around; once you've set
+them, re-run the extension build (or `pnpm --filter extension dev`) and
+Settings → Account will let you sign in with an email code against your own
+project. Google sign-in additionally needs a Google OAuth client configured
+on your Supabase project — see `docs/SETUP_NOTES.md` for the exact console
+steps (written for the maintainer's own project, but the steps are the same
+for any Supabase project).
 
 ## 6. Load unpacked
 

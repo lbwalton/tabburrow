@@ -16,13 +16,31 @@ import {
   pendingSaveAllFlagValue,
   saveCurrentTabSilently,
 } from "../lib/commands";
+import { onAuthChange } from "../lib/auth";
+import type { AuthUser } from "../lib/auth";
+import { getClient } from "../lib/supabase";
 
 const AUTO_SNAPSHOT_ALARM = "auto-snapshot";
 const AUTO_SNAPSHOT_INTERVAL_MINUTES = 5;
 const AUTO_SNAPSHOT_KEEP = 10;
 
+// Constructed once at the service worker's top level (not lazily inside a
+// handler) so supabase-js's autoRefreshToken timer starts keeping any
+// persisted session fresh for as long as this worker instance stays alive.
+// `null` when cloud isn't configured (see lib/supabase.ts's getClient()) —
+// every call below already handles that; this line itself makes zero
+// network calls in that case.
+const supabaseClient = getClient();
+
 export default defineBackground(() => {
   console.log("[tabburrow] service worker up");
+
+  if (supabaseClient) {
+    // No PII beyond the email's domain — see emailDomain() below.
+    onAuthChange((user: AuthUser | null) => {
+      console.log(`[tabburrow] auth state: ${user ? `signed in (${emailDomain(user.email)})` : "signed out"}`);
+    });
+  }
 
   chrome.runtime.onInstalled.addListener((details) => {
     console.log(`[tabburrow] onInstalled reason=${details.reason}`);
@@ -172,4 +190,10 @@ async function runAutoSnapshot(): Promise<void> {
 
   await saveSnapshot("auto", windows);
   await pruneAutoSnapshots(AUTO_SNAPSHOT_KEEP);
+}
+
+/** The "@domain.com" tail of an email, for logging auth state transitions without ever printing a full address. */
+function emailDomain(email: string): string {
+  const at = email.indexOf("@");
+  return at === -1 ? "(no domain)" : email.slice(at);
 }

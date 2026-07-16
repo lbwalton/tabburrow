@@ -313,6 +313,21 @@ skip_nonce_check = false
 # If enabled, it will allow the user to successfully authenticate when the provider does not return an email address.
 email_optional = false
 
+# T16 (extension auth): Google sign-in via lib/auth.ts's signInWithGoogle +
+# chrome.identity.launchWebAuthFlow. Disabled by default — no Google OAuth
+# client exists for this project yet; see docs/SETUP_NOTES.md for the exact
+# Google Cloud Console steps (create a Web-type OAuth client, authorized
+# redirect URI = this stack's `<url>/auth/v1/callback`) and how to flip
+# `enabled` on once one exists. Until then, the extension's "Sign in with
+# Google" button produces a clear "isn't set up yet" error rather than a
+# crash (verified locally: GET /auth/v1/authorize?provider=google 400s with
+# "Unsupported provider: provider is not enabled" while this stays false).
+[auth.external.google]
+enabled = false
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+# DO NOT commit your OAuth provider secret to git. Use environment variable substitution instead:
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+
 # Allow Solana wallet holders to sign in to your project via the Sign in with Solana (SIWS, EIP-4361) standard.
 # You can configure "web3" rate limit in the [auth.rate_limit] section and set up [auth.captcha] if self-hosting.
 [auth.web3.solana]

@@ -76,7 +76,40 @@ grants `"storage"`. If/when a future task starts using
 `chrome.storage.sync`, add real multi-profile verification here; there is
 nothing to check today.
 
-## 6. Auto snapshots at real 5-minute marks; never more than 10 kept
+## 6. Google OAuth sign-in
+
+`lib/auth.ts`'s `signInWithGoogle` drives `chrome.identity.launchWebAuthFlow`,
+which opens Chrome's own purpose-built auth popup and waits for either a
+redirect back to the extension's `chromiumapp.org` URL or the user closing
+the window — there is no CDP/Playwright API to simulate that popup's
+lifecycle, and no way to drive a real Google account through a consent
+screen from an automated harness without a live Google account and 2FA in
+the loop. **Also currently untestable even manually**: the local Supabase
+stack has no Google OAuth client configured yet (`supabase/config.toml`'s
+`[auth.external.google]` is `enabled = false`) — see `docs/SETUP_NOTES.md`
+for the exact Google Cloud Console + Supabase config steps once one exists.
+
+What IS covered without a live Google client: `sendEmailCode`/`verifyEmailCode`
+end to end against the real local Mailpit mail catcher
+(`e2e/specs/t16-auth.spec.ts`), and the "isn't set up yet" error path as a
+pure-function unit test (`lib/auth.test.ts`'s `parseAuthRedirect`/
+`describeWebAuthFlowError` fixtures) rather than a live click — clicking
+"Sign in with Google" against an unconfigured provider opens a real Chrome
+popup showing GoTrue's raw JSON error response that a human then has to
+close by hand (Chrome's identity API doesn't auto-close it), which would
+hang a headless harness with nothing there to click it shut.
+
+**Check (once a Google OAuth client exists — see docs/SETUP_NOTES.md):**
+click "Sign in with Google" in Settings (or the popup footer's "Sign in"
+link → dashboard → Settings). A real Google consent screen appears in a
+Chrome-owned popup (not a new browsable tab). Approving it closes the popup
+and the extension shows the signed-in state (email + Free/PRO badge) with no
+extra tab left dangling. Close and reopen the browser entirely — the session
+should still be signed in (this is what `autoRefreshToken: true` +
+`persistSession: true` over the `chrome.storage.local` adapter are for; see
+`lib/supabase.ts`).
+
+## 7. Auto snapshots at real 5-minute marks; never more than 10 kept
 
 `background.ts` schedules `chrome.alarms.create(AUTO_SNAPSHOT_ALARM, {
 periodInMinutes: 5 })`. There's no supported way to fast-forward a real

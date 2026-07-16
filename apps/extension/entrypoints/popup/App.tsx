@@ -3,15 +3,18 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { Collection, TabInfo } from "@tabburrow/core";
 import { createCollection, getDB, getMeta, listCollections, saveTabs, setMeta } from "@tabburrow/core";
-import { Button, Input, Kbd } from "@tabburrow/ui";
+import { Badge, Button, Input, Kbd } from "@tabburrow/ui";
 import { closeTabsByUrl, faviconFor, getAllTabs, getCurrentTab, getHighlightedTabs } from "../../lib/tabs";
 import { initialPopupState, popupReducer } from "../../lib/popupState";
 import type { PopupState, SaveAction } from "../../lib/popupState";
 import type { SearchResults } from "../../lib/search";
 import { emptyStateFor, searchAll } from "../../lib/search";
 import { nextHighlight, resolveHighlight } from "../../lib/searchNav";
-import { dashboardCollectionUrl } from "../../lib/dashboard";
+import { dashboardCollectionUrl, dashboardSettingsUrl } from "../../lib/dashboard";
 import { formatHost } from "../../lib/links";
+import { getPlan, onAuthChange } from "../../lib/auth";
+import type { AuthUser, Plan } from "../../lib/auth";
+import { isSupabaseConfigured } from "../../lib/supabase";
 import {
   isPendingCommandFresh,
   LAST_USED_COLLECTION_META_KEY,
@@ -33,6 +36,10 @@ const POPUP_SEARCH_LIMIT = 8;
 
 function openDashboard() {
   chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
+}
+
+function openDashboardSettings() {
+  chrome.tabs.create({ url: dashboardSettingsUrl() });
 }
 
 function tabsForAction(
@@ -103,6 +110,33 @@ export function App() {
   useEffect(() => {
     void getMeta(THEME_META_KEY, db).then((value) => applyTheme(parseTheme(value)));
   }, [db]);
+
+  // Footer account state (T16): "Sign in" link when signed out, a plan
+  // Badge when signed in, nothing when cloud isn't configured (a "quiet"
+  // not-configured state — see AccountPane's docstring for the fuller
+  // Settings-page version of the same three states). All state via
+  // onAuthChange, no polling — same precedent as AccountPane.
+  const cloudConfigured = isSupabaseConfigured();
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
+  useEffect(() => {
+    if (!cloudConfigured) return;
+    const unsubscribe = onAuthChange(setAuthUser);
+    return unsubscribe;
+  }, [cloudConfigured]);
+  useEffect(() => {
+    if (!authUser) {
+      setPlan(null);
+      return;
+    }
+    let cancelled = false;
+    void getPlan().then((p) => {
+      if (!cancelled) setPlan(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser]);
 
   // Snapshot the current window's tabs + last-used target once, on open. The
   // popup is a fresh document every time it opens, so a one-shot fetch is
@@ -495,9 +529,24 @@ export function App() {
       )}
 
       <footer className="mt-auto flex items-center justify-between border-t border-[var(--line)] pt-3">
-        <Button variant="ghost" size="sm" onClick={openDashboard}>
-          Open dashboard
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={openDashboard}>
+            Open dashboard
+          </Button>
+          {cloudConfigured ? (
+            authUser ? (
+              <Badge variant={plan === "pro" ? "accent" : "muted"}>{plan === "pro" ? "PRO" : "Free"}</Badge>
+            ) : (
+              <button
+                type="button"
+                onClick={openDashboardSettings}
+                className="text-xs text-[var(--text-2)] underline-offset-2 hover:text-[var(--text)] hover:underline"
+              >
+                Sign in
+              </button>
+            )
+          ) : null}
+        </div>
         <span className="flex items-center gap-1 text-xs text-[var(--text-2)]">
           {searching ? (
             <>

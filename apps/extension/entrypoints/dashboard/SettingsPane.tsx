@@ -13,6 +13,7 @@ import {
 import type { ImportCounts } from "../../lib/importers";
 import { applyTheme, parseTheme, THEME_META_KEY } from "../../lib/theme";
 import type { Theme } from "../../lib/theme";
+import { AccountPane } from "./AccountPane";
 
 // The manifest's three commands (wxt.config.ts) — chrome.commands.getAll()
 // also returns a synthetic "_execute_action" entry when a default_popup is
@@ -129,6 +130,8 @@ export function SettingsPane() {
       <h1 className="text-3xl font-bold text-[var(--text)]" style={{ fontFamily: "var(--font-display)" }}>
         Settings
       </h1>
+
+      <AccountPane />
 
       <Card variant="surface" arch={false} className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold text-[var(--text)]">Appearance</h2>

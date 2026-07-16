@@ -19,6 +19,16 @@ export function dashboardCollectionUrl(id: string): string {
   return chrome.runtime.getURL(`/${dashboardCollectionPath(id)}`);
 }
 
+/** dashboard.html hash-route for Settings — see lib/route.ts's `parseHash`. */
+export function dashboardSettingsPath(): string {
+  return "dashboard.html#/settings";
+}
+
+/** Full extension-origin URL for the Settings pane, for chrome.tabs.create — used by the popup footer's signed-out "Sign in" link (T16). */
+export function dashboardSettingsUrl(): string {
+  return chrome.runtime.getURL(`/${dashboardSettingsPath()}`);
+}
+
 /**
  * Live link counts per collection, in one table scan rather than one query
  * per collection — the pattern flagged as a scaling concern for RecentList
