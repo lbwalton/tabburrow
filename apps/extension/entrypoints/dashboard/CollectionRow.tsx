@@ -102,6 +102,18 @@ export function CollectionRow({ collection, selected, linkCount, onDelete }: Col
         </button>
       )}
 
+      {collection.isShared ? (
+        <span role="img" aria-label="Shared" title="Shared" className="shrink-0 text-[var(--text-2)]">
+          <svg aria-hidden="true" viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <circle cx="12.5" cy="3.5" r="1.75" />
+            <circle cx="3.5" cy="8" r="1.75" />
+            <circle cx="12.5" cy="12.5" r="1.75" />
+            <line x1="5" y1="7" x2="11" y2="4.2" />
+            <line x1="5" y1="9" x2="11" y2="11.8" />
+          </svg>
+        </span>
+      ) : null}
+
       <span className="shrink-0 text-xs text-[var(--text-2)]" style={{ fontFamily: "var(--font-mono)" }}>
         {linkCount}
       </span>

@@ -6,6 +6,8 @@ import {
   createCollection,
   renameCollection,
   setCollectionAccent,
+  setShare,
+  generateShareSlug,
   moveCollection,
   softDeleteCollection,
   restoreCollection,
@@ -104,6 +106,54 @@ describe("collections repo", () => {
     await setCollectionAccent(c.id, null, db);
     expect((await db.collections.get(c.id))!.accent).toBeNull();
     expect((await opsFor("collections", c.id)).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("setShare turns sharing on: sets isShared/shareSlug, bumps updatedAt, and enqueues a PendingOp", async () => {
+    const c = await createCollection("C", undefined, db);
+    const before = await db.collections.get(c.id);
+    await new Promise((r) => setTimeout(r, 2));
+
+    const slug = generateShareSlug();
+    await setShare(c.id, { isShared: true, shareSlug: slug }, db);
+
+    const after = await db.collections.get(c.id);
+    expect(after!.isShared).toBe(true);
+    expect(after!.shareSlug).toBe(slug);
+    expect(after!.updatedAt).toBeGreaterThan(before!.updatedAt);
+    expect(await opsFor("collections", c.id)).toHaveLength(1);
+  });
+
+  it("setShare turns sharing off: clears isShared/shareSlug back to false/null and enqueues a PendingOp", async () => {
+    const c = await createCollection("C", undefined, db);
+    await setShare(c.id, { isShared: true, shareSlug: generateShareSlug() }, db);
+
+    await setShare(c.id, { isShared: false, shareSlug: null }, db);
+
+    const after = await db.collections.get(c.id);
+    expect(after!.isShared).toBe(false);
+    expect(after!.shareSlug).toBeNull();
+    expect((await opsFor("collections", c.id)).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("setShare on a nonexistent id is a no-op: no row created, no PendingOp enqueued", async () => {
+    await setShare("no-such-id", { isShared: true, shareSlug: generateShareSlug() }, db);
+    expect(await db.collections.get("no-such-id")).toBeUndefined();
+    expect(await opsFor("collections", "no-such-id")).toHaveLength(0);
+  });
+
+  it("generateShareSlug: 200 generated slugs all conform to the web share page's ^[a-z0-9]{10}$ alphabet/length", () => {
+    // apps/web/lib/share.ts's isValidShareSlug validates incoming slugs
+    // against exactly this pattern (lowercase alnum, 10 chars) — nanoid's
+    // DEFAULT alphabet includes uppercase, "_", and "-", which that regex
+    // rejects, so this is what proves generateShareSlug is restricted to
+    // customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 10) rather than
+    // nanoid's default. 200 samples, not 1, to make the alphabet violation
+    // (not just the length) hard to miss by chance.
+    const pattern = /^[a-z0-9]{10}$/;
+    for (let i = 0; i < 200; i++) {
+      const slug = generateShareSlug();
+      expect(slug).toMatch(pattern);
+    }
   });
 
   it("moveCollection reorders via positionBetween using neighbor ids", async () => {
@@ -333,9 +383,10 @@ describe("links repo", () => {
     expect(await opsFor("links", "no-such-id")).toHaveLength(0);
   });
 
-  it("renameCollection and setCollectionAccent on a nonexistent id do not enqueue ops", async () => {
+  it("renameCollection, setCollectionAccent, and setShare on a nonexistent id do not enqueue ops", async () => {
     await renameCollection("no-such-id", "Ghost", db);
     await setCollectionAccent("no-such-id", "#123456", db);
+    await setShare("no-such-id", { isShared: true, shareSlug: generateShareSlug() }, db);
     expect(await opsFor("collections", "no-such-id")).toHaveLength(0);
   });
 

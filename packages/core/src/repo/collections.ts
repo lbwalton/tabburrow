@@ -1,3 +1,4 @@
+import { customAlphabet } from "nanoid";
 import type { BurrowDB } from "../db";
 import { getDB } from "../db";
 import type { Collection } from "../types";
@@ -60,6 +61,44 @@ export async function setCollectionAccent(
 ): Promise<void> {
   return db.transaction("rw", db.collections, db.pendingOps, async () => {
     const modified = await db.collections.update(id, { accent, updatedAt: Date.now() });
+    if (modified > 0) await enqueueOp(db, "collections", id);
+  });
+}
+
+/**
+ * Generates a share slug for `setShare`. Restricted to a lowercase
+ * alphanumeric alphabet (never nanoid's default, which includes uppercase,
+ * "_", and "-") because it MUST match the public web share page's slug
+ * validator (`apps/web/lib/share.ts`'s `isValidShareSlug`, `/^[a-z0-9]{10}$/`)
+ * — a slug outside that shape would 404 on its own share page the instant
+ * it synced. `customAlphabet` is built once at module scope (its own
+ * recommended usage) rather than per call.
+ */
+const nanoidLowerAlnum10 = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 10);
+
+export function generateShareSlug(): string {
+  return nanoidLowerAlnum10();
+}
+
+/**
+ * Turns sharing on or off for a collection: an ordinary repo mutation with
+ * the same shape as `setCollectionAccent` (bump `updatedAt`, enqueue a
+ * PendingOp only when a row actually changed). The share-page-visible slug
+ * itself comes from the caller (`generateShareSlug()` for turning sharing on
+ * or rotating the link; `null` for turning it off) — this function does not
+ * generate or validate slugs, it just persists whatever the caller decided.
+ */
+export async function setShare(
+  id: string,
+  share: { isShared: boolean; shareSlug: string | null },
+  db: BurrowDB = getDB(),
+): Promise<void> {
+  return db.transaction("rw", db.collections, db.pendingOps, async () => {
+    const modified = await db.collections.update(id, {
+      isShared: share.isShared,
+      shareSlug: share.shareSlug,
+      updatedAt: Date.now(),
+    });
     if (modified > 0) await enqueueOp(db, "collections", id);
   });
 }

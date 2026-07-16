@@ -84,6 +84,9 @@ export interface RemoteCollectionRow {
   id: string;
   name: string;
   deleted_at: number | null;
+  /** T22: added for the share-controls e2e (t22-share.spec.ts) — lets a test verify a collection's cloud share state (or, for the FREE-gate test, verify it never changed) without trusting the extension's own UI. Selected unconditionally (not a separate query) since every other caller's `expect.objectContaining({...})` assertions only check the fields they name. */
+  is_shared: boolean;
+  share_slug: string | null;
 }
 
 export interface RemoteLinkRow {
@@ -99,9 +102,10 @@ export async function fetchCollectionsForUser(
   serviceRoleKey: string,
   userId: string,
 ): Promise<RemoteCollectionRow[]> {
-  const res = await fetch(`${supabaseUrl}/rest/v1/collections?select=id,name,deleted_at&user_id=eq.${userId}`, {
-    headers: adminHeaders(serviceRoleKey),
-  });
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/collections?select=id,name,deleted_at,is_shared,share_slug&user_id=eq.${userId}`,
+    { headers: adminHeaders(serviceRoleKey) },
+  );
   if (!res.ok) throw new Error(`collections select failed: ${res.status} ${await res.text()}`);
   return (await res.json()) as RemoteCollectionRow[];
 }

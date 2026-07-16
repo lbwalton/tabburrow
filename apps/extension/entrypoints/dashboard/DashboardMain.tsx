@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { Collection, Link } from "@tabburrow/core";
 import { getDB, renameCollection } from "@tabburrow/core";
-import { Button, EmptyState } from "@tabburrow/ui";
+import { Badge, Button, EmptyState } from "@tabburrow/ui";
 import type { ResolvedRoute } from "../../lib/route";
 import { collectionHash } from "../../lib/dashboard";
 import type { SortMode } from "../../lib/links";
@@ -10,6 +10,7 @@ import { onAuthChange } from "../../lib/auth";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { AiOrganizeDialog } from "./AiOrganizeDialog";
 import { BurrowIllustration } from "./BurrowIllustration";
+import { ShareDialog } from "./ShareDialog";
 import { useInlineRename } from "./useInlineRename";
 import { LinkGrid } from "./LinkGrid";
 import { SortMenu } from "./SortMenu";
@@ -154,10 +155,13 @@ function CollectionPanel({
 
   // T20: "Organize with AI" — own its open state (like RestoreAllButton's
   // confirm dialog) AND respond to the popup deep link's one-shot pulse.
-  // `signedIn` is ONLY for the trigger button's lock glyph; AiOrganizeDialog
-  // subscribes to auth itself for its own view logic (same "leaf components
-  // own their auth state" precedent AccountPane/popup's App already set).
+  // `signedIn` is ONLY for the trigger buttons' lock glyphs (shared with
+  // T22's "Share" trigger below); both AiOrganizeDialog and ShareDialog
+  // subscribe to auth themselves for their own view logic (same "leaf
+  // components own their auth state" precedent AccountPane/popup's App
+  // already set).
   const [aiOpen, setAiOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
@@ -193,16 +197,22 @@ function CollectionPanel({
           <span className="text-xs text-[var(--text-2)]" style={{ fontFamily: "var(--font-mono)" }}>
             {linksLoaded ? `${links.length} ${links.length === 1 ? "link" : "links"}` : ""}
           </span>
+          {collection.isShared ? <Badge variant="accent">Shared</Badge> : null}
         </div>
-        {linksLoaded && links.length > 0 ? (
-          <div className="flex items-center gap-2">
-            <RestoreAllButton links={links} onError={onLinkError} />
-            <Button type="button" variant="ghost" size="sm" onClick={() => setAiOpen(true)}>
-              {signedIn ? "Organize with AI" : "🔒 Organize with AI"}
-            </Button>
-            <SortMenu value={sortMode} onChange={onSortModeChange} />
-          </div>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {linksLoaded && links.length > 0 ? (
+            <>
+              <RestoreAllButton links={links} onError={onLinkError} />
+              <Button type="button" variant="ghost" size="sm" onClick={() => setAiOpen(true)}>
+                {signedIn ? "Organize with AI" : "🔒 Organize with AI"}
+              </Button>
+            </>
+          ) : null}
+          <Button type="button" variant="ghost" size="sm" onClick={() => setShareOpen(true)}>
+            {signedIn ? "Share" : "🔒 Share"}
+          </Button>
+          {linksLoaded && links.length > 0 ? <SortMenu value={sortMode} onChange={onSortModeChange} /> : null}
+        </div>
       </header>
 
       <div className="flex-1">
@@ -235,6 +245,8 @@ function CollectionPanel({
         onError={onLinkError}
         onOrganized={onOrganized}
       />
+
+      <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} collection={collection} />
     </div>
   );
 }
