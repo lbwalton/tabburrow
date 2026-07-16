@@ -15,9 +15,15 @@ The database schema landed in T15: step 2 below is verified against the
 actual files in [`supabase/migrations/`](supabase/migrations/). Extension
 auth (email code + Google OAuth scaffold) landed in T16: step 5 below is
 now real and verified — the extension DOES read `SUPABASE_URL`/
-`SUPABASE_ANON_KEY` at build time. The Edge Functions have **not** landed
-yet (they come with T19/T22/T23), so treat steps 3–4 as a preview of the
-workflow, not a tested runbook.
+`SUPABASE_ANON_KEY` at build time. The `ai-organize` Edge Function landed
+in T19: it exists at `supabase/functions/ai-organize/`, is covered by a
+`deno test` suite, and was verified end to end against a real Anthropic
+call on the local stack, so step 3's `ai-organize` row and step 4's
+`ANTHROPIC_API_KEY` secret are now a tested runbook, not a preview. The
+extension itself doesn't call it yet (that UI wiring is T20), so there's
+no in-app way to trigger it until then. `checkout-session`,
+`stripe-webhook`, and `share-resolve` have **not** landed yet (T21/T22/T23),
+so their rows in step 3 stay a preview of the workflow.
 
 ## What self-hosting gets you
 
@@ -83,17 +89,18 @@ supabase db reset  # applies every migration in supabase/migrations/
 ## 3. Deploy the Edge Functions
 
 The backend logic ships as Supabase Edge Functions in
-[`supabase/functions/`](supabase/functions/), not in the repo yet
-(lands with T19/T22/T23):
+[`supabase/functions/`](supabase/functions/). `ai-organize` landed in T19
+and is in the repo today; `checkout-session`, `stripe-webhook`, and
+`share-resolve` have not landed yet (T21/T22/T23):
 
-| Function | Does |
-| --- | --- |
-| `ai-organize` | Calls Claude to group and tag your tabs; meters free-tier usage |
-| `checkout-session` | Creates a Stripe Checkout session for PRO upgrades |
-| `stripe-webhook` | Verifies Stripe webhook signatures and flips `profiles.plan` |
-| `share-resolve` | Serves public collection data to share pages without exposing raw table access |
+| Function | Does | Status |
+| --- | --- | --- |
+| `ai-organize` | Calls Claude to group and tag your tabs; meters free-tier usage | In the repo (T19) |
+| `checkout-session` | Creates a Stripe Checkout session for PRO upgrades | Not yet built (T23) |
+| `stripe-webhook` | Verifies Stripe webhook signatures and flips `profiles.plan` | Not yet built (T23) |
+| `share-resolve` | Serves public collection data to share pages without exposing raw table access | Not yet built (T21/T22) |
 
-Deploy each one:
+Deploy each one that exists so far:
 
 ```sh
 supabase functions deploy ai-organize
@@ -105,6 +112,15 @@ supabase functions deploy share-resolve
 (If you don't need sharing or billing for personal use, you can skip
 `checkout-session`, `stripe-webhook`, and `share-resolve`; sync and AI
 organize don't depend on them.)
+
+**Testing `ai-organize` locally before deploying:** run the local stack
+(`supabase start`) and `supabase functions serve ai-organize --env-file <path-to-a-file-with-only-ANTHROPIC_API_KEY>`
+(never point `--env-file` at the repo's root `.env` directly, since that
+file also holds Stripe/Supabase secrets you don't want an Edge Function
+process reading). `supabase/functions/ai-organize/test.ts` has a full
+`deno test --allow-all` suite that mocks Anthropic and exercises metering
+against the real local database, so you don't need a live API key just to
+verify the function's own logic.
 
 ## 4. Set secrets
 

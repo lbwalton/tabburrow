@@ -379,6 +379,17 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# T19: the edge-runtime gateway's own pre-invocation JWT check rejects
+# this local project's asymmetric (ES256) access tokens even though
+# they're valid (confirmed by calling GET /auth/v1/user with the same
+# token directly: 200 OK, independent of this gateway). ai-organize does
+# its own JWT verification in _shared/auth.ts's requireUser() (which is
+# required regardless, since the function also needs the User object, not
+# just a yes/no), so the gateway's redundant check is disabled here rather
+# than worked around.
+[functions.ai-organize]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
