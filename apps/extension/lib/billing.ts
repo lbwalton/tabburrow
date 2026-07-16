@@ -39,6 +39,31 @@ export interface CheckoutSessionResult {
   url: string;
 }
 
+/** The ONLY origin a checkout-session `{url}` may point at — `handleUpgrade` passes it straight to `chrome.tabs.create`, see `isStripeCheckoutUrl`. */
+export const STRIPE_CHECKOUT_ORIGIN = "https://checkout.stripe.com";
+
+/**
+ * Pure (fix pass 1): true only for a parseable https: URL whose origin is
+ * EXACTLY `https://checkout.stripe.com` — the one origin Stripe's hosted
+ * Checkout for this function's `{interval}` requests ever lives on
+ * (billing-portal URLs are `billing.stripe.com`, but the portal branch is
+ * apps/web's flow, never called from the extension). The response URL is
+ * passed straight to `chrome.tabs.create`, so a compromised or
+ * misconfigured backend must not be able to open an arbitrary — or
+ * `javascript:` — URL in the user's browser; origin equality (not a
+ * hostname-suffix check) also rejects `checkout.stripe.com.evil.example`
+ * spoofs.
+ */
+export function isStripeCheckoutUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === "https:" && parsed.origin === STRIPE_CHECKOUT_ORIGIN;
+}
+
 /**
  * Pure: interprets checkout-session's `{status, body}` into `{url}`, or
  * throws `BillingError`. Split out from `createCheckoutSession` so the
@@ -46,11 +71,13 @@ export interface CheckoutSessionResult {
  * lib/billing.test.ts) — same split as lib/ai.ts's `parseOrganizeResponse`
  * and apps/web/lib/billing.ts's `parseCheckoutResponse` (this function's
  * closest sibling: same status-code decisions, this app's own error type).
+ * A 200 whose url isn't a real `https://checkout.stripe.com` URL is an
+ * "upstream" error, same as a missing one — see `isStripeCheckoutUrl`.
  */
 export function parseCheckoutSessionResponse(status: number, body: unknown): CheckoutSessionResult {
   if (status === 200) {
     const url = (body as Record<string, unknown> | null)?.url;
-    if (typeof url === "string" && url.length > 0) return { url };
+    if (typeof url === "string" && isStripeCheckoutUrl(url)) return { url };
     throw new BillingError("upstream", "Stripe didn't return a checkout URL. Try again in a moment.");
   }
   if (status === 401) {

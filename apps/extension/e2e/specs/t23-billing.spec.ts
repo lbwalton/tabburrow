@@ -186,15 +186,6 @@ function waitForListenReady(child: ChildProcessByStdio<null, Readable, Readable>
 }
 
 /**
- * Fills and submits Stripe's REAL hosted test-mode Checkout page. Every
- * field selector here (`#cardNumber`/`#cardExpiry`/`#cardCvc`/
- * `#billingName`/`#billingPostalCode`, and the "Card" accordion row's
- * radio id) was verified directly against a live test-mode Checkout
- * Session before writing this spec — see task-23b-report.md. All of them
- * live in Checkout's own top-level frame; none of this needs an iframe
- * locator.
- */
-/**
  * Clicks "Refresh status" repeatedly until the plan Badge shows `expected`,
  * or the timeout elapses. A SINGLE click would race real Stripe webhook
  * delivery latency: `stripe trigger`/a completed Checkout both return to
@@ -221,6 +212,23 @@ async function refreshUntilBadge(dash: Page, expected: "PRO" | "Free", timeoutMs
   await expect(dash.getByText(expected, { exact: true })).toBeVisible({ timeout: 5_000 });
 }
 
+/**
+ * Fills and submits Stripe's REAL hosted test-mode Checkout page. Every
+ * field selector here (`#cardNumber`/`#cardExpiry`/`#cardCvc`/
+ * `#billingName`/`#billingPostalCode`, and the "Card" accordion row's
+ * radio id) was verified directly against a live test-mode Checkout
+ * Session before writing this spec — see task-23b-report.md. All of them
+ * live in Checkout's own top-level frame; none of this needs an iframe
+ * locator.
+ *
+ * MAINTENANCE NOTE (fix pass 1): these selectors belong to Stripe's page,
+ * not this repo — Stripe can rename/restructure them in a Checkout
+ * redesign at any time. If this test starts timing out stuck ON
+ * checkout.stripe.com (a selector wait, or "never redirected away"),
+ * check Stripe's current Checkout DOM first (open a real test-mode
+ * session and inspect, the way these selectors were originally derived)
+ * before assuming a regression in this repo's own code.
+ */
 async function completeHostedCheckout(page: Page): Promise<void> {
   // "Card" starts collapsed; a covering accordion button intercepts a plain
   // click on the radio itself, so this is forced — verified against a real

@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   BillingError,
   PICKUP_RATE_LIMIT_MS,
+  STRIPE_CHECKOUT_ORIGIN,
   buildAccountUrl,
+  isStripeCheckoutUrl,
   parseCheckoutSessionResponse,
   shouldPickupPlanOnVisible,
   upgradeAvailability,
@@ -16,6 +18,29 @@ describe("parseCheckoutSessionResponse", () => {
     expect(parseCheckoutSessionResponse(200, { url: "https://checkout.stripe.com/c/pay/cs_test_abc" })).toEqual({
       url: "https://checkout.stripe.com/c/pay/cs_test_abc",
     });
+  });
+
+  it("rejects a 200 whose url is not a real https://checkout.stripe.com URL (fix pass 1)", () => {
+    // The extension passes this URL straight to chrome.tabs.create — a
+    // compromised/misconfigured backend must not be able to open an
+    // arbitrary (or javascript:) URL in the user's browser.
+    const bad = [
+      "http://checkout.stripe.com/c/pay/cs_test_abc", // not https
+      "javascript:alert(1)",
+      "https://evil.example.com/c/pay/cs_test_abc", // wrong origin
+      "https://checkout.stripe.com.evil.example.com/pay", // origin-suffix spoof
+      "https://billing.stripe.com/session/x", // real Stripe, wrong surface (portal is apps/web's flow, never this function's)
+      "not a url at all",
+    ];
+    for (const url of bad) {
+      try {
+        parseCheckoutSessionResponse(200, { url });
+        expect.unreachable(`expected rejection for ${url}`);
+      } catch (err) {
+        expect(err).toBeInstanceOf(BillingError);
+        expect((err as BillingError).kind).toBe("upstream");
+      }
+    }
   });
 
   it("throws BillingError('upstream') on a 200 with a missing/malformed url", () => {
@@ -50,6 +75,23 @@ describe("parseCheckoutSessionResponse", () => {
         expect((err as BillingError).kind).toBe("upstream");
       }
     }
+  });
+});
+
+describe("isStripeCheckoutUrl (fix pass 1)", () => {
+  it("accepts a real hosted-Checkout URL (path and fragment irrelevant, origin is what's checked)", () => {
+    expect(isStripeCheckoutUrl("https://checkout.stripe.com/c/pay/cs_test_abc#fidkxyz")).toBe(true);
+    expect(isStripeCheckoutUrl(`${STRIPE_CHECKOUT_ORIGIN}/anything`)).toBe(true);
+  });
+
+  it("rejects non-https, wrong-origin, spoofed-suffix, javascript:, and unparseable inputs", () => {
+    expect(isStripeCheckoutUrl("http://checkout.stripe.com/c/pay/x")).toBe(false);
+    expect(isStripeCheckoutUrl("https://evil.example.com/c/pay/x")).toBe(false);
+    expect(isStripeCheckoutUrl("https://checkout.stripe.com.evil.example.com/x")).toBe(false);
+    expect(isStripeCheckoutUrl("https://billing.stripe.com/session/x")).toBe(false);
+    expect(isStripeCheckoutUrl("javascript:alert(1)")).toBe(false);
+    expect(isStripeCheckoutUrl("not a url at all")).toBe(false);
+    expect(isStripeCheckoutUrl("")).toBe(false);
   });
 });
 

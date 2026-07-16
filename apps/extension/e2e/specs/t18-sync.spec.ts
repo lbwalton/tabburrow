@@ -277,8 +277,41 @@ test("FREE gate: a signed-in free user's sync attempts never touch collections/l
       await route.continue();
     });
 
+    // T23b fix pass 1: while the plan is UNRESOLVED (`plan === null` — a
+    // fresh mount before getPlan returns, or a genuinely failed profiles
+    // lookup), AccountPane's availability gate (lib/billing.ts's
+    // upgradeAvailability, "hidden") must render NEITHER the Sync section
+    // NOR live checkout buttons — a PRO user whose plan fetch transiently
+    // failed must never be offered a second real subscription. The natural
+    // "still resolving" window against the local stack is a few
+    // milliseconds — not reliably assertable directly — so this makes the
+    // equivalent (and strictly more dangerous) state DETERMINISTIC instead:
+    // fail the page's profiles select outright with a 500 (page-level
+    // route — getPlan runs in the dashboard page, same interception
+    // mechanics t20's mocked error-path tests rely on), sign in, and
+    // assert the settled failure state hides both sections.
+    await dash.route("**/rest/v1/profiles**", (route) =>
+      route.fulfill({ status: 500, contentType: "application/json", body: "{}" }),
+    );
+
     await signInWithEmailOtp(dash, email);
     // No setUserPlan call — this account stays on the default "free" plan.
+
+    // Let the (failing) plan fetch actually settle, so the zero-count
+    // assertions below cover the settled failure state rather than only the
+    // initial pending render (both must hide the buttons; the settled state
+    // is the one that would otherwise persist indefinitely).
+    await dash.waitForTimeout(1_500);
+    await expect(dash.getByRole("heading", { name: "Upgrade to PRO", exact: true })).toHaveCount(0);
+    await expect(dash.getByRole("button", { name: /Monthly \$4\/month/ })).toHaveCount(0);
+    await expect(dash.getByRole("button", { name: "Sync now" })).toHaveCount(0);
+    await expect(dash.getByRole("button", { name: "Manage billing" })).toHaveCount(0);
+
+    // Un-break profiles and resolve the plan for real (Refresh status ->
+    // getPlan(true)) — from here on the test exercises the ordinary
+    // resolved-FREE state it always covered.
+    await dash.unroute("**/rest/v1/profiles**");
+    await dash.getByRole("button", { name: "Refresh status" }).click();
 
     // T23b: the FREE-plan branch's paragraph became a full "Upgrade to PRO"
     // section (AccountPane.tsx) — still the same PRO upsell this test's

@@ -314,7 +314,15 @@ export function AccountPane() {
             </Button>
           </div>
 
-          {plan === "pro" ? (
+          {/* Fix pass 1: the whole Sync-vs-Upgrade split is driven by
+              `availability` (the TDD'd pure decision in lib/billing.ts),
+              never raw `plan` — "hidden" (plan still resolving on a fresh
+              mount, OR a genuinely failed profiles lookup) renders NEITHER
+              section. Gating on `plan === "pro"` here previously put live
+              checkout buttons in that unresolved window, where a PRO user
+              with a transient plan-fetch failure could have started a
+              second real subscription. */}
+          {availability === "manage" ? (
             <div className="flex flex-col gap-2 border-t border-[var(--line)] pt-3">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-2)]">Sync</h3>
               {lastSyncUserIdRaw === undefined ? null : accountSwitchDecision({
@@ -376,7 +384,7 @@ export function AccountPane() {
                 </>
               )}
             </div>
-          ) : (
+          ) : availability === "upgrade" ? (
             <div className="flex flex-col gap-2 border-t border-[var(--line)] pt-3">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-2)]">Upgrade to PRO</h3>
               <p className="text-xs text-[var(--text-2)]">Cloud sync, sharing, and unlimited AI organize.</p>
@@ -405,7 +413,7 @@ export function AccountPane() {
                 </p>
               ) : null}
             </div>
-          )}
+          ) : null}
         </Card>
         {billingToast ? (
           <div className="fixed bottom-6 right-6 z-50">
