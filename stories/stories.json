@@ -233,7 +233,7 @@
     "id": "T20",
     "title": "AI organize UI",
     "phase": 2,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "20 mixed tabs (dev docs, recipes, YouTube, shopping) \u2192 plausible 3\u20135 groups; apply produces exactly previewed result",
       "Cancel changes nothing",
