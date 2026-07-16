@@ -155,7 +155,7 @@
     "id": "T14",
     "title": "QA pass 1 \u2014 extension-core bug bash",
     "phase": 1,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "200-link collection scroll perf acceptable",
       "non-http tabs excluded gracefully",
