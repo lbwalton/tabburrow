@@ -1,6 +1,4 @@
-<!-- TODO(T25b): replace with assets/readme-hero.png (burrow-arch hero banner,
-     Deep Green brand direction) once captured. Keep this alt text. -->
-<!-- ![TabBurrow: a burrow-arch hero banner showing the popup and dashboard on the Deep Green ground](assets/readme-hero.png) -->
+![TabBurrow: a burrow-arch hero banner showing the popup and dashboard on the Deep Green ground](assets/readme-hero.png)
 
 # TabBurrow
 
@@ -16,8 +14,7 @@ collection; everything works instantly with zero signup, and nothing leaves
 your device unless you choose to sign in. Sign in later for cloud sync, AI
 auto-organize, and shareable collection pages.
 
-<!-- TODO(T25b): drop a short save / organize / restore GIF here once the
-     extension can be driven live for capture. -->
+![TabBurrow demo: saving two tabs, signing in to run AI organize, and reviewing the suggested group](assets/readme-demo.gif)
 
 ## Why TabBurrow
 

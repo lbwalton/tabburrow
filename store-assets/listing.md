@@ -1,9 +1,10 @@
 # Chrome Web Store listing draft
 
-Status: draft, not yet submitted. Screenshots and the promo tile image are
-deferred to T25b (the extension needs to be driven live for capture); this
-file specifies what to shoot and the exact spec for each asset. Character
-counts below were verified with a script; see [Verification](#verification).
+Status: draft, not yet submitted. Screenshots, the promo tile, and the store
+icon were captured/rendered in T25b (see [Screenshots](#screenshots-t25b) and
+[Promo tile](#promo-tile) below for the real files and how each was staged).
+Character counts below were verified with a script; see
+[Verification](#verification).
 
 ## Title
 
@@ -88,69 +89,69 @@ Built in the open: every commit is public, every acceptance criterion is
 checked before it ships.
 ```
 
-## Screenshot shot list (T25b)
+## Screenshots (T25b)
 
-All captures at **1280×800**, taken from the real running extension via
-Claude in Chrome once it can be driven live. Use a clean profile with a
-handful of realistic collections (dev docs, recipes, shopping, one
-video/reading collection) so the screens don't look empty or staged with
-lorem-ipsum data.
+All five captured at exactly **1280×800** (verified with `sips`) from the
+real running extension, driven by `apps/extension/e2e/capture-assets.ts` —
+a standalone script (not a Playwright test) that reuses the e2e harness's own
+fixtures/seed helpers, so every pixel is a real render of the actual product,
+not a mockup. Staged with realistic collection names and real-looking public
+URLs (referenced by title/URL only, never fetched). Re-run with
+`npx tsx e2e/capture-assets.ts [main|share|tile|hero|gif]` from
+`apps/extension` (requires a fresh extension build and the local Supabase
+stack running — see the script's own header comment for the full
+requirements).
 
-1. **Popup save**: the toolbar popup open over a real tab, mid-save
-   flow (collection picker visible, "Last Used" default highlighted).
-   Staging: pick a page with a recognizable favicon/title so the shot
-   reads at a glance; use the dark "burrow" theme.
-2. **Dashboard grid**: the full-page dashboard with the rail showing
-   4–6 collections and the main grid showing one populated collection
-   (8–12 link cards with favicons, titles, a couple of notes/tags
-   visible). Staging: pick a collection name and cover image that reads
-   well at thumbnail size in the store listing.
-3. **AI organize preview**: the "Organize with AI" preview diff showing
-   suggested groups before confirmation. Staging: **blocked until T19
-   (ai-organize Edge Function) and T20 (AI organize UI) land**; this
-   flow doesn't exist in the running extension yet. Once it does, run it
-   against a deliberately messy 15–20 tab mix so the "before" clutter
-   and "after" grouping read clearly in one frame.
-4. **Sessions pane**: the sessions section of the left rail, showing a
-   mix of auto and manual snapshots with timestamps/names, plus the
-   restore action visible. Staging: trigger at least one manual named
-   snapshot ("Before demo") alongside the auto ones so both types are
-   visible in frame.
-5. **Share page**: a public collection share page as seen by a visitor
-   (not signed in), showing the link cards and the "Made with TabBurrow"
-   banner. Staging: **blocked until T21 (share pages) and T22 (share
-   controls) land**; no share page exists yet. Once it does, shoot it
-   at the same 1280×800 crop as the others for visual consistency across
-   the listing, even though the page itself is responsive.
-
-Shots 1, 2, and 4 can be captured as soon as T25b starts (all three flows
-exist today). Shots 3 and 5 need to wait for their respective stories.
+1. **`screenshots/01-popup-save.png`** — Popup save, mid-flow: the
+   extension's popup open on "Save to…" (clicked "Change" from a warm
+   "Saving to: Kitchen reno research" state), with the collection picker
+   list visible, composited over a real captured tab titled "Sourdough
+   Starter Guide - King Arthur Baking" so the shot reads as a real save in
+   progress. (Playwright cannot drive the real toolbar popup overlay — see
+   `apps/extension/e2e/MANUAL.md` — so this is a real screenshot of the
+   popup's own DOM composited onto a real background-tab screenshot, not an
+   invented browser chrome.)
+2. **`screenshots/02-dashboard-grid.png`** — Dashboard grid: the rail
+   showing 5 collections ("Kitchen reno research", "Q3 competitor
+   teardown", "Weekend in Portland", "Dev docs I keep rereading", "Recipes
+   worth repeating") and the main grid showing "Kitchen reno research" (10
+   link cards, real-looking URLs, two cards with notes/tags visible).
+3. **`screenshots/03-ai-organize-preview.png`** — AI organize preview: a
+   live call to the real `ai-organize` Edge Function (real Anthropic key)
+   against a 16-link "This week's tabs" collection, captured right after
+   the suggested groups render, before Apply.
+4. **`screenshots/04-sessions-pane.png`** — Sessions pane: 3 seeded auto
+   snapshots (6m/11m/16m ago, varying window/tab counts) plus one REAL
+   manual snapshot named "Before demo" triggered live via "Snapshot now"
+   against two open tabs.
+5. **`screenshots/05-share-page.png`** — Share page: the public `/s/<slug>`
+   page for a PRO-shared "Weekend in Portland" collection, viewed signed
+   out, showing the link cards (real favicons resolved live via Google's
+   s2 service) and the "Made with TabBurrow" banner. Captured via the same
+   `WXT_SITE_URL` rebuild + local `next dev` dance t22-share.spec.ts uses,
+   with the extension build restored to normal afterward.
 
 ## Promo tile
 
 **Small promo tile: 440×280 px, PNG, no alpha transparency** (Chrome Web
 Store requirement).
 
-Spec:
-- Deep Green ground (`#16241E`) background, matching the extension and
-  marketing site.
-- TabBurrow wordmark in Syne Bold, cream (`#EEE8D9`), left- or
-  center-aligned.
-- The burrow-arch motif (rounded "entrance" arch, same shape language as
-  the card corners and the marketing hero) as the dominant graphic
-  element; no stock art, no clip-art squirrel unless it can be done in
-  the brand's own illustration style.
-- Orange accent (`#F97316`) used sparingly as a highlight (e.g. one
-  "tucked in" tab icon or the arch outline), not as a large fill; keep
-  it a warm accent, not the dominant color.
-- No screenshot content crammed into the tile; it should read at
-  thumbnail size in a search results grid, not as a mini-dashboard.
-- Deliverable: `store-assets/promo-tile-440x280.png`, plus
-  `store-assets/icon-128.png` (reuse `apps/extension/assets/icon.svg`
-  rasterized at 128×128, already the extension's own icon source).
-
-Both image deliverables are deferred to T25b along with the screenshots
-above.
+Deliverables (both captured in T25b):
+- `store-assets/promo-tile-440x280.png`, rendered from
+  `store-assets/promo-tile.html` (a self-contained compositor page the
+  capture script generates and screenshots at the exact 440×280 — literal
+  hex brand values are sanctioned there, and only there, for this one
+  standalone asset generator; product source keeps using
+  `packages/ui/src/tokens.css`'s `var(--bg-ground)` etc.). Deep Green
+  ground, the real burrow-arch mark embedded byte-for-byte from
+  `apps/extension/assets/icon.svg` (never redrawn), the TabBurrow wordmark
+  in Syne Bold cream, and the tagline "Your tabs deserve a burrow." — no
+  screenshot content, orange stays a sparse accent (the arch's own
+  outline/base bar).
+- `store-assets/icon-128.png` — copied straight from the extension's own
+  build output (`apps/extension/.output/chrome-mv3/icons/128.png`), i.e.
+  `icon.svg` rasterized at 128×128 through the extension's real build
+  pipeline, not a separate rasterization.
 
 ## Verification
 
