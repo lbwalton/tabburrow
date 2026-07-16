@@ -24,6 +24,11 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
   return (
     <div
       ref={ref}
+      // Scopes --text/--text-2/--line/--line-hi/--surface-hover to
+      // paper-legible values for descendants (tokens.css's
+      // `[data-surface="paper"]` block); see the note there for why this
+      // is a separate attribute from the page-level `data-theme="paper"`.
+      data-surface={variant === "paper" ? "paper" : undefined}
       className={cx("border p-4", variantClasses[variant], className)}
       style={{
         borderRadius: arch ? "var(--radius-arch)" : "var(--radius-card)",

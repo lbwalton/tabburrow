@@ -111,6 +111,26 @@
   /* Accents stay the same across themes so brand recognition holds. */
 }
 
+/* --- Paper surface: a nested kraft card, not a page-level theme flip ---
+   `Card variant="paper"` (Card.tsx) stamps `data-surface="paper"` on
+   itself so ANY nested component that reads --text/--text-2/--line/
+   --line-hi/--surface-hover (rather than --paper/--ink directly) still
+   resolves to paper-legible values, even though the surrounding page stays
+   on the dark shell (:root, no [data-theme="paper"]). Before this existed,
+   `Button variant="ghost"` nested in a paper Card rendered cream-on-cream
+   (dark-shell --text/--line leaking through) because Card only overrode
+   its own background/text/border via a direct class, never re-scoped the
+   custom properties descendants inherit — see F1 in stories/fixes.json.
+   Values mirror the paper palette OpenAllButton picked by hand for its
+   local workaround (ink text, paper-line border/hover) before this fix. */
+[data-surface="paper"] {
+  --text:            var(--ink);
+  --text-2:          var(--ink-soft);
+  --line:            var(--paper-line);
+  --line-hi:         rgba(33, 29, 20, 0.32); /* derived: stronger paper-line for hover borders */
+  --surface-hover:   var(--paper-line);
+}
+
 /* Dialog's native ::backdrop can't be reached via inline `style` from React,
    and scoping with a data attribute keeps this from leaking onto any other
    <dialog> a host page might render. */
