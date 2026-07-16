@@ -57,19 +57,37 @@ test("popup DOMContentLoaded is fast in the harness (generous budget; real popup
   context,
   extensionId,
 }) => {
-  const start = Date.now();
-  const popup = await context.newPage();
-  await popup.goto(`chrome-extension://${extensionId}/popup.html`, { waitUntil: "domcontentloaded" });
-  const elapsed = Date.now() - start;
+  // F4 fix (stories/fixes.json): this used to open the popup ONCE and gate
+  // on that single sample. A single Playwright round-trip (context.newPage()
+  // over CDP + page.goto()) shares the machine with whatever else is
+  // running, so under sustained CPU contention any one sample can spike well
+  // past a real regression's size while the popup itself is unchanged —
+  // reproduced locally (877ms on one open vs the 800ms budget) by running
+  // this spec with `--repeat-each 3` while a parallel `pnpm -r test` loop
+  // plus busy-loop workers churned CPU (load average 17.8 on 8 cores).
+  // Taking the MEDIAN of 3 opens instead absorbs one contended outlier
+  // (scheduler preemption, a GC pause, another process's burst) without
+  // hiding a genuine regression, which would push all three samples up
+  // together, not just one.
+  const samples: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const start = Date.now();
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`, { waitUntil: "domcontentloaded" });
+    samples.push(Date.now() - start);
+    await popup.close();
+  }
+  samples.sort((a, b) => a - b);
+  const median = samples[1]!;
   // Acceptance says "under 300ms" for the real toolbar popup. This harness
   // measures a full Playwright round-trip instead — context.newPage() (a
   // whole new tab over CDP) + page.goto() navigation machinery — overhead a
   // native popup open doesn't have, so a straight 300ms budget would fail
-  // on harness cost alone (observed locally: ~170-450ms total). 800ms keeps
-  // headroom for that overhead while still failing on any ~3x regression in
-  // the popup's actual load cost. See e2e/README.md's perf-check notes.
-  expect(elapsed).toBeLessThan(800);
-  await popup.close();
+  // on harness cost alone (observed locally: ~170-450ms per open). 800ms
+  // keeps headroom for that overhead while still failing on any ~3x
+  // regression in the popup's actual load cost. See e2e/README.md's
+  // perf-check notes.
+  expect(median, `samples: ${samples.join(", ")}ms`).toBeLessThan(800);
 });
 
 test("zoom 80-125% keeps the dashboard usable (no broken layout)", async ({ cleanDashboard, extensionId }) => {

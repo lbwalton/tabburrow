@@ -44,6 +44,55 @@ async function syncNow(page: Page): Promise<void> {
   await expect(button).toBeEnabled({ timeout: 20_000 });
 }
 
+/**
+ * Syncs `page` (navigating to Settings first, wherever it currently is) and
+ * only trusts the result once `assertion` actually holds — retrying the
+ * whole cycle (a fresh "Sync now" click, not just re-polling the first
+ * click's aftermath) up to `attempts` times with a short backoff, instead
+ * of syncing exactly once and treating the button's re-enabled state alone
+ * as proof the round-trip landed.
+ *
+ * Why (F2 fix — see stories/fixes.json / task-26-burndown-report.md): the
+ * button re-enabling only proves `requestSync()` RESOLVED, not that it ran
+ * a real push+pull — it resolves identically on a silent `{ skipped: ... }`
+ * gate outcome (lib/sync-controller.ts's `SyncGateDecision`), which
+ * `AccountPane.handleSyncNow` doesn't distinguish in its UI state. The
+ * background service worker runs its OWN periodic sync-interval alarm
+ * through a SEPARATE `sync-controller`/`SyncEngine` module instance on the
+ * same device (module state there is explicitly per-JS-context, per that
+ * file's own docstrings), so under heavy load it can race a manual click's
+ * cycle and settle first on a cursor that predates a row the other device
+ * just pushed. Reproduced locally by running this spec with
+ * `--repeat-each 3` while a parallel `pnpm -r test` loop plus busy-loop
+ * workers churned CPU (`load averages: 17.8` on an 8-core machine): the
+ * "device B pulls the newly-created link" assertion intermittently saw 0
+ * elements for the full default 8s expect-timeout even though device A's
+ * push had already resolved before device B's sync started. Retrying the
+ * whole click (not just re-polling the DOM) gives the next cycle's pull a
+ * fresh chance to observe whatever's committed by then. Bounded at 3
+ * attempts so a genuine regression still fails instead of retrying forever.
+ */
+async function syncUntil(
+  page: Page,
+  extensionId: string,
+  targetHash: string,
+  assertion: () => Promise<void>,
+): Promise<void> {
+  const attempts = 3;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    await page.goto(`chrome-extension://${extensionId}/dashboard.html#/settings`);
+    await syncNow(page);
+    await page.goto(`chrome-extension://${extensionId}/dashboard.html${targetHash}`);
+    try {
+      await assertion();
+      return;
+    } catch (err) {
+      if (attempt === attempts) throw err;
+      await page.waitForTimeout(500 * attempt);
+    }
+  }
+}
+
 /** Idempotent per-test cleanup: deletes any stray user (and its cloud rows) left behind by a prior crashed run, by email. */
 async function cleanupStrayUser(email: string): Promise<void> {
   const existing = await findAdminUserByEmail(SUPABASE_URL, SERVICE_ROLE_KEY!, email);
@@ -57,7 +106,12 @@ test("PRO round-trip: an edit on device A appears on device B via Sync now; a de
   testServer,
 }) => {
   test.skip(!SERVICE_ROLE_KEY, "SUPABASE_SERVICE_ROLE_KEY not set in root .env — see SELF_HOSTING.md");
-  test.setTimeout(120_000);
+  // 180s (was 120s): this test now retries a sync+verify cycle up to 3x on
+  // any of its 4 checkpoints (syncUntil, F2 fix above) rather than trusting
+  // a single "Sync now" click's re-enabled state as proof the round-trip
+  // landed — a real fix under load needs the wall-clock room to actually
+  // retry instead of just hitting a bigger single timeout.
+  test.setTimeout(180_000);
 
   const email = "e2e-sync-pro@tabburrow.test";
   await cleanupStrayUser(email);
@@ -103,15 +157,15 @@ test("PRO round-trip: an edit on device A appears on device B via Sync now; a de
     // pull that picks up what A just pushed). ---
     await dashA.bringToFront();
     await syncNow(dashA);
-    await dashB.bringToFront();
-    await syncNow(dashB);
 
     const collectionId = await readCollectionIdByName(dashA, "Sync Test Collection");
     expect(collectionId, "expected the created collection to exist locally on device A").toBeTruthy();
 
-    await dashB.goto(`chrome-extension://${b.extensionId}/dashboard.html#/c/${collectionId}`);
+    await dashB.bringToFront();
+    await syncUntil(dashB, b.extensionId, `#/c/${collectionId}`, () =>
+      expect(dashB.getByRole("listbox", { name: "Links" }).getByRole("option")).toHaveCount(1),
+    );
     const gridB = dashB.getByRole("listbox", { name: "Links" });
-    await expect(gridB.getByRole("option")).toHaveCount(1);
     await finalScreenshot(dashB, "t18-pro-round-trip-device-b-pulled");
 
     // --- Device B deletes the link, syncs, then device A syncs — the link
@@ -129,11 +183,9 @@ test("PRO round-trip: an edit on device A appears on device B via Sync now; a de
     // there on each device before the next syncNow() call.
     await dashB.goto(`chrome-extension://${b.extensionId}/dashboard.html#/settings`);
     await syncNow(dashB);
-    await dashA.goto(`chrome-extension://${a.extensionId}/dashboard.html#/settings`);
-    await syncNow(dashA);
-
-    await dashA.goto(`chrome-extension://${a.extensionId}/dashboard.html#/c/${collectionId}`);
-    await expect(dashA.getByRole("listbox", { name: "Links" }).getByRole("option")).toHaveCount(0);
+    await syncUntil(dashA, a.extensionId, `#/c/${collectionId}`, () =>
+      expect(dashA.getByRole("listbox", { name: "Links" }).getByRole("option")).toHaveCount(0),
+    );
     await finalScreenshot(dashA, "t18-pro-round-trip-delete-not-resurrected");
 
     // --- Opposite direction (fix pass 1): create on A, sync to B, DELETE on
@@ -154,10 +206,9 @@ test("PRO round-trip: an edit on device A appears on device B via Sync now; a de
 
     await dashA.goto(`chrome-extension://${a.extensionId}/dashboard.html#/settings`);
     await syncNow(dashA);
-    await dashB.goto(`chrome-extension://${b.extensionId}/dashboard.html#/settings`);
-    await syncNow(dashB);
-    await dashB.goto(`chrome-extension://${b.extensionId}/dashboard.html#/c/${collectionId}`);
-    await expect(dashB.getByRole("listbox", { name: "Links" }).getByRole("option")).toHaveCount(1);
+    await syncUntil(dashB, b.extensionId, `#/c/${collectionId}`, () =>
+      expect(dashB.getByRole("listbox", { name: "Links" }).getByRole("option")).toHaveCount(1),
+    );
 
     // Delete on A this time.
     await dashA.goto(`chrome-extension://${a.extensionId}/dashboard.html#/c/${collectionId}`);
@@ -173,11 +224,9 @@ test("PRO round-trip: an edit on device A appears on device B via Sync now; a de
 
     await dashA.goto(`chrome-extension://${a.extensionId}/dashboard.html#/settings`);
     await syncNow(dashA);
-    await dashB.goto(`chrome-extension://${b.extensionId}/dashboard.html#/settings`);
-    await syncNow(dashB);
-
-    await dashB.goto(`chrome-extension://${b.extensionId}/dashboard.html#/c/${collectionId}`);
-    await expect(dashB.getByRole("listbox", { name: "Links" }).getByRole("option")).toHaveCount(0);
+    await syncUntil(dashB, b.extensionId, `#/c/${collectionId}`, () =>
+      expect(dashB.getByRole("listbox", { name: "Links" }).getByRole("option")).toHaveCount(0),
+    );
 
     await deleteCloudDataForUser(SUPABASE_URL, SERVICE_ROLE_KEY!, authUser!.id);
     await deleteAdminUser(SUPABASE_URL, SERVICE_ROLE_KEY!, authUser!.id);
