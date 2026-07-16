@@ -208,7 +208,7 @@
     "id": "T18",
     "title": "Sync wiring in extension (PRO-gated)",
     "phase": 2,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "With a PRO-flagged test user (flip profiles.plan manually in SQL for now): edit on profile A appears on profile B within ~1 min or on manual Sync now",
       "Delete on A never resurrects from B",
