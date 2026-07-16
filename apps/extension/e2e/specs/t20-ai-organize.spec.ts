@@ -235,7 +235,7 @@ test("error paths (mocked): a 402 shows the quota state with an upgrade CTA; a 5
     await dialog.getByRole("button", { name: "Organize", exact: true }).click();
 
     await expect(dialog.getByText("You've used all 30 free AI organizes this month.")).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "See PRO pricing" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Upgrade to PRO" })).toBeVisible();
     // Not an error dump: no raw {"error":"quota"...} JSON, no generic failure copy.
     await expect(dialog.getByText("error", { exact: false })).toHaveCount(0);
     await finalScreenshot(dash, "t20-ai-organize-quota-state");

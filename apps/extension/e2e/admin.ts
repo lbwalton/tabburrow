@@ -59,6 +59,37 @@ export async function fetchProfile(supabaseUrl: string, serviceRoleKey: string, 
   return rows[0] ?? null;
 }
 
+export interface BillingProfileRow {
+  user_id: string;
+  plan: string;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+}
+
+/**
+ * T23b: `GET /rest/v1/profiles?...` including the two Stripe columns
+ * (supabase/migrations/0001_init.sql) — a separate function from
+ * `fetchProfile` above (not just extra columns bolted onto it) so t16's
+ * existing `toMatchObject` assertion never has to change shape for a
+ * feature it doesn't test. Used by t23-billing.spec.ts's live-checkout test
+ * to verify, independent of the extension's own UI, that the webhook
+ * actually stored `stripe_customer_id`/`stripe_subscription_id` — not just
+ * flipped `plan`.
+ */
+export async function fetchBillingProfile(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  userId: string,
+): Promise<BillingProfileRow | null> {
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/profiles?select=user_id,plan,stripe_customer_id,stripe_subscription_id&user_id=eq.${userId}`,
+    { headers: adminHeaders(serviceRoleKey) },
+  );
+  if (!res.ok) throw new Error(`profiles select failed: ${res.status} ${await res.text()}`);
+  const rows = (await res.json()) as BillingProfileRow[];
+  return rows[0] ?? null;
+}
+
 /**
  * T18: flips `profiles.plan` for a test user via a service-role PATCH —
  * bypasses RLS (the "own profile read" policy is select-only; there is no

@@ -443,8 +443,8 @@ test("FREE gate: the dialog shows the PRO upsell with no toggle; admin REST conf
     await expect(dialog).toBeVisible();
 
     await expect(dialog.getByText("Sharing is part of PRO.")).toBeVisible();
-    await expect(dialog.getByText(/PRO purchasing is coming soon/)).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "See PRO pricing" })).toBeVisible();
+    await expect(dialog.getByText(/Upgrade to PRO in Settings/)).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Upgrade to PRO" })).toBeVisible();
     // No toggle of any kind — the FREE state renders no way to turn sharing on.
     await expect(dialog.getByRole("button", { name: "Share this collection" })).toHaveCount(0);
     await expect(dialog.getByRole("button", { name: "Stop sharing" })).toHaveCount(0);

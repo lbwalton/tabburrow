@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { getDB, getMeta } from "@tabburrow/core";
-import { Badge, Button, Card, Input } from "@tabburrow/ui";
+import { Badge, Button, Card, Input, Toast } from "@tabburrow/ui";
 import {
   getPlan,
   onAuthChange,
@@ -12,6 +12,8 @@ import {
   verifyEmailCode,
 } from "../../lib/auth";
 import type { AuthUser, Plan } from "../../lib/auth";
+import { accountUrl, createCheckoutSession, shouldPickupPlanOnVisible, upgradeAvailability } from "../../lib/billing";
+import type { BillingInterval } from "../../lib/billing";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { relativeTime } from "../../lib/sessions";
 import {
@@ -33,7 +35,10 @@ type FormStage = "email" | "code";
  *    quiet message, no network calls, no auth.* imports even touched.
  *  - signed out: email + 6-digit code (two-stage form, Enter submits
  *    either stage) or "Sign in with Google".
- *  - signed in: email, plan Badge, "Refresh status", "Sign out".
+ *  - signed in: email, plan Badge, "Refresh status", "Sign out", and
+ *    (T23b) either an "Upgrade to PRO" section (FREE: monthly/yearly
+ *    checkout buttons) or a "Manage billing" button (PRO) — see
+ *    lib/billing.ts's `upgradeAvailability`.
  *
  * All auth state comes from `onAuthChange` (supabase-js's
  * `onAuthStateChange`, which fires once immediately on subscribe) — no
@@ -76,6 +81,15 @@ export function AccountPane() {
   const [googleBusy, setGoogleBusy] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
 
+  // --- T23b: billing ---
+  const [billingBusy, setBillingBusy] = useState<BillingInterval | null>(null);
+  const [checkoutOpened, setCheckoutOpened] = useState(false);
+  const [billingToast, setBillingToast] = useState<{ key: number; message: string } | null>(null);
+  // In-memory only (not meta-persisted): a stale rate-limit gate surviving a
+  // reload would just mean one extra `getPlan(true)` next time, never a
+  // correctness issue — see shouldPickupPlanOnVisible's docstring.
+  const lastPickupAtRef = useRef<number | null>(null);
+
   useEffect(() => {
     if (!configured) return;
     const unsubscribe = onAuthChange((next) => {
@@ -106,6 +120,28 @@ export function AccountPane() {
       cancelled = true;
     };
   }, [user]);
+
+  // T23b, "post-checkout pickup polish": a FREE user who just completed
+  // checkout in the new tab handleUpgrade opened, then switches BACK to
+  // this tab, gets an automatic `getPlan(true)` instead of having to
+  // remember "Refresh status" — see shouldPickupPlanOnVisible's docstring
+  // for the full rationale and the 60s rate limit. Scoped to FREE only:
+  // a PRO user has nothing this pickup could discover (there's no
+  // "downgrade in a new tab" flow), so it's a no-op for them by design,
+  // not an oversight.
+  useEffect(() => {
+    if (!configured || !user) return;
+    function handleVisibility() {
+      if (document.visibilityState !== "visible") return;
+      if (plan !== "free") return;
+      const now = Date.now();
+      if (!shouldPickupPlanOnVisible(lastPickupAtRef.current, now)) return;
+      lastPickupAtRef.current = now;
+      void getPlan(true).then(setPlan);
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [configured, user, plan]);
 
   async function handleSendCode(e: FormEvent) {
     e.preventDefault();
@@ -180,6 +216,40 @@ export function AccountPane() {
     }
   }
 
+  /**
+   * Starts a Stripe Checkout for `interval` and opens the returned URL in a
+   * NEW TAB (`chrome.tabs.create`) — unlike apps/web's AccountClient, which
+   * redirects the CURRENT tab (an ordinary web-page pattern), this is an
+   * extension dashboard tab with no "navigate away and back" story, so it
+   * stays put while checkout happens alongside it. `checkoutOpened` drives
+   * the inline "come back and hit Refresh status" hint below; the
+   * visibilitychange pickup effect above is the polish that usually makes
+   * that hint unnecessary in practice.
+   */
+  async function handleUpgrade(interval: BillingInterval) {
+    if (billingBusy) return;
+    setBillingBusy(interval);
+    try {
+      const { url } = await createCheckoutSession(interval);
+      chrome.tabs.create({ url });
+      setCheckoutOpened(true);
+    } catch (err) {
+      // BillingError (lib/billing.ts) extends Error, so this one check
+      // covers both — its `.kind` isn't branched on here since every kind
+      // shows the same toast today; kept as a typed error (not a plain
+      // string throw) for whichever caller next needs to distinguish them,
+      // matching lib/ai.ts's AiOrganizeError convention.
+      const message = err instanceof Error ? err.message : "Couldn't start checkout. Try again.";
+      setBillingToast({ key: Date.now(), message });
+    } finally {
+      setBillingBusy(null);
+    }
+  }
+
+  function handleManageBilling() {
+    chrome.tabs.create({ url: accountUrl() });
+  }
+
   async function handleSyncNow() {
     if (syncing) return;
     setSyncing(true);
@@ -221,90 +291,133 @@ export function AccountPane() {
   }
 
   if (user) {
+    const availability = upgradeAvailability({ configured, user, plan });
     return (
-      <Card variant="surface" arch={false} className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-[var(--text)]">Account</h2>
-        <div className="flex items-center gap-2 text-sm text-[var(--text)]">
-          <span className="truncate">{user.email}</span>
-          <Badge variant={plan === "pro" ? "accent" : "muted"}>{plan === "pro" ? "PRO" : "Free"}</Badge>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={() => void handleRefreshPlan()} disabled={refreshing}>
-            Refresh status
-          </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={() => void handleSignOut()} disabled={busy}>
-            Sign out
-          </Button>
-        </div>
-
-        {plan === "pro" ? (
-          <div className="flex flex-col gap-2 border-t border-[var(--line)] pt-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-2)]">Sync</h3>
-            {lastSyncUserIdRaw === undefined ? null : accountSwitchDecision({
-                lastSyncUserId: lastSyncUserIdRaw,
-                currentUserId: user.id,
-              }) === "blocked" ? (
-              switchDismissed ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-xs text-[var(--text-2)]">Sync is paused for this account.</p>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setSwitchDismissed(false)}>
-                    Resolve
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <p className="text-xs text-[var(--text-2)]">
-                    This device previously synced with a different account. To sync with this account, replace this
-                    device&apos;s local data with this account&apos;s cloud data.
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      onClick={() => void handleReplaceLocalData()}
-                      disabled={replacing}
-                    >
-                      Replace local data
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSwitchDismissed(true)}
-                      disabled={replacing}
-                    >
-                      Not now
-                    </Button>
-                  </div>
-                </div>
-              )
-            ) : (
-              <>
-                {hasSyncError ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs text-[var(--accent-2)]">Sync error</span>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => void handleSyncNow()} disabled={syncing}>
-                      Retry
-                    </Button>
-                  </div>
-                ) : lastSyncAtRaw ? (
-                  <p className="text-xs text-[var(--text-2)]">Synced {relativeTime(Number(lastSyncAtRaw), Date.now())}</p>
-                ) : null}
-                <div>
-                  <Button type="button" variant="primary" size="sm" onClick={() => void handleSyncNow()} disabled={syncing}>
-                    Sync now
-                  </Button>
-                </div>
-              </>
-            )}
+      <>
+        <Card variant="surface" arch={false} className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-[var(--text)]">Account</h2>
+          <div className="flex items-center gap-2 text-sm text-[var(--text)]">
+            <span className="truncate">{user.email}</span>
+            <Badge variant={plan === "pro" ? "accent" : "muted"}>{plan === "pro" ? "PRO" : "Free"}</Badge>
           </div>
-        ) : (
-          <p className="border-t border-[var(--line)] pt-3 text-xs text-[var(--text-2)]">
-            Cloud sync is a PRO feature.
-          </p>
-        )}
-      </Card>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => void handleRefreshPlan()} disabled={refreshing}>
+              Refresh status
+            </Button>
+            {availability === "manage" ? (
+              <Button type="button" variant="ghost" size="sm" onClick={handleManageBilling}>
+                Manage billing
+              </Button>
+            ) : null}
+            <Button type="button" variant="ghost" size="sm" onClick={() => void handleSignOut()} disabled={busy}>
+              Sign out
+            </Button>
+          </div>
+
+          {plan === "pro" ? (
+            <div className="flex flex-col gap-2 border-t border-[var(--line)] pt-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-2)]">Sync</h3>
+              {lastSyncUserIdRaw === undefined ? null : accountSwitchDecision({
+                  lastSyncUserId: lastSyncUserIdRaw,
+                  currentUserId: user.id,
+                }) === "blocked" ? (
+                switchDismissed ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs text-[var(--text-2)]">Sync is paused for this account.</p>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setSwitchDismissed(false)}>
+                      Resolve
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs text-[var(--text-2)]">
+                      This device previously synced with a different account. To sync with this account, replace this
+                      device&apos;s local data with this account&apos;s cloud data.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        onClick={() => void handleReplaceLocalData()}
+                        disabled={replacing}
+                      >
+                        Replace local data
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSwitchDismissed(true)}
+                        disabled={replacing}
+                      >
+                        Not now
+                      </Button>
+                    </div>
+                  </div>
+                )
+              ) : (
+                <>
+                  {hasSyncError ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-[var(--accent-2)]">Sync error</span>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => void handleSyncNow()} disabled={syncing}>
+                        Retry
+                      </Button>
+                    </div>
+                  ) : lastSyncAtRaw ? (
+                    <p className="text-xs text-[var(--text-2)]">Synced {relativeTime(Number(lastSyncAtRaw), Date.now())}</p>
+                  ) : null}
+                  <div>
+                    <Button type="button" variant="primary" size="sm" onClick={() => void handleSyncNow()} disabled={syncing}>
+                      Sync now
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2 border-t border-[var(--line)] pt-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-2)]">Upgrade to PRO</h3>
+              <p className="text-xs text-[var(--text-2)]">Cloud sync, sharing, and unlimited AI organize.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void handleUpgrade("month")}
+                  disabled={billingBusy !== null}
+                >
+                  {billingBusy === "month" ? "Opening…" : "Monthly $4/month"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void handleUpgrade("year")}
+                  disabled={billingBusy !== null}
+                >
+                  {billingBusy === "year" ? "Opening…" : "Yearly $29/year (save ~40%)"}
+                </Button>
+              </div>
+              {checkoutOpened ? (
+                <p className="text-xs text-[var(--text-2)]">
+                  Complete checkout in the new tab, then hit Refresh status.
+                </p>
+              ) : null}
+            </div>
+          )}
+        </Card>
+        {billingToast ? (
+          <div className="fixed bottom-6 right-6 z-50">
+            <Toast
+              key={billingToast.key}
+              message={billingToast.message}
+              durationMs={5000}
+              onDismiss={() => setBillingToast(null)}
+            />
+          </div>
+        ) : null}
+      </>
     );
   }
 

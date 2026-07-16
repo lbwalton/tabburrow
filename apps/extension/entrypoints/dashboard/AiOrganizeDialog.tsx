@@ -6,7 +6,6 @@ import { Badge, Button, Dialog } from "@tabburrow/ui";
 import {
   AI_FREE_LIMIT,
   AiOrganizeError,
-  PRICING_URL,
   applyPlan,
   getAiUsesThisMonth,
   organizeLinks,
@@ -18,6 +17,7 @@ import { getPlan, onAuthChange } from "../../lib/auth";
 import type { AuthUser, Plan } from "../../lib/auth";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { BurrowDiggingAnimation } from "./BurrowDiggingAnimation";
+import { UPGRADE_UPSELL_COPY, UpgradeToProButton } from "./UpgradeUpsell";
 
 export interface AiOrganizeDialogProps {
   open: boolean;
@@ -218,11 +218,6 @@ export function AiOrganizeDialog({
     window.location.hash = "#/settings";
   }
 
-  function handlePricingClick() {
-    onClose();
-    chrome.tabs.create({ url: PRICING_URL });
-  }
-
   const resolved = resolveView(configured, user, plan, usesThisMonth, view);
 
   let body: ReactNode;
@@ -295,9 +290,7 @@ export function AiOrganizeDialog({
       body = (
         <div className="flex flex-col gap-3">
           <p className="text-sm text-[var(--text)]">You&apos;ve used all {resolved.limit} free AI organizes this month.</p>
-          <p className="text-xs text-[var(--text-2)]">
-            PRO gets unlimited AI organize (fair use). PRO billing is coming soon, this link previews what&apos;s ahead.
-          </p>
+          <p className="text-xs text-[var(--text-2)]">PRO gets unlimited AI organize (fair use). {UPGRADE_UPSELL_COPY}</p>
         </div>
       );
       footer = (
@@ -305,9 +298,7 @@ export function AiOrganizeDialog({
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>
             Dismiss
           </Button>
-          <Button type="button" size="sm" onClick={handlePricingClick}>
-            See PRO pricing
-          </Button>
+          <UpgradeToProButton onClose={onClose} />
         </>
       );
       break;

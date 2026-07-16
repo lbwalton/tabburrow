@@ -280,7 +280,11 @@ test("FREE gate: a signed-in free user's sync attempts never touch collections/l
     await signInWithEmailOtp(dash, email);
     // No setUserPlan call — this account stays on the default "free" plan.
 
-    await expect(dash.getByText("Cloud sync is a PRO feature.")).toBeVisible();
+    // T23b: the FREE-plan branch's paragraph became a full "Upgrade to PRO"
+    // section (AccountPane.tsx) — still the same PRO upsell this test's
+    // title promises, just with real checkout buttons now that billing
+    // exists, instead of a plain sentence.
+    await expect(dash.getByRole("heading", { name: "Upgrade to PRO", exact: true })).toBeVisible();
     await expect(dash.getByRole("button", { name: "Sync now" })).toHaveCount(0);
 
     // Explicitly simulate the sync ATTEMPT a "Sync now" click would make —

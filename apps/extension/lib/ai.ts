@@ -17,9 +17,6 @@ import { sendSyncNudge } from "./sync-nudge";
 /** Free plan's monthly cap (mirrors supabase/functions/ai-organize/index.ts's FREE_LIMIT) — used for the dialog's proactive "X of 30 left" line before the server has had a chance to say otherwise. */
 export const AI_FREE_LIMIT = 30;
 
-/** The marketing site's pricing page — the brief's "upgrade CTA" target. Hardcoded (not imported: apps/web is a separate Next.js app, not a shared package) — matches apps/web/lib/site-config.ts's SITE_URL + the pricing route. */
-export const PRICING_URL = "https://tabburrow.com/pricing";
-
 // ---------------------------------------------------------------------------
 // Wire types
 // ---------------------------------------------------------------------------

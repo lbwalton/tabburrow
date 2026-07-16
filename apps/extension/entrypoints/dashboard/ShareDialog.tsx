@@ -3,13 +3,13 @@ import type { ReactNode } from "react";
 import type { Collection } from "@tabburrow/core";
 import { generateShareSlug, getDB, setShare } from "@tabburrow/core";
 import { Button, Dialog, Input } from "@tabburrow/ui";
-import { PRICING_URL } from "../../lib/ai";
 import { getPlan, onAuthChange } from "../../lib/auth";
 import type { AuthUser, Plan } from "../../lib/auth";
 import { shareUrlFor } from "../../lib/share-url";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { requestSync } from "../../lib/sync-controller";
 import { BurrowDiggingAnimation } from "./BurrowDiggingAnimation";
+import { UPGRADE_UPSELL_COPY, UpgradeToProButton } from "./UpgradeUpsell";
 
 export interface ShareDialogProps {
   open: boolean;
@@ -179,11 +179,6 @@ export function ShareDialog({ open, onClose, collection }: ShareDialogProps) {
     window.location.hash = "#/settings";
   }
 
-  function handlePricingClick(): void {
-    onClose();
-    chrome.tabs.create({ url: PRICING_URL });
-  }
-
   let body: ReactNode;
   let footer: ReactNode;
 
@@ -218,9 +213,7 @@ export function ShareDialog({ open, onClose, collection }: ShareDialogProps) {
     body = (
       <div className="flex flex-col gap-3">
         <p className="text-sm text-[var(--text)]">Sharing is part of PRO.</p>
-        <p className="text-xs text-[var(--text-2)]">
-          PRO purchasing is coming soon, this link previews what&apos;s ahead.
-        </p>
+        <p className="text-xs text-[var(--text-2)]">{UPGRADE_UPSELL_COPY}</p>
       </div>
     );
     footer = (
@@ -228,9 +221,7 @@ export function ShareDialog({ open, onClose, collection }: ShareDialogProps) {
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
           Dismiss
         </Button>
-        <Button type="button" size="sm" onClick={handlePricingClick}>
-          See PRO pricing
-        </Button>
+        <UpgradeToProButton onClose={onClose} />
       </>
     );
   } else if (busy) {

@@ -124,3 +124,35 @@ manual) is unit-tested in `packages/core/test/repo.test.ts` (T4's acceptance)
 change `AUTO_SNAPSHOT_INTERVAL_MINUTES` temporarily for a faster manual
 check, then revert). Confirm a new "Auto" snapshot appears roughly every 5
 minutes in `#/sessions`, and the Auto group never exceeds 10 rows.
+
+## 8. Billing (T23b) — now automated, not a manual item
+
+There was never a billing-specific entry in this file before T23b (the
+"PRO purchasing is coming soon" placeholder had nothing live to check by
+hand). Now that checkout is real, the full loop — free user upgrades,
+completes a real Stripe test-mode Checkout, the extension flips to PRO, a
+webhook-driven downgrade flips it back to FREE with local data untouched —
+is driven end to end by `e2e/specs/t23-billing.spec.ts`'s `@live-stripe`
+test, the same way `t20-ai-organize.spec.ts`'s `@live-ai` test covers the
+real Anthropic round trip. Nothing here needs a human unless that spec
+itself can't run.
+
+**To actually run it** (it self-skips with a clear reason otherwise):
+- `SUPABASE_SERVICE_ROLE_KEY` and `STRIPE_SECRET_KEY` set in the root
+  `.env` (see `SELF_HOSTING.md`'s Stripe setup section) — a real Stripe
+  TEST-mode secret key, not a placeholder.
+- The `stripe` CLI installed and on `PATH` (`brew install stripe/stripe-cli/stripe`
+  or see [stripe.com/docs/stripe-cli](https://stripe.com/docs/stripe-cli)).
+  Always pass `--api-key` explicitly when running `stripe` by hand against
+  this project too — the CLI's own default login may be a different Stripe
+  account than `STRIPE_SECRET_KEY` (verified true on the machine this spec
+  was written on; see `task-23b-report.md`).
+- The local stack running (`supabase start`) with `checkout-session` and
+  `stripe-webhook` actually serving requests — verified by the spec's own
+  probe, same pattern `t20`'s `probeAiOrganizeReachable` uses.
+
+One thing this spec genuinely can't cover even with all of the above: a
+REAL customer clicking through Stripe's hosted Checkout UI is simulated
+with Stripe's documented test card (4242 4242 4242 4242), never a live
+card — that's Stripe's own test-mode guarantee, not something this harness
+needs to re-verify.
