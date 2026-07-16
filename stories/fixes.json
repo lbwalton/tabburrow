@@ -1,1 +1,11 @@
-[]
+[
+  {
+    "id": "F1",
+    "found": "T21b",
+    "area": "web/ui",
+    "repro": "View /pricing in paper-card context or share page: Button variant=ghost renders near-invisible on Card variant=paper (dark-shell ghost tokens do not flip on paper surfaces). T21b fixed its own instance locally in OpenAllButton; PricingToggle.tsx instance remains.",
+    "expected": "Ghost buttons legible on paper surfaces",
+    "actual": "Invisible/illegible ghost button on kraft background",
+    "status": "open"
+  }
+]
