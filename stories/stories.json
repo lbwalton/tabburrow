@@ -245,7 +245,7 @@
     "id": "T21",
     "title": "Web app scaffold + share pages",
     "phase": 3,
-    "status": "pending",
+    "status": "done",
     "acceptance": [
       "Shared slug renders; unshared/unknown slug 404s",
       "Page scores \u226595 on Lighthouse a11y locally, renders beautifully at mobile width",
