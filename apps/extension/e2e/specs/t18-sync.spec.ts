@@ -372,19 +372,23 @@ test("account switch: after A synced on this device, B is blocked from syncing; 
     const bCloudBefore = await fetchCollectionsForUser(SUPABASE_URL, SERVICE_ROLE_KEY!, userB!.id);
     expect(bCloudBefore).toEqual([]);
 
-    // Seed a collection that exists ONLY in B's cloud, so the post-replace
-    // full pull has something real to land (and proves the cursor reset —
-    // a stale cursor inherited from A's sync would be NEWER than this row's
-    // updated_at and would skip it).
+    // Seed a collection that exists ONLY in B's cloud, BACKDATED one hour so
+    // its updated_at is strictly OLDER than the cursor A's sync advanced to
+    // moments ago. That makes this row the genuine proof of the cursor
+    // reset: if "Replace local data" failed to reset the cursor to 0, the
+    // post-replace pull's .gt("updated_at", staleCursor) would skip this row
+    // and the rail assertion below would fail. (A row stamped Date.now()
+    // would be NEWER than the stale cursor and would pull either way,
+    // proving nothing about the reset.)
     const bCollectionId = randomUUID();
-    const now = Date.now();
+    const backdated = Date.now() - 3_600_000;
     await insertCloudCollection(SUPABASE_URL, SERVICE_ROLE_KEY!, {
       id: bCollectionId,
       user_id: userB!.id,
       name: "Switch B Cloud Collection",
       position: seedPosition(0),
-      created_at: now,
-      updated_at: now,
+      created_at: backdated,
+      updated_at: backdated,
     });
 
     // --- Resolve: Replace local data. ---

@@ -1,20 +1,25 @@
-import { describe, it, expect } from "vitest";
+import "fake-indexeddb/auto";
+import { describe, it, expect, afterEach } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Collection, Link } from "@tabburrow/core";
+import { BurrowDB, getMeta, setMeta, SyncEngine } from "@tabburrow/core";
 import {
   collectionFromRemoteRow,
   collectionToRemoteRow,
+  createTransportWithClient,
   linkFromRemoteRow,
   linkToRemoteRow,
 } from "./sync-transport";
 
-// createSupabaseTransport's push/pull/RPC calls are NOT unit tested here —
-// they call supabase-js's `.from()/.upsert()/.rpc()`, and this package's
-// vitest config deliberately does no chrome.*/network mocking (same
-// precedent as lib/auth.ts's test file). What IS test-driven here is every
-// pure mapping function the transport is built on: the exact camelCase <->
-// snake_case round trip `SyncEngine` depends on for every pushed/pulled row.
-// The real network path is exercised end-to-end by e2e/specs/t18-sync.spec.ts
-// against the local Supabase stack.
+// createSupabaseTransport's REAL push/pull/RPC network path is NOT unit
+// tested here — it needs a configured `getClient()`, absent under vitest
+// (same precedent as lib/auth.ts's test file); e2e/specs/t18-sync.spec.ts
+// exercises it against the local Supabase stack. What IS test-driven here:
+// every pure mapping function the transport is built on (the exact
+// camelCase <-> snake_case round trip), plus — via `createTransportWithClient`
+// and a fake client — the transport's SESSION GUARD behavior, which no e2e
+// flow can deterministically reproduce (it requires a sign-out landing in
+// the exact window between the controller's gate check and the pull).
 
 const USER_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -164,5 +169,95 @@ describe("linkToRemoteRow / linkFromRemoteRow", () => {
     const row = linkToRemoteRow(LIVE_LINK, USER_ID);
     const mapped = linkFromRemoteRow(row) as unknown as Record<string, unknown>;
     expect("user_id" in mapped).toBe(false);
+  });
+});
+
+/**
+ * A minimal fake of the exact supabase-js surface the transport touches:
+ * `auth.getSession`, `rpc`, and `from().select().gt` / `from().upsert`.
+ * `expireSession()` simulates the user signing out (or the session lapsing)
+ * AFTER the transport was constructed but BEFORE a method runs — the window
+ * the reviewer's trace targets. Every network-shaped call is counted so the
+ * tests can assert the guard fired BEFORE any request would have left.
+ */
+function fakeSupabaseClient() {
+  let session: { user: { id: string } } | null = { user: { id: USER_ID } };
+  const calls = { rpc: 0, from: [] as string[] };
+  const client = {
+    auth: {
+      getSession: async () => ({ data: { session }, error: null }),
+    },
+    rpc: async (_fn: string) => {
+      calls.rpc += 1;
+      return { data: 1_000_000, error: null };
+    },
+    from: (table: string) => {
+      calls.from.push(table);
+      return {
+        select: (_cols: string) => ({
+          gt: async (_col: string, _v: number) => ({ data: [], error: null }),
+        }),
+        upsert: async (_rows: unknown, _opts: unknown) => ({ error: null }),
+      };
+    },
+  };
+  return {
+    client: client as unknown as SupabaseClient,
+    calls,
+    expireSession: () => {
+      session = null;
+    },
+  };
+}
+
+describe("pullSince session guard (fix pass 2)", () => {
+  afterEach(async () => {
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase("tabburrow");
+      req.onsuccess = () => resolve();
+      req.onerror = () => resolve();
+      req.onblocked = () => resolve();
+    });
+  });
+
+  it("pullSince with a live session runs and returns serverNow", async () => {
+    const { client, calls } = fakeSupabaseClient();
+    const transport = createTransportWithClient(client);
+    const result = await transport.pullSince(0);
+    expect(result.serverNow).toBe(1_000_000);
+    expect(calls.rpc).toBe(1);
+  });
+
+  it("pullSince REJECTS when the session expired after construction, before touching rpc or any table", async () => {
+    // The reviewer's trace: gate passes -> user signs out mid-cycle -> flush
+    // has zero ops (no transport call to throw) -> a sessionless pullSince
+    // would run under the anon key, where server_now_ms() still executes and
+    // both selects return [] under RLS with NO error — so the engine would
+    // advance the cursor having pulled nothing, permanently skipping rows
+    // updated on other devices in that window. The guard must throw FIRST.
+    const { client, calls, expireSession } = fakeSupabaseClient();
+    const transport = createTransportWithClient(client);
+    expireSession();
+    await expect(transport.pullSince(0)).rejects.toThrow(/no signed-in session/);
+    expect(calls.rpc).toBe(0);
+    expect(calls.from).toEqual([]);
+  });
+
+  it("a full engine cycle against a sessionless transport leaves the cursor untouched (cursor-last rule)", async () => {
+    const db = new BurrowDB();
+    await db.open();
+    try {
+      await setMeta("syncCursor", "500", db);
+      const { client, expireSession } = fakeSupabaseClient();
+      const engine = new SyncEngine(db, createTransportWithClient(client));
+      expireSession();
+      // No pendingOps seeded — the flush makes zero transport calls (the
+      // common every-minute alarm tick), so the pull is the first and only
+      // place the missing session can surface.
+      await expect(engine.syncOnce()).rejects.toThrow(/no signed-in session/);
+      expect(await getMeta("syncCursor", db)).toBe("500");
+    } finally {
+      db.close();
+    }
   });
 });

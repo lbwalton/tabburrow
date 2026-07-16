@@ -257,6 +257,10 @@ async function recordSyncSuccess(db: BurrowDB, userId: string): Promise<void> {
   await setMeta(LAST_SYNC_ERROR_META_KEY, "", db);
   // Arms the account-switch guard: from now on, only THIS account may sync
   // on this device without an explicit "Replace local data" resolution.
+  // Accepted crash-width window: a process death between the engine op
+  // resolving and this write leaves that just-synced account unguarded
+  // (a later different-account sign-in would read as first-sign-in) — the
+  // window is milliseconds wide and the next successful cycle re-arms it.
   await setMeta(LAST_SYNC_USER_ID_META_KEY, userId, db);
 }
 

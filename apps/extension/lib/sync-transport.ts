@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Collection, Link, SyncTransport } from "@tabburrow/core";
 import { getClient } from "./supabase";
 
@@ -118,9 +119,19 @@ export function linkFromRemoteRow(row: RemoteLinkRow): Link {
 export function createSupabaseTransport(): SyncTransport | null {
   const client = getClient();
   if (!client) return null;
+  return createTransportWithClient(client);
+}
 
+/**
+ * The transport over an EXPLICIT client — `createSupabaseTransport` above is
+ * the production entry (shared `getClient()` singleton); this factory exists
+ * so the session-guard behavior is unit-testable with a fake client under
+ * vitest, where `getClient()` is always `null` (no `WXT_SUPABASE_*` env).
+ * See lib/sync-transport.test.ts's sessionless-pull tests.
+ */
+export function createTransportWithClient(client: SupabaseClient): SyncTransport {
   async function currentUserId(): Promise<string> {
-    const { data, error } = await client!.auth.getSession();
+    const { data, error } = await client.auth.getSession();
     if (error) throw error;
     const userId = data.session?.user.id;
     if (!userId) {
@@ -134,7 +145,7 @@ export function createSupabaseTransport(): SyncTransport | null {
       if (rows.length === 0) return;
       const userId = await currentUserId();
       const payload = rows.map((row) => collectionToRemoteRow(row, userId));
-      const { error } = await client!.from("collections").upsert(payload, { onConflict: "id" });
+      const { error } = await client.from("collections").upsert(payload, { onConflict: "id" });
       if (error) throw error;
     },
 
@@ -142,11 +153,24 @@ export function createSupabaseTransport(): SyncTransport | null {
       if (rows.length === 0) return;
       const userId = await currentUserId();
       const payload = rows.map((row) => linkToRemoteRow(row, userId));
-      const { error } = await client!.from("links").upsert(payload, { onConflict: "id" });
+      const { error } = await client.from("links").upsert(payload, { onConflict: "id" });
       if (error) throw error;
     },
 
     async pullSince(cursor: number) {
+      // Session guard FIRST (fix pass 2): unlike the push methods (which
+      // need the session's user id anyway), a sessionless pull would NOT
+      // fail on its own — it would run under the anon key, where
+      // server_now_ms() still executes and both selects below return []
+      // under RLS with NO error. The engine would then advance its cursor
+      // to serverNow having pulled nothing, permanently skipping every row
+      // updated on other devices in that window (surfacing only after the
+      // user signs back in, with a confident "Synced just now"). Throwing
+      // here instead makes the engine's cursor-last rule (see
+      // packages/core/src/sync/engine.ts's runSyncOnce) leave the cursor
+      // untouched, so the next signed-in cycle resumes from the same point.
+      await currentUserId();
+
       // Cursor-gap mitigation (T17 review carry-over): read the server clock
       // FIRST, via the `server_now_ms()` RPC (supabase/migrations/0003_server_now.sql),
       // THEN run the two .gt("updated_at", cursor) reads below — see that
@@ -154,7 +178,7 @@ export function createSupabaseTransport(): SyncTransport | null {
       // SyncEngine advances its stored cursor to; it must be a value taken
       // BEFORE these reads started, never AFTER (or a row committed mid-pull
       // could be skipped forever instead of just safely re-pulled next cycle).
-      const { data: nowData, error: nowError } = await client!.rpc("server_now_ms");
+      const { data: nowData, error: nowError } = await client.rpc("server_now_ms");
       if (nowError) throw nowError;
       const serverNow = Number(nowData);
 
@@ -162,8 +186,8 @@ export function createSupabaseTransport(): SyncTransport | null {
       // scopes both reads to the signed-in user; no explicit .eq("user_id", ...)
       // needed on top of that.
       const [collectionsRes, linksRes] = await Promise.all([
-        client!.from("collections").select("*").gt("updated_at", cursor),
-        client!.from("links").select("*").gt("updated_at", cursor),
+        client.from("collections").select("*").gt("updated_at", cursor),
+        client.from("links").select("*").gt("updated_at", cursor),
       ]);
       if (collectionsRes.error) throw collectionsRes.error;
       if (linksRes.error) throw linksRes.error;
