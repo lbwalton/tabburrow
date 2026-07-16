@@ -45,19 +45,30 @@ const ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY;
  * function process is actually up and serving; a connection failure,
  * timeout, or 404 means it isn't. This is the exact same probe this task's
  * brief describes ("skip-unless-env pattern... probe first").
+ *
+ * T26: retries timeouts/network errors up to 3 attempts (15s each) before
+ * concluding "unreachable" — the edge runtime's `per_worker` policy can
+ * cold-boot a function's worker on its first hit of a suite run, which can
+ * exceed a single short timeout under load without meaning the function
+ * isn't deployed (t23-billing.spec.ts's identical probe was observed
+ * skipping its @live-stripe test on exactly this). A deterministic non-401
+ * HTTP response still returns false immediately, no retry.
  */
 async function probeAiOrganizeReachable(): Promise<boolean> {
-  try {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-organize`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ links: [] }),
-      signal: AbortSignal.timeout(5_000),
-    });
-    return res.status === 401;
-  } catch {
-    return false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-organize`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ links: [] }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      return res.status === 401;
+    } catch {
+      // timeout / connection error — worker may still be cold-booting; retry.
+    }
   }
+  return false;
 }
 
 /** Idempotent per-test cleanup, same pattern t18-sync.spec.ts uses: deletes any stray user left behind by a prior crashed run, by email. */

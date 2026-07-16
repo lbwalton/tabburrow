@@ -96,19 +96,37 @@ function stripeCliAvailable(): boolean {
   }
 }
 
-/** Same "unauthenticated request -> 401 means the function is actually live" probe t20-ai-organize.spec.ts's `probeAiOrganizeReachable` uses. */
+/**
+ * Same "unauthenticated request -> 401 means the function is actually live"
+ * probe t20-ai-organize.spec.ts's `probeAiOrganizeReachable` uses.
+ *
+ * T26: retries timeouts/network errors up to 3 attempts (15s timeout each)
+ * before concluding "unreachable" — observed in a full-suite run: this
+ * probe's original single 5s attempt timed out and skipped the @live-stripe
+ * test even though the function was genuinely up (a manual probe moments
+ * later answered 401 in ~170ms). The edge runtime's `per_worker` policy can
+ * cold-boot this function's worker on first hit (Deno compiling the Stripe
+ * SDK import), which legitimately exceeds 5s under suite load without
+ * meaning anything is misconfigured. An HTTP response that ISN'T 401 (e.g.
+ * a 404 for an undeployed function) is deterministic and returns false
+ * immediately, no retry — only the can't-tell cases (timeout, connection
+ * refused mid-boot) are retried.
+ */
 async function probeCheckoutSessionReachable(): Promise<boolean> {
-  try {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/checkout-session`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ interval: "month" }),
-      signal: AbortSignal.timeout(5_000),
-    });
-    return res.status === 401;
-  } catch {
-    return false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/checkout-session`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ interval: "month" }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      return res.status === 401;
+    } catch {
+      // timeout / connection error — worker may still be cold-booting; retry.
+    }
   }
+  return false;
 }
 
 /** Idempotent per-test cleanup, same pattern t18/t20/t22's specs use. */
