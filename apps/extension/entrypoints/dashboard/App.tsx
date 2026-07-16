@@ -40,6 +40,7 @@ import {
   shouldOfferCrashRestore,
 } from "../../lib/sessions";
 import { applyTheme, parseTheme, THEME_META_KEY } from "../../lib/theme";
+import { sendSyncNudge } from "../../lib/sync-nudge";
 import { useRoute } from "./useRoute";
 import { Rail } from "./Rail";
 import { DashboardMain } from "./DashboardMain";
@@ -182,12 +183,14 @@ export function App() {
         const nextOrder = moveItem(current, fromIndex, toIndex);
         setRailLocalOrder(nextOrder);
         const { beforeId, afterId } = neighborsAfterMove(nextOrder, op.activeId);
-        moveCollection(op.activeId, beforeId, afterId, db).catch(() => {
-          // The write never landed: roll the rail back to the live order
-          // instead of leaving an unpersisted order on screen forever.
-          setRailLocalOrder((cur) => nextLocalOrder(cur, { type: "write-failed" }));
-          setReorderError(Date.now());
-        });
+        moveCollection(op.activeId, beforeId, afterId, db)
+          .then(sendSyncNudge)
+          .catch(() => {
+            // The write never landed: roll the rail back to the live order
+            // instead of leaving an unpersisted order on screen forever.
+            setRailLocalOrder((cur) => nextLocalOrder(cur, { type: "write-failed" }));
+            setReorderError(Date.now());
+          });
         return;
       }
 
@@ -200,10 +203,12 @@ export function App() {
         const nextOrder = moveItem(current, fromIndex, toIndex);
         setLinkLocalOrder(nextOrder);
         const { beforeId, afterId } = neighborsAfterMove(nextOrder, op.activeId);
-        moveLink(op.activeId, activeCollectionId, beforeId, afterId, db).catch(() => {
-          setLinkLocalOrder((cur) => nextLocalOrder(cur, { type: "write-failed" }));
-          setLinkOpError({ id: Date.now(), message: "Couldn't save that order. Try again." });
-        });
+        moveLink(op.activeId, activeCollectionId, beforeId, afterId, db)
+          .then(sendSyncNudge)
+          .catch(() => {
+            setLinkLocalOrder((cur) => nextLocalOrder(cur, { type: "write-failed" }));
+            setLinkOpError({ id: Date.now(), message: "Couldn't save that order. Try again." });
+          });
         return;
       }
 
@@ -211,12 +216,14 @@ export function App() {
         // Dropped on the row of the collection already open: nothing to do,
         // there's no meaningful "move".
         if (op.targetCollectionId === activeCollectionId) return;
-        moveLinkToEnd(op.linkId, op.targetCollectionId, db).catch((err) => {
-          setLinkOpError({
-            id: Date.now(),
-            message: err instanceof Error ? err.message : "Couldn't move that link.",
+        moveLinkToEnd(op.linkId, op.targetCollectionId, db)
+          .then(sendSyncNudge)
+          .catch((err) => {
+            setLinkOpError({
+              id: Date.now(),
+              message: err instanceof Error ? err.message : "Couldn't move that link.",
+            });
           });
-        });
         return;
       }
 
@@ -227,6 +234,7 @@ export function App() {
 
   async function handleCreateCollection(name: string): Promise<Collection> {
     const created = await createCollection(name, undefined, db);
+    sendSyncNudge();
     window.location.hash = collectionHash(created.id);
     return created;
   }
@@ -236,13 +244,13 @@ export function App() {
   }
 
   function handleDeleteCollection(collection: Collection) {
-    void softDeleteCollection(collection.id, db);
+    void softDeleteCollection(collection.id, db).then(sendSyncNudge);
     setPendingDelete({ id: collection.id, name: collection.name });
   }
 
   function handleUndoDelete() {
     if (!pendingDelete) return;
-    void restoreCollection(pendingDelete.id, db);
+    void restoreCollection(pendingDelete.id, db).then(sendSyncNudge);
     setPendingDelete(null);
   }
 
@@ -252,6 +260,11 @@ export function App() {
 
   function handleLinksDeleted(ids: string[]) {
     if (ids.length === 0) return;
+    // BulkBar already awaited softDeleteLinks before calling this — this IS
+    // the App-level mutation completion point for a link delete, regardless
+    // of which child component issued the repo call (same reasoning as
+    // handleDragEnd's `.then(sendSyncNudge)` above).
+    sendSyncNudge();
     setPendingLinkDelete({ key: Date.now(), ids, count: ids.length });
   }
 
@@ -262,7 +275,7 @@ export function App() {
     // every restored link back exactly where it was (core's repo.test.ts
     // asserts this directly: restoring a tombstoned link lands it back in
     // its original slot relative to its siblings, not appended to the end).
-    void restoreLinks(pendingLinkDelete.ids, db);
+    void restoreLinks(pendingLinkDelete.ids, db).then(sendSyncNudge);
     setPendingLinkDelete(null);
   }
 

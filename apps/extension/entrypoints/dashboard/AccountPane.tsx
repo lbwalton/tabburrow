@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { getDB, getMeta } from "@tabburrow/core";
 import { Badge, Button, Card, Input } from "@tabburrow/ui";
 import {
   getPlan,
@@ -11,6 +13,8 @@ import {
 } from "../../lib/auth";
 import type { AuthUser, Plan } from "../../lib/auth";
 import { isSupabaseConfigured } from "../../lib/supabase";
+import { relativeTime } from "../../lib/sessions";
+import { LAST_SYNC_AT_META_KEY, LAST_SYNC_ERROR_META_KEY, requestSync } from "../../lib/sync-controller";
 
 type FormStage = "email" | "code";
 
@@ -31,11 +35,23 @@ type FormStage = "email" | "code";
  */
 export function AccountPane() {
   const configured = isSupabaseConfigured();
+  const db = getDB();
 
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  // Global (not per-user) meta keys, per T18's spec — a device that signs
+  // out of one PRO account and into another briefly shows the departed
+  // account's last-sync status until the next sync completes. Sync status
+  // carries no entitlement or PII (unlike `lib/auth.ts`'s `planCache`, which
+  // WAS scoped per-user after a real cross-user leak — see its docstring),
+  // so this is a cosmetic staleness gap, not a security concern; flagged
+  // rather than silently left unexplained.
+  const lastSyncAtRaw = useLiveQuery(() => getMeta(LAST_SYNC_AT_META_KEY, db), [db]);
+  const lastSyncErrorRaw = useLiveQuery(() => getMeta(LAST_SYNC_ERROR_META_KEY, db), [db]);
+  const hasSyncError = !!lastSyncErrorRaw;
 
   const [stage, setStage] = useState<FormStage>("email");
   const [email, setEmail] = useState("");
@@ -149,6 +165,19 @@ export function AccountPane() {
     }
   }
 
+  async function handleSyncNow() {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      // requestSync writes meta[lastSyncAt]/meta[lastSyncError] itself (see
+      // lib/sync-controller.ts) — this component's status line reacts to
+      // that live, so nothing from the result needs to flow back here.
+      await requestSync("manual", db);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   if (!configured) {
     return (
       <Card variant="surface" arch={false} className="flex flex-col gap-2">
@@ -177,6 +206,31 @@ export function AccountPane() {
             Sign out
           </Button>
         </div>
+
+        {plan === "pro" ? (
+          <div className="flex flex-col gap-2 border-t border-[var(--line)] pt-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-2)]">Sync</h3>
+            {hasSyncError ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-[var(--accent-2)]">Sync error</span>
+                <Button type="button" variant="ghost" size="sm" onClick={() => void handleSyncNow()} disabled={syncing}>
+                  Retry
+                </Button>
+              </div>
+            ) : lastSyncAtRaw ? (
+              <p className="text-xs text-[var(--text-2)]">Synced {relativeTime(Number(lastSyncAtRaw), Date.now())}</p>
+            ) : null}
+            <div>
+              <Button type="button" variant="primary" size="sm" onClick={() => void handleSyncNow()} disabled={syncing}>
+                Sync now
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <p className="border-t border-[var(--line)] pt-3 text-xs text-[var(--text-2)]">
+            Cloud sync is a PRO feature.
+          </p>
+        )}
       </Card>
     );
   }

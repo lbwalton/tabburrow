@@ -58,3 +58,82 @@ export async function fetchProfile(supabaseUrl: string, serviceRoleKey: string, 
   const rows = (await res.json()) as ProfileRow[];
   return rows[0] ?? null;
 }
+
+/**
+ * T18: flips `profiles.plan` for a test user via a service-role PATCH —
+ * bypasses RLS (the "own profile read" policy is select-only; there is no
+ * user-facing write path for `plan` at all — see supabase/migrations/0001_init.sql's
+ * comment on why: it's meant to only ever move via Stripe's webhook, T23).
+ * `Prefer: return=minimal` keeps this a plain ok/not-ok call.
+ */
+export async function setUserPlan(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  userId: string,
+  plan: "free" | "pro",
+): Promise<void> {
+  const res = await fetch(`${supabaseUrl}/rest/v1/profiles?user_id=eq.${userId}`, {
+    method: "PATCH",
+    headers: { ...adminHeaders(serviceRoleKey), Prefer: "return=minimal" },
+    body: JSON.stringify({ plan }),
+  });
+  if (!res.ok) throw new Error(`profiles plan update failed: ${res.status} ${await res.text()}`);
+}
+
+export interface RemoteCollectionRow {
+  id: string;
+  name: string;
+  deleted_at: number | null;
+}
+
+export interface RemoteLinkRow {
+  id: string;
+  collection_id: string;
+  url: string;
+  deleted_at: number | null;
+}
+
+/** `GET /rest/v1/collections?user_id=eq.<id>` as the admin — used by t18-sync.spec.ts's initialUpload test to verify rows landed in the cloud without trusting the extension's own (client-side) read of what it thinks it pushed. */
+export async function fetchCollectionsForUser(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  userId: string,
+): Promise<RemoteCollectionRow[]> {
+  const res = await fetch(`${supabaseUrl}/rest/v1/collections?select=id,name,deleted_at&user_id=eq.${userId}`, {
+    headers: adminHeaders(serviceRoleKey),
+  });
+  if (!res.ok) throw new Error(`collections select failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as RemoteCollectionRow[];
+}
+
+/** `GET /rest/v1/links?user_id=eq.<id>` as the admin — see `fetchCollectionsForUser`. */
+export async function fetchLinksForUser(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  userId: string,
+): Promise<RemoteLinkRow[]> {
+  const res = await fetch(`${supabaseUrl}/rest/v1/links?select=id,collection_id,url,deleted_at&user_id=eq.${userId}`, {
+    headers: adminHeaders(serviceRoleKey),
+  });
+  if (!res.ok) throw new Error(`links select failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as RemoteLinkRow[];
+}
+
+/**
+ * Deletes every `collections`/`links` row for a test user — cloud-side
+ * cleanup so a t18-sync.spec.ts run never leaves rows behind for a NEXT run
+ * to trip over (links first: no FK from links -> collections in the schema,
+ * but deleting in this order mirrors the app's own cascade intent anyway).
+ * `deleteAdminUser` (auth.users, `on delete cascade`) would already sweep
+ * these too, but callers do this explicitly first so the assertions right
+ * before cleanup aren't racing the user deletion.
+ */
+export async function deleteCloudDataForUser(supabaseUrl: string, serviceRoleKey: string, userId: string): Promise<void> {
+  for (const table of ["links", "collections"]) {
+    const res = await fetch(`${supabaseUrl}/rest/v1/${table}?user_id=eq.${userId}`, {
+      method: "DELETE",
+      headers: { ...adminHeaders(serviceRoleKey), Prefer: "return=minimal" },
+    });
+    if (!res.ok) throw new Error(`${table} cleanup delete failed: ${res.status} ${await res.text()}`);
+  }
+}

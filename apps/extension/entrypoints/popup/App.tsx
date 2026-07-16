@@ -15,6 +15,7 @@ import { formatHost } from "../../lib/links";
 import { getPlan, onAuthChange } from "../../lib/auth";
 import type { AuthUser, Plan } from "../../lib/auth";
 import { isSupabaseConfigured } from "../../lib/supabase";
+import { sendSyncNudge } from "../../lib/sync-nudge";
 import {
   isPendingCommandFresh,
   LAST_USED_COLLECTION_META_KEY,
@@ -218,6 +219,11 @@ export function App() {
         }
         const withFavicons = tabs.map((t) => ({ ...t, faviconUrl: faviconFor(t.url) }));
         await saveTabs(collection.id, withFavicons, db);
+        // App-level nudge (T18): tells the background service worker to
+        // debounce a sync cycle rather than waiting for the next 1-minute
+        // alarm — see lib/sync-nudge.ts's docstring for why this lives here
+        // and not inside saveTabs/createCollection themselves.
+        sendSyncNudge();
         await setMeta(LAST_USED_KEY, collection.id, db);
         setTargetId(collection.id);
         dispatch({

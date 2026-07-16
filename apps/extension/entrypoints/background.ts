@@ -19,10 +19,25 @@ import {
 import { onAuthChange } from "../lib/auth";
 import type { AuthUser } from "../lib/auth";
 import { getClient } from "../lib/supabase";
+import { requestSync } from "../lib/sync-controller";
+import { isSyncNudgeMessage } from "../lib/sync-nudge";
 
 const AUTO_SNAPSHOT_ALARM = "auto-snapshot";
 const AUTO_SNAPSHOT_INTERVAL_MINUTES = 5;
 const AUTO_SNAPSHOT_KEEP = 10;
+
+// --- Sync (T18) ---
+// "sync-interval" polls unconditionally every minute (requestSync's own
+// gating decides whether anything actually happens — see lib/sync-controller.ts);
+// "sync-debounce" is a ONE-SHOT alarm (re)armed by every incoming
+// "sync-nudge" message, so a burst of edits collapses into a single sync a
+// few seconds after the LAST one, not one per edit. chrome.alarms, not
+// setTimeout, because a setTimeout dies with the service worker the moment
+// it's recycled — an alarm survives that and still fires.
+const SYNC_INTERVAL_ALARM = "sync-interval";
+const SYNC_DEBOUNCE_ALARM = "sync-debounce";
+const SYNC_INTERVAL_MINUTES = 1;
+const SYNC_DEBOUNCE_MINUTES = 0.05; // 3s
 
 // Constructed once at the service worker's top level (not lazily inside a
 // handler) so supabase-js's autoRefreshToken timer starts keeping any
@@ -39,12 +54,20 @@ export default defineBackground(() => {
     // No PII beyond the email's domain — see emailDomain() below.
     onAuthChange((user: AuthUser | null) => {
       console.log(`[tabburrow] auth state: ${user ? `signed in (${emailDomain(user.email)})` : "signed out"}`);
+      // A fresh sign-in (this device's OWN session turning on, or a token
+      // refresh landing) is exactly when it's worth trying a sync right
+      // away rather than waiting for the next alarm tick — requestSync's own
+      // gating (lib/sync-controller.ts) is what actually decides whether
+      // this does anything (e.g. a free user's sign-in still calls this and
+      // is still gated out).
+      if (user) void requestSync("startup");
     });
   }
 
   chrome.runtime.onInstalled.addListener((details) => {
     console.log(`[tabburrow] onInstalled reason=${details.reason}`);
     chrome.alarms.create(AUTO_SNAPSHOT_ALARM, { periodInMinutes: AUTO_SNAPSHOT_INTERVAL_MINUTES });
+    chrome.alarms.create(SYNC_INTERVAL_ALARM, { periodInMinutes: SYNC_INTERVAL_MINUTES });
     // Fresh install (or extension update): there is no prior browser
     // session that could have crashed, so this never flags "crashDetected"
     // — only onStartup (below) does that, and only by comparing against a
@@ -57,11 +80,25 @@ export default defineBackground(() => {
     // re-creating here (same name = overwrite, not a duplicate) means the
     // schedule survives even if it was ever cleared some other way.
     chrome.alarms.create(AUTO_SNAPSHOT_ALARM, { periodInMinutes: AUTO_SNAPSHOT_INTERVAL_MINUTES });
+    chrome.alarms.create(SYNC_INTERVAL_ALARM, { periodInMinutes: SYNC_INTERVAL_MINUTES });
     void handleBrowserStartup();
   });
 
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === AUTO_SNAPSHOT_ALARM) void runAutoSnapshot();
+    else if (alarm.name === SYNC_INTERVAL_ALARM) void requestSync("alarm");
+    else if (alarm.name === SYNC_DEBOUNCE_ALARM) void requestSync("nudge");
+  });
+
+  // Fire-and-forget: no sendResponse, no `return true` — this listener never
+  // sends an async response, so it must stay synchronous (an MV3 listener
+  // that returns `true` without ever calling sendResponse leaks the message
+  // port until GC, and Chrome logs a warning). Registered top-level and
+  // synchronously, same MV3 rule every other listener in this file follows.
+  chrome.runtime.onMessage.addListener((message) => {
+    if (isSyncNudgeMessage(message)) {
+      chrome.alarms.create(SYNC_DEBOUNCE_ALARM, { delayInMinutes: SYNC_DEBOUNCE_MINUTES });
+    }
   });
 
   // Fires once per closed window, for every window — not just the last one.

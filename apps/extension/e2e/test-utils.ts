@@ -135,6 +135,56 @@ export async function mouseDragUntil(
     : new Error(`mouseDragUntil: gesture did not take effect after ${attempts} attempts`);
 }
 
+/**
+ * Reads the id of the (assumed-unique) local collection named `name` —
+ * direct raw IndexedDB access, same "page.evaluate can't reach into the
+ * app's bundled module graph" reasoning `seed.ts`'s docstring gives for its
+ * own direct-IndexedDB writes. Used by t18-sync.spec.ts to discover a
+ * collection's id on one device after creating it there, so the OTHER
+ * device can navigate straight to `#/c/<id>` without needing a shared
+ * "click through the rail" affordance neither test cares about.
+ */
+export async function readCollectionIdByName(page: Page, name: string): Promise<string | null> {
+  return page.evaluate((collectionName) => {
+    return new Promise<string | null>((resolve, reject) => {
+      const req = indexedDB.open("tabburrow");
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(["collections"], "readonly");
+        const getAllReq = tx.objectStore("collections").getAll();
+        getAllReq.onsuccess = () => {
+          db.close();
+          const rows = getAllReq.result as { id: string; name: string }[];
+          resolve(rows.find((r) => r.name === collectionName)?.id ?? null);
+        };
+        getAllReq.onerror = () => reject(getAllReq.error);
+      };
+    });
+  }, name);
+}
+
+/** Reads a `meta` row's raw value directly from IndexedDB (or `null` if absent) — same direct-access rationale as `readCollectionIdByName`. Used to verify `lib/sync-controller.ts`'s `lastSyncAt`/`lastSyncError` writes (or lack thereof) without depending on the UI having rendered them. */
+export async function readMetaValue(page: Page, key: string): Promise<string | null> {
+  return page.evaluate((metaKey) => {
+    return new Promise<string | null>((resolve, reject) => {
+      const req = indexedDB.open("tabburrow");
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(["meta"], "readonly");
+        const getReq = tx.objectStore("meta").get(metaKey);
+        getReq.onsuccess = () => {
+          db.close();
+          const row = getReq.result as { key: string; value: string } | undefined;
+          resolve(row?.value ?? null);
+        };
+        getReq.onerror = () => reject(getReq.error);
+      };
+    });
+  }, key);
+}
+
 /** Collects console "error"-level messages logged while `run` executes. Empty array = clean. */
 export async function collectConsoleErrors(page: Page, run: () => Promise<void>): Promise<string[]> {
   const errors: string[] = [];

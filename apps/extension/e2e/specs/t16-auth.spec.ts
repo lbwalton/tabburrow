@@ -1,7 +1,6 @@
-import { test, expect } from "../fixtures";
+import { test, expect, signInWithEmailOtp } from "../fixtures";
 import { loadRootEnv } from "../env";
 import { deleteAdminUser, fetchProfile, findAdminUserByEmail } from "../admin";
-import { clearMailbox, waitForOtpCode } from "../mail";
 import { finalScreenshot } from "../test-utils";
 
 /**
@@ -50,22 +49,15 @@ test("email code sign-in creates a profiles row and shows Free; sign-out returns
   // the end of this test) could otherwise leave a stray user behind.
   const preexisting = await findAdminUserByEmail(supabaseUrl, serviceRoleKey!, TEST_EMAIL);
   if (preexisting) await deleteAdminUser(supabaseUrl, serviceRoleKey!, preexisting.id);
-  await clearMailbox();
 
   const dashboard = cleanDashboard;
   await dashboard.goto(`chrome-extension://${extensionId}/dashboard.html#/settings`);
 
-  // --- Phase 1: send code ---
-  await dashboard.getByLabel("Email").fill(TEST_EMAIL);
-  await dashboard.getByRole("button", { name: "Send code" }).click();
-  await expect(dashboard.getByText(`Enter the 6-digit code sent to ${TEST_EMAIL}.`)).toBeVisible();
+  // --- Phases 1-2: send + verify the OTP against the real local mail
+  // catcher (see e2e/mail.ts) — shared with t18-sync.spec.ts's two-device
+  // sign-in via fixtures.ts's signInWithEmailOtp. ---
+  await signInWithEmailOtp(dashboard, TEST_EMAIL);
 
-  // --- Phase 2: verify code, fetched from the real local mail catcher ---
-  const code = await waitForOtpCode(TEST_EMAIL);
-  await dashboard.getByLabel(/6-digit code/i).fill(code);
-  await dashboard.getByRole("button", { name: "Verify" }).click();
-
-  await expect(dashboard.getByText(TEST_EMAIL)).toBeVisible();
   await expect(dashboard.getByText("Free", { exact: true })).toBeVisible();
   await finalScreenshot(dashboard, "t16-signed-in");
 

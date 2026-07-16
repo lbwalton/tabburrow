@@ -3,8 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { test as base, chromium } from "@playwright/test";
+import { test as base, chromium, expect } from "@playwright/test";
 import type { BrowserContext, Page } from "@playwright/test";
+import { clearMailbox, waitForOtpCode } from "./mail";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -105,21 +106,9 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
 
   sharedContext: [
     async ({}, use) => {
-      const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "tabburrow-e2e-"));
-      const context = await chromium.launchPersistentContext(userDataDir, {
-        channel: "chromium",
-        headless: HEADLESS_MODE,
-        viewport: { width: 1400, height: 900 },
-        args: [
-          `--disable-extensions-except=${EXTENSION_PATH}`,
-          `--load-extension=${EXTENSION_PATH}`,
-          "--no-first-run",
-          "--no-default-browser-check",
-        ],
-      });
+      const { context, userDataDir } = await launchExtensionContext();
       await use(context);
-      await context.close();
-      fs.rmSync(userDataDir, { recursive: true, force: true });
+      await closeExtensionContext(context, userDataDir);
     },
     { scope: "worker" },
   ],
@@ -194,4 +183,87 @@ export async function closeExtraPages(context: BrowserContext, keep: Page[]): Pr
   for (const p of context.pages()) {
     if (!keep.includes(p) && !p.isClosed()) await p.close().catch(() => {});
   }
+}
+
+/**
+ * Launches a fresh persistent, extension-loaded Chromium context — the same
+ * launch args the worker-scoped `sharedContext` fixture above uses,
+ * extracted so a spec that needs MULTIPLE independent "devices" in one test
+ * (t18-sync.spec.ts's cross-profile sync assertions) can create extra ones
+ * ad hoc, on top of (not instead of) the shared one. Each gets its own temp
+ * `userDataDir`, so its `chrome.storage.local` (and therefore any persisted
+ * Supabase session — see lib/supabase.ts's `chromeStorageAdapter`) and
+ * IndexedDB are completely isolated from every other context, exactly like
+ * two separate real Chrome profiles would be.
+ */
+export async function launchExtensionContext(): Promise<{ context: BrowserContext; extensionId: string; userDataDir: string }> {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "tabburrow-e2e-"));
+  const context = await chromium.launchPersistentContext(userDataDir, {
+    channel: "chromium",
+    headless: HEADLESS_MODE,
+    viewport: { width: 1400, height: 900 },
+    args: [
+      `--disable-extensions-except=${EXTENSION_PATH}`,
+      `--load-extension=${EXTENSION_PATH}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+    ],
+  });
+  let [sw] = context.serviceWorkers();
+  if (!sw) sw = await context.waitForEvent("serviceworker", { timeout: 15_000 });
+  const extensionId = new URL(sw.url()).host;
+  return { context, extensionId, userDataDir };
+}
+
+/** Tears down a context returned by `launchExtensionContext` — closes it and removes its temp profile directory. */
+export async function closeExtensionContext(context: BrowserContext, userDataDir: string): Promise<void> {
+  await context.close();
+  fs.rmSync(userDataDir, { recursive: true, force: true });
+}
+
+/**
+ * Drives the real email-OTP sign-in flow (Settings' AccountPane — see
+ * lib/auth.ts's `sendEmailCode`/`verifyEmailCode`) against the local
+ * Supabase stack's Mailpit mail catcher, exactly as t16-auth.spec.ts
+ * originally drove it inline — extracted here so t18-sync.spec.ts can reuse
+ * the identical flow for TWO separate "devices" signing the same account in.
+ * `page` must already be navigated to a Settings route
+ * (`dashboard.html#/settings`) with the AccountPane's signed-out form
+ * visible. Clears the mailbox immediately before sending, so a stale prior
+ * code for the same address (e.g. a previous run's leftover, or the OTHER
+ * device's code in a same-account two-device test) can never be matched by
+ * accident — the two devices in t18-sync.spec.ts's round-trip test sign in
+ * sequentially, one after the other, for exactly this reason.
+ *
+ * Retries the "Send code" click a few times on GoTrue's per-address send
+ * cooldown ("For security purposes, you can only request this after N
+ * seconds.") — observed locally when two sign-ins for the SAME email land
+ * close together (t18-sync.spec.ts's round-trip test signs one account into
+ * two devices back to back), even though the cooldown's own error text
+ * claims the wait is already over by the time it's shown. Not a product bug
+ * (this is Supabase Auth's own local rate limiter), just something a
+ * same-email multi-device test has to absorb the same way a real user
+ * retrying a "resend code" button would.
+ */
+export async function signInWithEmailOtp(page: Page, email: string): Promise<void> {
+  await clearMailbox();
+  await page.getByLabel("Email").fill(email);
+
+  const codeSentText = page.getByText(`Enter the 6-digit code sent to ${email}.`);
+  const sendButton = page.getByRole("button", { name: "Send code" });
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await sendButton.click();
+    try {
+      await expect(codeSentText).toBeVisible({ timeout: 5_000 });
+      break;
+    } catch (err) {
+      if (attempt === 4) throw err;
+      await page.waitForTimeout(2_000);
+    }
+  }
+
+  const code = await waitForOtpCode(email);
+  await page.getByLabel(/6-digit code/i).fill(code);
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page.getByText(email)).toBeVisible();
 }
