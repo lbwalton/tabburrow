@@ -28,6 +28,7 @@ pnpm --filter extension dev       # dev build, auto-reload
 pnpm --filter extension build     # production build → apps/extension/.output/chrome-mv3
 pnpm --filter extension test      # vitest
 pnpm --filter extension typecheck # wxt prepare + tsc --noEmit
+pnpm --filter extension e2e       # Playwright extension QA suite — build first (see apps/extension/e2e/README.md); one-time setup: npx playwright install chromium
 
 # Web (Next.js)
 pnpm --filter web dev             # localhost:3000

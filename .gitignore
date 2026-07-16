@@ -12,3 +12,5 @@ dist/
 .DS_Store
 supabase/.temp/
 .superpowers/
+apps/extension/e2e/test-results/
+apps/extension/e2e/report/
