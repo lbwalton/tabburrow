@@ -1,9 +1,15 @@
+import "fake-indexeddb/auto";
 import { describe, it, expect } from "vitest";
+import { BurrowDB, getMeta } from "@tabburrow/core";
 import {
+  clearPlanCache,
   describeWebAuthFlowError,
   isPlanCacheFresh,
   parseAuthRedirect,
   parsePlanCache,
+  planCacheHit,
+  planCacheMetaKey,
+  planCacheValue,
   PLAN_CACHE_TTL_MS,
 } from "./auth";
 
@@ -13,7 +19,9 @@ import {
 // and this package's vitest config deliberately does no chrome.* mocking
 // (same precedent as lib/tabs.ts). They're exercised for real end-to-end by
 // e2e/specs/t16-auth.spec.ts against the local Supabase stack. What IS
-// test-driven here is every pure decision those functions defer to.
+// test-driven here is every pure decision those functions defer to — plus
+// `clearPlanCache`, which is Dexie-only (no chrome.*/supabase-js), tested
+// below against fake-indexeddb the same way packages/core tests its repos.
 
 describe("parseAuthRedirect", () => {
   it("extracts the PKCE code on a successful redirect", () => {
@@ -100,13 +108,29 @@ describe("isPlanCacheFresh", () => {
   });
 });
 
-describe("parsePlanCache", () => {
-  it("parses a well-formed cache value", () => {
-    expect(parsePlanCache('{"plan":"pro","fetchedAt":100000}')).toEqual({ plan: "pro", fetchedAt: 100_000 });
+describe("planCacheMetaKey", () => {
+  it("scopes the meta key by user id, so two users can never share an entry", () => {
+    expect(planCacheMetaKey("user-a")).toBe("planCache:user-a");
+    expect(planCacheMetaKey("user-a")).not.toBe(planCacheMetaKey("user-b"));
   });
 
-  it("returns null for a never-cached (null) value", () => {
+  it("never equals the legacy global key a pre-fix build wrote", () => {
+    expect(planCacheMetaKey("")).not.toBe("planCache");
+  });
+});
+
+describe("planCacheValue / parsePlanCache", () => {
+  it("round-trips a serialized cache entry", () => {
+    expect(parsePlanCache(planCacheValue("user-a", "pro", 100_000))).toEqual({
+      userId: "user-a",
+      plan: "pro",
+      fetchedAt: 100_000,
+    });
+  });
+
+  it("returns null for a never-cached (null) or cleared (empty-string) value", () => {
     expect(parsePlanCache(null)).toBeNull();
+    expect(parsePlanCache("")).toBeNull();
   });
 
   it("returns null for malformed JSON", () => {
@@ -114,11 +138,84 @@ describe("parsePlanCache", () => {
   });
 
   it("returns null for an unrecognized plan value", () => {
-    expect(parsePlanCache('{"plan":"enterprise","fetchedAt":100000}')).toBeNull();
+    expect(parsePlanCache('{"userId":"user-a","plan":"enterprise","fetchedAt":100000}')).toBeNull();
   });
 
   it("returns null when fetchedAt is missing or not a number", () => {
-    expect(parsePlanCache('{"plan":"free"}')).toBeNull();
-    expect(parsePlanCache('{"plan":"free","fetchedAt":"not-a-number"}')).toBeNull();
+    expect(parsePlanCache('{"userId":"user-a","plan":"free"}')).toBeNull();
+    expect(parsePlanCache('{"userId":"user-a","plan":"free","fetchedAt":"not-a-number"}')).toBeNull();
+  });
+
+  it("returns null for a legacy pre-userId cache value (no userId field)", () => {
+    expect(parsePlanCache('{"plan":"pro","fetchedAt":100000}')).toBeNull();
+  });
+});
+
+describe("planCacheHit (the full getPlan cache decision)", () => {
+  const NOW = 1_000_000;
+  const freshForA = planCacheValue("user-a", "pro", NOW - 1000);
+
+  it("a fresh cache written under user A is returned for A within the TTL", () => {
+    expect(planCacheHit(freshForA, "user-a", NOW, false)).toBe("pro");
+  });
+
+  it("a cache written under user A is NEVER returned for user B, even fresh (the T16 escalation bug)", () => {
+    expect(planCacheHit(freshForA, "user-b", NOW, false)).toBeNull();
+  });
+
+  it("force bypasses even a fresh, same-user cache", () => {
+    expect(planCacheHit(freshForA, "user-a", NOW, true)).toBeNull();
+  });
+
+  it("a stale same-user cache is a miss", () => {
+    const stale = planCacheValue("user-a", "pro", NOW - PLAN_CACHE_TTL_MS);
+    expect(planCacheHit(stale, "user-a", NOW, false)).toBeNull();
+  });
+
+  it("absent/cleared/malformed raw values are a miss", () => {
+    expect(planCacheHit(null, "user-a", NOW, false)).toBeNull();
+    expect(planCacheHit("", "user-a", NOW, false)).toBeNull();
+    expect(planCacheHit("{not json", "user-a", NOW, false)).toBeNull();
+  });
+});
+
+describe("clearPlanCache (what signOut calls for the departing user)", () => {
+  it("clears user A's entry so a later read for A misses", async () => {
+    const db = new BurrowDB();
+    await db.open();
+    try {
+      await db.meta.put({ key: planCacheMetaKey("user-a"), value: planCacheValue("user-a", "pro", 100_000) });
+      await clearPlanCache("user-a", db);
+      const raw = await getMeta(planCacheMetaKey("user-a"), db);
+      expect(planCacheHit(raw, "user-a", 100_001, false)).toBeNull();
+    } finally {
+      db.close();
+      await new Promise<void>((resolve) => {
+        const req = indexedDB.deleteDatabase("tabburrow");
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+        req.onblocked = () => resolve();
+      });
+    }
+  });
+
+  it("does not touch another user's entry", async () => {
+    const db = new BurrowDB();
+    await db.open();
+    try {
+      const bValue = planCacheValue("user-b", "free", 100_000);
+      await db.meta.put({ key: planCacheMetaKey("user-a"), value: planCacheValue("user-a", "pro", 100_000) });
+      await db.meta.put({ key: planCacheMetaKey("user-b"), value: bValue });
+      await clearPlanCache("user-a", db);
+      expect(await getMeta(planCacheMetaKey("user-b"), db)).toBe(bValue);
+    } finally {
+      db.close();
+      await new Promise<void>((resolve) => {
+        const req = indexedDB.deleteDatabase("tabburrow");
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+        req.onblocked = () => resolve();
+      });
+    }
   });
 });

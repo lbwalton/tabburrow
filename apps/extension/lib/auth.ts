@@ -133,9 +133,22 @@ export async function signInWithGoogle(): Promise<void> {
   if (exchangeError) throw exchangeError;
 }
 
-/** Signs out of THIS device only (`scope: "local"`) — local Dexie data is untouched either way, since sync (T18) is a separate, PRO-gated concern from auth. */
-export async function signOut(): Promise<void> {
+/**
+ * Signs out of THIS device only (`scope: "local"`) — local Dexie data is
+ * untouched either way, since sync (T18) is a separate, PRO-gated concern
+ * from auth. The one exception: the departing user's plan cache is cleared
+ * FIRST (before the supabase call, so even a failed sign-out never leaves
+ * this device holding a warm entitlement entry for a session that was just
+ * asked to end) — one layer of the two-layer cross-user isolation fix; see
+ * `planCacheMetaKey`. The legacy global "planCache" key a pre-fix build may
+ * have written is swept here too (nothing reads it anymore, but a stale
+ * "pro" entry shouldn't sit in meta forever).
+ */
+export async function signOut(db: BurrowDB = getDB()): Promise<void> {
   const client = requireClient();
+  const user = await getUser();
+  if (user) await clearPlanCache(user.id, db);
+  await setMeta(LEGACY_PLAN_CACHE_META_KEY, "", db);
   const { error } = await client.auth.signOut({ scope: "local" });
   if (error) throw error;
 }
@@ -174,23 +187,52 @@ export function onAuthChange(cb: (user: AuthUser | null) => void): () => void {
   return () => subscription.unsubscribe();
 }
 
-export const PLAN_CACHE_META_KEY = "planCache";
+/**
+ * The GLOBAL meta key the original T16 implementation used, kept only so
+ * `signOut` can sweep any stale entry a pre-fix build left behind. Never
+ * read or written otherwise: an unscoped cache key meant user B could read
+ * user A's still-fresh "pro" entry after an A-signs-out/B-signs-in sequence
+ * on the same Chrome profile (entitlement escalation, caught in review).
+ */
+export const LEGACY_PLAN_CACHE_META_KEY = "planCache";
 /** 12h, per the design spec's "on sign-in and every 12h, fetch profiles.plan" entitlements rule. */
 export const PLAN_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
 export type Plan = "free" | "pro";
 
 interface PlanCache {
+  userId: string;
   plan: Plan;
   fetchedAt: number;
 }
 
-/** True when a plan cached at `fetchedAt` is still within the TTL at `now`. Pure — the actual cache-freshness decision `getPlan` defers to; see lib/auth.test.ts. */
+/**
+ * The meta key `getPlan` caches under — scoped per user id, layer 1 of the
+ * two-layer cross-user isolation fix: a different user's `getPlan` never
+ * even reads this entry's key. Layer 2 is `planCacheHit` validating the
+ * `userId` stored INSIDE the value too, so even a corrupted/hand-edited
+ * entry under the wrong key can't leak across users.
+ */
+export function planCacheMetaKey(userId: string): string {
+  return `${LEGACY_PLAN_CACHE_META_KEY}:${userId}`;
+}
+
+/** Serializes a cache entry for `planCacheMetaKey(userId)`. Pure — the exact inverse of `parsePlanCache`; see lib/auth.test.ts's round-trip test. */
+export function planCacheValue(userId: string, plan: Plan, fetchedAt: number): string {
+  return JSON.stringify({ userId, plan, fetchedAt } satisfies PlanCache);
+}
+
+/** True when a plan cached at `fetchedAt` is still within the TTL at `now`. Pure. */
 export function isPlanCacheFresh(fetchedAt: number, now: number): boolean {
   return now - fetchedAt < PLAN_CACHE_TTL_MS;
 }
 
-/** Narrows a stored `meta.planCache` value to a `PlanCache`, or `null` for anything absent/malformed (never-cached, corrupted JSON, a stale pre-this-shape value). Pure. */
+/**
+ * Narrows a stored plan-cache value to a `PlanCache`, or `null` for
+ * anything absent/cleared/malformed — including a legacy pre-userId-shape
+ * entry, which carries no proof of WHOSE plan it was and therefore must
+ * never be trusted. Pure.
+ */
 export function parsePlanCache(raw: string | null): PlanCache | null {
   if (!raw) return null;
   let parsed: unknown;
@@ -200,19 +242,40 @@ export function parsePlanCache(raw: string | null): PlanCache | null {
     return null;
   }
   if (!parsed || typeof parsed !== "object") return null;
-  const { plan, fetchedAt } = parsed as { plan?: unknown; fetchedAt?: unknown };
-  if ((plan !== "free" && plan !== "pro") || typeof fetchedAt !== "number") return null;
-  return { plan, fetchedAt };
+  const { userId, plan, fetchedAt } = parsed as { userId?: unknown; plan?: unknown; fetchedAt?: unknown };
+  if (typeof userId !== "string" || (plan !== "free" && plan !== "pro") || typeof fetchedAt !== "number") return null;
+  return { userId, plan, fetchedAt };
 }
 
 /**
- * `profiles.plan` for the signed-in user, cached in `meta["planCache"]` for
- * `PLAN_CACHE_TTL_MS` (12h) — `force` bypasses the cache (used by the
- * Settings "Refresh status" button). Returns `null` when cloud isn't
- * configured or nobody is signed in; never throws for those two cases, only
- * for a genuine query failure being swallowed into `null` too (there's no
- * good UI-facing distinction between "no plan" and "couldn't check" here —
- * both just mean "don't show PRO features").
+ * The complete cache-read decision `getPlan` defers to, as one pure
+ * function: returns the cached plan only when `force` is off AND the raw
+ * value parses AND its embedded `userId` matches the CURRENT user AND it's
+ * still within the TTL — anything else is a miss (`null`). The userId
+ * equality check is what makes a cache written under user A structurally
+ * unreturnable for user B (see lib/auth.test.ts's escalation-bug test).
+ */
+export function planCacheHit(raw: string | null, userId: string, now: number, force: boolean): Plan | null {
+  if (force) return null;
+  const cached = parsePlanCache(raw);
+  if (!cached || cached.userId !== userId || !isPlanCacheFresh(cached.fetchedAt, now)) return null;
+  return cached.plan;
+}
+
+/** Clears `userId`'s plan-cache entry (writes the empty string, which `parsePlanCache` treats as absent — meta has no delete). Called by `signOut` for the departing user; other users' entries are untouched (per-user keys). */
+export async function clearPlanCache(userId: string, db: BurrowDB = getDB()): Promise<void> {
+  await setMeta(planCacheMetaKey(userId), "", db);
+}
+
+/**
+ * `profiles.plan` for the signed-in user, cached in
+ * `meta[planCacheMetaKey(user.id)]` for `PLAN_CACHE_TTL_MS` (12h) — `force`
+ * bypasses the cache (used by the Settings "Refresh status" button).
+ * Returns `null` when cloud isn't configured or nobody is signed in; never
+ * throws for those two cases, only for a genuine query failure being
+ * swallowed into `null` too (there's no good UI-facing distinction between
+ * "no plan" and "couldn't check" here — both just mean "don't show PRO
+ * features").
  */
 export async function getPlan(force = false, db: BurrowDB = getDB()): Promise<Plan | null> {
   const client = getClient();
@@ -220,15 +283,13 @@ export async function getPlan(force = false, db: BurrowDB = getDB()): Promise<Pl
   const user = await getUser();
   if (!user) return null;
 
-  if (!force) {
-    const cached = parsePlanCache(await getMeta(PLAN_CACHE_META_KEY, db));
-    if (cached && isPlanCacheFresh(cached.fetchedAt, Date.now())) return cached.plan;
-  }
+  const hit = planCacheHit(await getMeta(planCacheMetaKey(user.id), db), user.id, Date.now(), force);
+  if (hit) return hit;
 
   // profiles' primary key is user_id, not id — see supabase/migrations/0001_init.sql.
   const { data, error } = await client.from("profiles").select("plan").eq("user_id", user.id).single();
   if (error || !data) return null;
   const plan: Plan = data.plan === "pro" ? "pro" : "free";
-  await setMeta(PLAN_CACHE_META_KEY, JSON.stringify({ plan, fetchedAt: Date.now() } satisfies PlanCache), db);
+  await setMeta(planCacheMetaKey(user.id), planCacheValue(user.id, plan, Date.now()), db);
   return plan;
 }

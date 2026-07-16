@@ -71,6 +71,9 @@ importers:
       '@wxt-dev/module-react':
         specifier: ^1.2.2
         version: 1.2.2(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0))(wxt@0.20.27(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(rolldown@1.1.5)(rollup@4.62.2))
+      fake-indexeddb:
+        specifier: ^6.2.5
+        version: 6.2.5
       happy-dom:
         specifier: ^14.12.3
         version: 14.12.3
