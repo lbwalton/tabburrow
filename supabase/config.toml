@@ -398,6 +398,24 @@ deno_version = 2
 [functions.ai-organize]
 verify_jwt = false
 
+# T23a: same ES256-gateway-check posture as ai-organize above (see that
+# entry's comment) — authentication rests entirely on
+# `supabase/functions/_shared/auth.ts`'s `requireUser()`, called first in
+# `checkout-session/index.ts`'s `handleRequest`.
+[functions.checkout-session]
+verify_jwt = false
+
+# T23a: DIFFERENT rationale from the two entries above. Stripe's webhook
+# delivery never carries a Supabase user JWT at all — there is no "real"
+# JWT check being bypassed here, this endpoint has NO Supabase-auth gate
+# by design. Verification instead happens entirely via the
+# `Stripe-Signature` header (HMAC against `STRIPE_WEBHOOK_SECRET`) inside
+# `stripe-webhook/index.ts`'s `handleRequest`, BEFORE anything else runs;
+# that check is this function's entire security boundary and must never
+# be skipped. See that file's own docstring for the full explanation.
+[functions.stripe-webhook]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

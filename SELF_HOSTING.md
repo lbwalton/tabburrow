@@ -23,9 +23,20 @@ call on the local stack, so step 3's `ai-organize` row and step 4's
 wired the extension UI to it (the collection header's "Organize with AI"
 and the popup's "Save all + organize"), so self-hosters can now actually
 trigger it end to end from the built extension, not just via a raw
-function call. `checkout-session`, `stripe-webhook`, and `share-resolve`
-have **not** landed yet (T21/T22/T23), so their rows in step 3 stay a
-preview of the workflow.
+function call. Public share pages (T21b) landed WITHOUT a `share-resolve`
+function at all: `apps/web/lib/share.ts` reads `collections`/`links`
+directly with the web app's own service-role client, so that row never
+existed and never will — see step 3's table.
+`checkout-session` and `stripe-webhook` landed in T23a: both exist at
+`supabase/functions/checkout-session/` and `supabase/functions/stripe-webhook/`,
+each covered by a `deno test` suite (the former against the real Stripe
+test-mode API, the latter fully self-contained with a generated test
+signing secret), and were verified end to end on the local stack with
+`stripe listen`/`stripe trigger` — see step 3's table and step 4's Stripe
+secrets. The `/account` web page (sign-in, plan, upgrade, billing portal)
+landed in the same task at `apps/web/app/account/`. **Not** covered by
+T23a: the extension's own "Upgrade" UI (opening the Checkout URL from
+inside the extension) is a separate task (T23b) and may still be pending.
 
 ## What self-hosting gets you
 
@@ -91,46 +102,79 @@ supabase db reset  # applies every migration in supabase/migrations/
 ## 3. Deploy the Edge Functions
 
 The backend logic ships as Supabase Edge Functions in
-[`supabase/functions/`](supabase/functions/). `ai-organize` landed in T19
-and is in the repo today; `checkout-session`, `stripe-webhook`, and
-`share-resolve` have not landed yet (T21/T22/T23):
+[`supabase/functions/`](supabase/functions/):
 
 | Function | Does | Status |
 | --- | --- | --- |
 | `ai-organize` | Calls Claude to group and tag your tabs; meters free-tier usage | In the repo (T19) |
-| `checkout-session` | Creates a Stripe Checkout session for PRO upgrades | Not yet built (T23) |
-| `stripe-webhook` | Verifies Stripe webhook signatures and flips `profiles.plan` | Not yet built (T23) |
-| `share-resolve` | Serves public collection data to share pages without exposing raw table access | Not yet built (T21/T22) |
+| `checkout-session` | Creates a Stripe Checkout session (subscription) or billing-portal session for PRO | In the repo (T23a) |
+| `stripe-webhook` | Verifies Stripe webhook signatures and flips `profiles.plan`/`stripe_subscription_id` | In the repo (T23a) |
+| ~~`share-resolve`~~ | Superseded — public share pages read `collections`/`links` directly with `apps/web/lib/share.ts`'s service-role client instead (T21b); this function was never built and isn't planned | N/A |
 
-Deploy each one that exists so far:
+Deploy each one that exists:
 
 ```sh
 supabase functions deploy ai-organize
 supabase functions deploy checkout-session
 supabase functions deploy stripe-webhook
-supabase functions deploy share-resolve
 ```
 
-(If you don't need sharing or billing for personal use, you can skip
-`checkout-session`, `stripe-webhook`, and `share-resolve`; sync and AI
-organize don't depend on them.)
+(If you don't need AI organize or billing for personal use, skip the
+corresponding function; sync doesn't depend on either. Sharing needs no
+function deploy at all, just the web app's `SUPABASE_SERVICE_ROLE_KEY`.)
 
 **Auth posture note:** `supabase/config.toml` sets `verify_jwt = false`
-for `ai-organize`, and that setting applies to your hosted deploy too;
-this is Supabase's recommended pattern for projects using the newer
-asymmetric (ES256) signing keys, and it means the gateway does no JWT
-check of its own, so authentication rests entirely on the function's
-in-code verification (`supabase/functions/_shared/auth.ts`), which every
-request goes through before anything else runs.
+for `ai-organize` and `checkout-session`, and that setting applies to
+your hosted deploy too; this is Supabase's recommended pattern for
+projects using the newer asymmetric (ES256) signing keys, and it means
+the gateway does no JWT check of its own, so authentication rests
+entirely on the function's in-code verification
+(`supabase/functions/_shared/auth.ts`'s `requireUser()`), which every
+request goes through before anything else runs. `stripe-webhook` also
+sets `verify_jwt = false`, but for a DIFFERENT reason: Stripe's webhook
+delivery never carries a Supabase user JWT at all, so there's no JWT
+check being bypassed there — that function's entire security boundary is
+verifying the `Stripe-Signature` header against `STRIPE_WEBHOOK_SECRET`
+(see its own file for the full explanation).
 
-**Testing `ai-organize` locally before deploying:** run the local stack
-(`supabase start`) and `supabase functions serve ai-organize --env-file <path-to-a-file-with-only-ANTHROPIC_API_KEY>`
-(never point `--env-file` at the repo's root `.env` directly, since that
-file also holds Stripe/Supabase secrets you don't want an Edge Function
-process reading). `supabase/functions/ai-organize/test.ts` has a full
-`deno test --allow-all` suite that mocks Anthropic and exercises metering
-against the real local database, so you don't need a live API key just to
-verify the function's own logic.
+**Testing `ai-organize`/`checkout-session`/`stripe-webhook` locally
+before deploying:** run the local stack (`supabase start`) and
+`supabase functions serve --env-file <path>` with a temp env file holding
+only the secrets those functions need (never point `--env-file` at the
+repo's root `.env` directly, since that file also holds the Supabase
+service-role key and other secrets you don't want an Edge Function
+process reading beyond what it's supposed to have):
+
+```sh
+# example temp env file for local `supabase functions serve`
+ANTHROPIC_API_KEY=sk-ant-...
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...       # from `stripe listen --print-secret`, see below
+STRIPE_PRICE_MONTHLY=price_...
+STRIPE_PRICE_YEARLY=price_...
+SITE_URL=http://localhost:3000        # NOT NEXT_PUBLIC_SITE_URL — Edge Functions read Deno.env, not Next's process.env, so this needs setting separately even though it's the same logical value
+```
+
+Each function's `test.ts` has a full `deno test --allow-all` suite you
+can run without any of this (`ai-organize` mocks Anthropic;
+`checkout-session` calls the real Stripe TEST-MODE API, which is free;
+`stripe-webhook` is fully self-contained with a generated test signing
+secret, no live Stripe account needed at all), so you don't need live
+keys just to verify a function's own logic — only to smoke-test it
+end to end with `supabase functions serve`.
+
+**Testing `stripe-webhook` end to end locally:** with the local stack and
+`supabase functions serve` running (env file above), forward real Stripe
+test-mode events to it:
+
+```sh
+stripe listen --forward-to http://127.0.0.1:54321/functions/v1/stripe-webhook
+# note the printed webhook signing secret and put it in STRIPE_WEBHOOK_SECRET above
+stripe trigger checkout.session.completed --override checkout_session:client_reference_id=<a-real-user-id>
+```
+
+then check `profiles.plan` flipped to `pro` for that user via the
+Supabase REST API or Studio.
 
 ## 4. Set secrets
 
@@ -143,10 +187,35 @@ supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 
 If you're also self-hosting billing:
 
-```sh
-supabase secrets set STRIPE_SECRET_KEY=sk_test_...
-supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_...
-```
+1. In your Stripe dashboard (test mode), create a product ("TabBurrow
+   PRO" or similar) with two recurring prices: monthly and yearly. Note
+   both price ids (`price_...`) — or create them via the API/CLI, e.g.:
+   ```sh
+   stripe products create --name "TabBurrow PRO"
+   stripe prices create --product <prod_id> --unit-amount 400 --currency usd -d "recurring[interval]=month"
+   stripe prices create --product <prod_id> --unit-amount 2900 --currency usd -d "recurring[interval]=year"
+   ```
+2. Create a webhook endpoint pointing at
+   `<your-project-url>/functions/v1/stripe-webhook` in the Stripe
+   dashboard (Developers → Webhooks) listening for
+   `checkout.session.completed`, `customer.subscription.updated`, and
+   `customer.subscription.deleted`; copy its signing secret
+   (`whsec_...`). For LOCAL testing only, `stripe listen --print-secret`
+   gives you a different, session-scoped secret for `stripe listen`'s own
+   forwarding — that one is NOT the same secret your production dashboard
+   endpoint uses, don't mix them up.
+3. Set every Stripe-related secret on your Supabase project:
+   ```sh
+   supabase secrets set STRIPE_SECRET_KEY=sk_test_...
+   supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_...
+   supabase secrets set STRIPE_PRICE_MONTHLY=price_...
+   supabase secrets set STRIPE_PRICE_YEARLY=price_...
+   supabase secrets set SITE_URL=https://your-deployed-web-app-url
+   ```
+   `SITE_URL` is where `checkout-session` builds `success_url`/`cancel_url`/
+   `return_url` from (`${SITE_URL}/upgrade/success`, `${SITE_URL}/account`)
+   — point it at wherever you deploy `apps/web`, NOT your Supabase project
+   URL.
 
 Get your Anthropic key from [console.anthropic.com](https://console.anthropic.com);
 Stripe keys from your Stripe dashboard (use test-mode keys until you're
@@ -172,6 +241,12 @@ STRIPE_PRICE_MONTHLY=        # $4/mo price id
 STRIPE_PRICE_YEARLY=         # $29/yr price id
 # Web
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+# apps/web only (T23a): browser-side Supabase client for /account. Same
+# project as SUPABASE_URL/SUPABASE_ANON_KEY above, just NEXT_PUBLIC_-
+# prefixed so Next.js inlines it into the client bundle; set in
+# apps/web/.env.local (or your host's env config), anon key only.
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
 ```
 
 **As of T16, the extension DOES read two of these** — `SUPABASE_URL` and
@@ -202,8 +277,14 @@ quiet "Cloud features are not configured" state with zero network calls —
 save/organize/sessions/search/import-export all keep working exactly as
 before. AI organize now works end to end (T19/T20) — `ANTHROPIC_API_KEY`
 is read server-side, by the `ai-organize` Edge Function, never by the
-extension itself. Sharing/billing env vars (`STRIPE_*`, share-related
-secrets) still aren't read by anything yet — that lands with T21/T22/T23.
+extension itself. Billing (T23a) works the same way: `STRIPE_*` secrets
+are read server-side by `checkout-session`/`stripe-webhook`, never by the
+extension or the web app's client bundle (only the anon-key
+`NEXT_PUBLIC_SUPABASE_*` pair reaches the browser, same "public by
+design" posture as the extension's own `WXT_SUPABASE_*` vars). `apps/web`
+also mirrors `isSupabaseConfigured()`'s pattern (`apps/web/lib/supabase-browser.ts`):
+without `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` set,
+`/account` renders a quiet "not configured" message instead of a crash.
 
 Keep the Supabase project and keys from steps 1–4 around; once you've set
 them, re-run the extension build (or `pnpm --filter extension dev`) and
@@ -219,6 +300,24 @@ for any Supabase project).
 2. Enable **Developer mode**
 3. Click **Load unpacked**
 4. Select `apps/extension/.output/chrome-mv3`
+
+## 7. Deploy the web app (marketing site, share pages, account/billing)
+
+`apps/web` is a plain Next.js app (`pnpm --filter web build && pnpm --filter web start`,
+or deploy to Vercel/any Node host) — it needs `SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_SITE_URL` set wherever
+it runs (step 5's block, `apps/web/.env.local` for local dev). `/account`
+lets a signed-in user see their plan and, for PRO, open the Stripe
+billing portal; for free, start a Checkout session for either price. Both
+call `checkout-session` directly (`fetch` with the signed-in user's JWT),
+so billing only works once `SITE_URL` is set on the Supabase project
+(step 4) AND this app's own `NEXT_PUBLIC_SUPABASE_*` pair is set here —
+they're deliberately two separate values in two separate runtimes (see
+step 3's testing note on why `SITE_URL` isn't read from
+`NEXT_PUBLIC_SITE_URL`). `/upgrade/success` is Stripe Checkout's
+`success_url` landing page; nothing to configure there beyond `SITE_URL`
+pointing at wherever this app is actually reachable.
 
 ## Costs
 
