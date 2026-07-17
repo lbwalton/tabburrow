@@ -38,3 +38,19 @@ export function shareUrlFor(slug: string): string {
   const siteUrl = raw?.trim() || DEFAULT_SITE_URL;
   return buildShareUrl(siteUrl, slug);
 }
+
+/**
+ * Pure: builds a recipient-less `mailto:` link that opens the user's own mail
+ * app with the subject and body prefilled, so "Email" hands the share link off
+ * to the client's mailer instead of TabBurrow sending anything. No `to=` is
+ * set — the user chooses who to send to. Subject/body are `encodeURIComponent`d
+ * (CRLF line breaks per RFC 6068), which also neutralizes any `&`/`"`/newline
+ * in the collection name so it can't split the query or inject headers. Kept
+ * pure and unit tested here for the same split as `buildShareUrl`; the UI layer
+ * just navigates to the returned string.
+ */
+export function mailtoShareForCollection(name: string, shareUrl: string): string {
+  const subject = `${name}: a TabBurrow collection`;
+  const body = `Here are my "${name}" links:\r\n\r\n${shareUrl}\r\n\r\nShared with TabBurrow.`;
+  return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
