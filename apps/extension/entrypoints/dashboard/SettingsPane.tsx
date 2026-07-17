@@ -13,6 +13,12 @@ import {
 import type { ImportCounts } from "../../lib/importers";
 import { applyTheme, parseTheme, THEME_META_KEY } from "../../lib/theme";
 import type { Theme } from "../../lib/theme";
+import {
+  DEFAULT_COLLECTION_META_KEY,
+  parseSaveTargetMode,
+  SAVE_TARGET_MODE_META_KEY,
+} from "../../lib/saveTarget";
+import type { SaveTargetMode } from "../../lib/saveTarget";
 import { AccountPane } from "./AccountPane";
 
 // The manifest's three commands (wxt.config.ts) — chrome.commands.getAll()
@@ -21,6 +27,12 @@ import { AccountPane } from "./AccountPane";
 const SHORTCUT_COMMAND_NAMES = ["save-current-tab", "save-all-tabs", "open-dashboard"];
 
 const THEME_OPTIONS: Theme[] = ["dark", "paper"];
+
+const SAVE_MODE_OPTIONS: Array<{ value: SaveTargetMode; label: string }> = [
+  { value: "default", label: "Save to a default folder" },
+  { value: "last-used", label: "Save to the last folder I used" },
+  { value: "ask", label: "Ask me each time" },
+];
 
 interface ImportSource {
   key: string;
@@ -56,6 +68,21 @@ export function SettingsPane() {
     if (next === theme) return;
     applyTheme(next); // instant for this tab; other open tabs/popups pick it up on their own next mount
     void setMeta(THEME_META_KEY, next, db);
+  }
+
+  // --- Save behavior --- (drives the popup's one-click Save; see lib/saveTarget.ts)
+  const saveModeRaw = useLiveQuery(() => getMeta(SAVE_TARGET_MODE_META_KEY, db), [db]);
+  const saveMode = parseSaveTargetMode(saveModeRaw ?? null);
+  const defaultCollectionId = useLiveQuery(() => getMeta(DEFAULT_COLLECTION_META_KEY, db), [db]) ?? null;
+
+  function handleSaveModeChange(next: SaveTargetMode) {
+    if (next === saveMode) return;
+    void setMeta(SAVE_TARGET_MODE_META_KEY, next, db);
+  }
+
+  function handleDefaultCollectionChange(id: string) {
+    if (!id) return;
+    void setMeta(DEFAULT_COLLECTION_META_KEY, id, db);
   }
 
   // --- Shortcuts ---
@@ -157,6 +184,73 @@ export function SettingsPane() {
             </button>
           ))}
         </div>
+      </Card>
+
+      <Card variant="surface" arch={false} className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-sm font-semibold text-[var(--text)]">When you click Save</h2>
+          <p className="text-xs text-[var(--text-2)]">
+            Choose where a one-click Save in the popup puts the current tab.
+          </p>
+        </div>
+        <div role="radiogroup" aria-label="When you click Save" className="flex flex-col gap-1.5">
+          {SAVE_MODE_OPTIONS.map((option) => {
+            const checked = saveMode === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                onClick={() => handleSaveModeChange(option.value)}
+                className={`flex items-center gap-2.5 rounded-[var(--radius-card)] border px-3 py-2 text-left text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                  checked
+                    ? "border-[var(--accent)] bg-[var(--surface-hover)] text-[var(--text)]"
+                    : "border-[var(--line)] text-[var(--text-2)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                    checked ? "border-[var(--accent)]" : "border-[var(--line)]"
+                  }`}
+                >
+                  {checked ? <span className="h-2 w-2 rounded-full bg-[var(--accent)]" /> : null}
+                </span>
+                <span>{option.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        {saveMode === "default" ? (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="default-folder-select" className="text-xs font-medium text-[var(--text-2)]">
+              Default folder
+            </label>
+            {collectionsRaw && collectionsRaw.length === 0 ? (
+              <p className="text-xs text-[var(--text-2)]">Create a folder first, then pick it here.</p>
+            ) : (
+              <select
+                id="default-folder-select"
+                value={defaultCollectionId ?? ""}
+                onChange={(e) => handleDefaultCollectionChange(e.target.value)}
+                className="w-fit rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--bg-ground)] px-3 py-2 text-sm text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              >
+                <option value="" disabled>
+                  Choose a folder…
+                </option>
+                {(collectionsRaw ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <p className="text-xs text-[var(--text-2)]">
+              Leave this unset and the first save will ask you to pick a folder, then pin it as your default.
+            </p>
+          </div>
+        ) : null}
       </Card>
 
       <Card variant="surface" arch={false} className="flex flex-col gap-3">

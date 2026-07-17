@@ -14,6 +14,7 @@ vi.mock("./ai-local", () => ({
   LOCAL_MAX_LINKS: 40,
   nanoAvailability: vi.fn(),
   organizeLinksLocal: vi.fn(),
+  suggestFolderNameLocal: vi.fn(),
 }));
 vi.mock("./auth", () => ({
   getAccessToken: vi.fn(async () => "token-123"),
@@ -21,9 +22,9 @@ vi.mock("./auth", () => ({
 }));
 vi.mock("./supabase", () => ({ isSupabaseConfigured: () => true }));
 
-import { organizeLinks } from "./ai";
+import { AiSuggestNameError, organizeLinks, suggestFolderName } from "./ai";
 import type { AiPlan } from "./ai";
-import { nanoAvailability, organizeLinksLocal } from "./ai-local";
+import { nanoAvailability, organizeLinksLocal, suggestFolderNameLocal } from "./ai-local";
 
 const LOCAL_PLAN: AiPlan = {
   groups: [{ name: "On-device Group", emoji: "🧠", linkIds: ["l0"] }],
@@ -67,6 +68,7 @@ beforeEach(async () => {
   await db.open();
   vi.mocked(nanoAvailability).mockReset();
   vi.mocked(organizeLinksLocal).mockReset();
+  vi.mocked(suggestFolderNameLocal).mockReset();
 });
 
 afterEach(() => {
@@ -117,5 +119,36 @@ describe("organizeLinks engine routing", () => {
     expect(result.engine).toBe("cloud");
     expect(organizeLinksLocal).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("suggestFolderName", () => {
+  it("uses the on-device engine when Nano is 'available'", async () => {
+    vi.mocked(nanoAvailability).mockResolvedValue("available");
+    vi.mocked(suggestFolderNameLocal).mockResolvedValue("Research");
+
+    const name = await suggestFolderName([makeLink("l0")]);
+
+    expect(name).toBe("Research");
+    expect(suggestFolderNameLocal).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws AiSuggestNameError when Nano is unavailable (no cloud naming endpoint)", async () => {
+    vi.mocked(nanoAvailability).mockResolvedValue("unavailable");
+
+    await expect(suggestFolderName([makeLink("l0")])).rejects.toBeInstanceOf(AiSuggestNameError);
+    expect(suggestFolderNameLocal).not.toHaveBeenCalled();
+  });
+
+  it("throws AiSuggestNameError when the local engine fails", async () => {
+    vi.mocked(nanoAvailability).mockResolvedValue("available");
+    vi.mocked(suggestFolderNameLocal).mockRejectedValue(new Error("nano exploded"));
+
+    await expect(suggestFolderName([makeLink("l0")])).rejects.toBeInstanceOf(AiSuggestNameError);
+  });
+
+  it("throws without touching any engine when there are no links", async () => {
+    await expect(suggestFolderName([])).rejects.toBeInstanceOf(AiSuggestNameError);
+    expect(nanoAvailability).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,14 @@
 // `organizeLinksLocal` (valid plan, validation-repair retry, the too_many
 // guard, and the always-destroy contract) without a real model.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AiLocalError, LOCAL_MAX_LINKS, nanoAvailability, organizeLinksLocal } from "./ai-local";
+import {
+  AiLocalError,
+  LOCAL_MAX_LINKS,
+  nanoAvailability,
+  organizeLinksLocal,
+  suggestFolderNameLocal,
+  validateSuggestedName,
+} from "./ai-local";
 import type { Link } from "@tabburrow/core";
 
 function makeLink(overrides: Partial<Link> = {}): Link {
@@ -103,6 +110,51 @@ describe("nanoAvailability", () => {
       },
     });
     expect(await nanoAvailability()).toBe("unavailable");
+  });
+});
+
+describe("validateSuggestedName", () => {
+  it("returns the trimmed name for a well-formed { name } object", () => {
+    expect(validateSuggestedName({ name: "  Research  " })).toBe("Research");
+  });
+
+  it("throws for a non-object, a missing name, or a non-string name", () => {
+    expect(() => validateSuggestedName(null)).toThrow(AiLocalError);
+    expect(() => validateSuggestedName("Research")).toThrow(AiLocalError);
+    expect(() => validateSuggestedName({})).toThrow(AiLocalError);
+    expect(() => validateSuggestedName({ name: 42 })).toThrow(AiLocalError);
+  });
+
+  it("throws for an empty/whitespace-only name so no folder is renamed to ''", () => {
+    expect(() => validateSuggestedName({ name: "   " })).toThrow(AiLocalError);
+  });
+
+  it("clamps an overlong name to 40 characters", () => {
+    const long = "x".repeat(80);
+    expect(validateSuggestedName({ name: long })).toHaveLength(40);
+  });
+});
+
+describe("suggestFolderNameLocal", () => {
+  it("returns the validated on-device name and destroys the session", async () => {
+    const { session } = installNano({ promptResults: [JSON.stringify({ name: "Recipes" })] });
+
+    const name = await suggestFolderNameLocal(makeLinks(3));
+
+    expect(name).toBe("Recipes");
+    expect(session.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws (and still destroys) when the model returns an unusable name", async () => {
+    const { session } = installNano({ promptResults: [JSON.stringify({ name: "" })] });
+
+    await expect(suggestFolderNameLocal(makeLinks(3))).rejects.toBeInstanceOf(AiLocalError);
+    expect(session.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws 'unavailable' when the LanguageModel global is missing", async () => {
+    vi.stubGlobal("self", {});
+    await expect(suggestFolderNameLocal(makeLinks(3))).rejects.toMatchObject({ code: "unavailable" });
   });
 });
 

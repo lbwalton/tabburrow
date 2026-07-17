@@ -11,7 +11,7 @@
 import type { BurrowDB, Collection, Link } from "@tabburrow/core";
 import { createCollection, getDB, getMeta, listCollections, moveLinkToEnd, setMeta, updateLink } from "@tabburrow/core";
 import { getAccessToken, getUser } from "./auth";
-import { LOCAL_MAX_LINKS, nanoAvailability, organizeLinksLocal } from "./ai-local";
+import { LOCAL_MAX_LINKS, nanoAvailability, organizeLinksLocal, suggestFolderNameLocal } from "./ai-local";
 import { isSupabaseConfigured } from "./supabase";
 import { sendSyncNudge } from "./sync-nudge";
 
@@ -241,6 +241,57 @@ export async function organizeLinks(links: Link[], db: BurrowDB = getDB()): Prom
   if (user) await recordAiUseLocally(user.id, db);
 
   return { plan, engine: "cloud" };
+}
+
+// ---------------------------------------------------------------------------
+// suggestFolderName — a best-effort AI folder name for "New folder (named by AI)"
+// ---------------------------------------------------------------------------
+
+/** Typed error `suggestFolderName` throws when no naming engine could produce a name. The caller treats it as "leave the placeholder", never as a hard error. */
+export class AiSuggestNameError extends Error {
+  constructor(message = "No folder-naming engine is available.") {
+    super(message);
+    this.name = "AiSuggestNameError";
+  }
+}
+
+/**
+ * Suggests a short folder name for a batch of just-saved links, reusing the
+ * SAME hybrid engine pattern as `organizeLinks`: on-device Gemini Nano first
+ * (free, private, unmetered) when it's `"available"`, then the cloud path when
+ * one exists. There is currently no dedicated cloud naming endpoint (adding one
+ * would mean touching `supabase/functions`), so cloud is treated as
+ * unavailable here and any local failure falls through to a thrown
+ * `AiSuggestNameError`. The caller ("New folder (named by AI)") is strictly
+ * best-effort: it keeps the folder's placeholder name on any throw and NEVER
+ * blocks or loses the save.
+ *
+ * Cheap by construction: only id/title/url are sent (via `forPrompt` inside the
+ * local adapter, same promise as `toWireLinks`), capped to a small sample.
+ */
+export async function suggestFolderName(links: Link[]): Promise<string> {
+  if (links.length === 0) {
+    throw new AiSuggestNameError("No links to name a folder from.");
+  }
+
+  let availability: Awaited<ReturnType<typeof nanoAvailability>>;
+  try {
+    availability = await nanoAvailability();
+  } catch {
+    availability = "unavailable";
+  }
+  if (availability === "available") {
+    try {
+      return await suggestFolderNameLocal(links);
+    } catch {
+      // Any on-device failure falls through to the (currently unavailable)
+      // cloud path below, mirroring organizeLinks' fall-through structure.
+    }
+  }
+
+  // No cloud naming endpoint exists (see docstring), so there is nothing left
+  // to try — the flow keeps its placeholder name.
+  throw new AiSuggestNameError();
 }
 
 // ---------------------------------------------------------------------------

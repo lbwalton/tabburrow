@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import type { Collection, TabInfo } from "@tabburrow/core";
-import { createCollection, getDB, getMeta, listCollections, saveTabs, setMeta } from "@tabburrow/core";
+import type { Collection, Link, TabInfo } from "@tabburrow/core";
+import { createCollection, getDB, getMeta, listCollections, renameCollection, saveTabs, setMeta } from "@tabburrow/core";
 import { Badge, Button } from "@tabburrow/ui";
 import { closeTabsByUrl, faviconFor, getAllTabs, getCurrentTab, getHighlightedTabs } from "../../lib/tabs";
 import { addTabToFolder } from "../../lib/folderActions";
@@ -12,7 +12,14 @@ import { dashboardCollectionOrganizeUrl, dashboardSettingsUrl } from "../../lib/
 import { getPlan, onAuthChange } from "../../lib/auth";
 import type { AuthUser, Plan } from "../../lib/auth";
 import { isSupabaseConfigured } from "../../lib/supabase";
-import { aiOrganizeCtaAvailable, getAiUsesThisMonth } from "../../lib/ai";
+import { aiOrganizeCtaAvailable, getAiUsesThisMonth, suggestFolderName } from "../../lib/ai";
+import {
+  DEFAULT_COLLECTION_META_KEY,
+  parseSaveTargetMode,
+  resolveSaveTarget,
+  SAVE_TARGET_MODE_META_KEY,
+} from "../../lib/saveTarget";
+import type { SaveTargetMode } from "../../lib/saveTarget";
 import { sendSyncNudge } from "../../lib/sync-nudge";
 import {
   isPendingCommandFresh,
@@ -28,6 +35,8 @@ import { FoldersHome } from "./FoldersHome";
 import { FolderDetail } from "./FolderDetail";
 
 const LAST_USED_KEY = LAST_USED_COLLECTION_META_KEY;
+/** Placeholder name a "New folder (named by AI)" save creates before the best-effort AI rename lands. */
+const AI_FOLDER_PLACEHOLDER = "New folder";
 
 function openDashboard() {
   chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
@@ -57,12 +66,22 @@ export function App() {
   const collections = useLiveQuery(() => listCollections(db), []);
 
   const [state, dispatch] = useReducer(popupReducer, undefined, initialPopupState);
-  const [targetId, setTargetId] = useState<string | null>(null);
+  // The three inputs to `resolveSaveTarget`: the persisted "how to pick a
+  // folder" mode, the pinned default folder id, and the last folder saved
+  // into. All loaded once on mount (fresh popup document every open).
+  const [saveMode, setSaveMode] = useState<SaveTargetMode>("default");
+  const [defaultId, setDefaultId] = useState<string | null>(null);
+  const [lastUsedId, setLastUsedId] = useState<string | null>(null);
   const [targetLoaded, setTargetLoaded] = useState(false);
   const [allTabs, setAllTabs] = useState<TabInfo[] | null>(null);
   const [selectedTabs, setSelectedTabs] = useState<TabInfo[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // Set true just before opening the picker for "Change default folder…" so
+  // its resolution pins the default even in last-used/ask mode (where the mode
+  // check below wouldn't). Read + cleared in resolvePickerWith.
+  const pinDefaultRef = useRef(false);
   // Alt+Shift+A's "save all" shortcut can't reproduce the picker/confirm UX
   // from the background service worker, so it sets this meta flag and opens
   // the popup instead — read once on mount below, replayed once collections
@@ -124,10 +143,12 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [all, selected, lastUsed, pendingCommandRaw] = await Promise.all([
+      const [all, selected, lastUsed, modeRaw, defaultRaw, pendingCommandRaw] = await Promise.all([
         getAllTabs(),
         getHighlightedTabs(),
         getMeta(LAST_USED_KEY, db),
+        getMeta(SAVE_TARGET_MODE_META_KEY, db),
+        getMeta(DEFAULT_COLLECTION_META_KEY, db),
         getMeta(PENDING_COMMAND_META_KEY, db),
       ]);
       if (cancelled) return;
@@ -140,7 +161,9 @@ export function App() {
       }
       setAllTabs(all);
       setSelectedTabs(selected);
-      setTargetId(lastUsed);
+      setLastUsedId(lastUsed);
+      setSaveMode(parseSaveTargetMode(modeRaw));
+      setDefaultId(defaultRaw);
       setTargetLoaded(true);
     })();
     return () => {
@@ -185,8 +208,15 @@ export function App() {
 
   const collectionsLoaded = collections !== undefined;
   const dataLoaded = targetLoaded && collectionsLoaded;
-  const target = targetId ? collections?.find((c) => c.id === targetId) ?? null : null;
+  // The one-click Save target, resolved from the persisted preference against
+  // the LIVE collections (a pinned id pointing at a deleted folder resolves to
+  // needsPicker — see resolveSaveTarget).
+  const resolution = resolveSaveTarget(collections ?? [], saveMode, defaultId, lastUsedId);
+  const target = resolution.target;
   const hasTarget = dataLoaded && target !== null;
+  // Name shown on the "Saving to {folder}" line + the "Save all → to {name}"
+  // menu item; null while nothing is resolved yet (the picker is needed).
+  const targetName = dataLoaded ? target?.name ?? null : null;
 
   const performSave = useCallback(
     async (action: SaveAction, collection: Collection) => {
@@ -202,7 +232,7 @@ export function App() {
         await saveTabs(collection.id, withFavicons, db);
         sendSyncNudge();
         await setMeta(LAST_USED_KEY, collection.id, db);
-        setTargetId(collection.id);
+        setLastUsedId(collection.id);
         dispatch({
           type: "SAVE_SUCCESS",
           action,
@@ -240,12 +270,100 @@ export function App() {
     handleSaveClick("all");
   }, [pendingSaveAll, dataLoaded, handleSaveClick]);
 
-  /** Shared tail of both picker resolutions: remember the target, close the picker, fire any pending save. */
+  /**
+   * Shared tail of both picker resolutions: remember the target, close the
+   * picker, fire any pending save. In `"default"` mode (or when the picker was
+   * opened via "Change default folder…", `pinDefaultRef`), the chosen folder is
+   * also PINNED as the default so subsequent Saves are truly one click — the
+   * zero-config path the brief describes.
+   */
   async function resolvePickerWith(collection: Collection, pendingAction: SaveAction | null) {
-    setTargetId(collection.id);
+    setLastUsedId(collection.id);
     await setMeta(LAST_USED_KEY, collection.id, db);
+    if (saveMode === "default" || pinDefaultRef.current) {
+      setDefaultId(collection.id);
+      await setMeta(DEFAULT_COLLECTION_META_KEY, collection.id, db);
+    }
+    pinDefaultRef.current = false;
     dispatch({ type: "PICKER_RESOLVED" });
     if (pendingAction) void performSave(pendingAction, collection);
+  }
+
+  /** "Change" (Saving-to line) / "Choose folder…" — open the picker to retarget without a pending save. Pins the default only in `"default"` mode (via resolvePickerWith). */
+  function handleChangeTarget() {
+    setActionError(null);
+    dispatch({ type: "CHANGE_TARGET_CLICK" });
+  }
+
+  /** "Change default folder…" — open the picker and pin whatever is chosen as the default, regardless of the current mode. */
+  function handleChangeDefault() {
+    setActionError(null);
+    pinDefaultRef.current = true;
+    dispatch({ type: "CHANGE_TARGET_CLICK" });
+  }
+
+  /** "Save all → Choose a folder…" — force the picker (with a pending save) even when a target is already resolved. */
+  function handleChooseFolderForSave(action: SaveAction) {
+    setActionError(null);
+    dispatch({ type: "SAVE_CLICK", action, hasTarget: false });
+  }
+
+  /**
+   * "Save all → New folder (named by AI)": create a placeholder folder, save
+   * every current-window tab into it, land on the confirm view, THEN
+   * best-effort ask the hybrid engine for a name and rename to it. Naming is
+   * strictly non-blocking — any failure (or no engine) leaves the "New folder"
+   * placeholder for the user to rename later, and never loses the save.
+   */
+  async function handleSaveAllToNewAiFolder() {
+    if (busy) return;
+    setActionError(null);
+    setNotice(null);
+    setBusy(true);
+    try {
+      const tabs = await tabsForAction("all", allTabs, selectedTabs);
+      if (tabs.length === 0) {
+        setActionError("No tabs to save (only http/https pages count).");
+        return;
+      }
+      const withFavicons = tabs.map((t) => ({ ...t, faviconUrl: faviconFor(t.url) }));
+      const collection = await createCollection(AI_FOLDER_PLACEHOLDER, undefined, db);
+      const savedLinks = await saveTabs(collection.id, withFavicons, db);
+      sendSyncNudge();
+      await setMeta(LAST_USED_KEY, collection.id, db);
+      setLastUsedId(collection.id);
+      const savedUrls = withFavicons.map((t) => t.url);
+      dispatch({
+        type: "SAVE_SUCCESS",
+        action: "all",
+        count: withFavicons.length,
+        collectionName: collection.name,
+        savedUrls,
+      });
+      void nameFolderWithAi(collection.id, savedLinks);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not save tabs.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Best-effort rename of a just-created folder to an AI suggestion. Surfaces a subtle notice on success; silently keeps the placeholder on any failure. */
+  async function nameFolderWithAi(collectionId: string, links: Link[]) {
+    try {
+      const name = await suggestFolderName(links);
+      await renameCollection(collectionId, name, db);
+      sendSyncNudge();
+      flashNotice(`Named this folder "${name}".`);
+    } catch {
+      // No engine, or naming failed — leave the "New folder" placeholder; the
+      // user can rename it. Never an error, never a lost save.
+    }
+  }
+
+  function flashNotice(message: string) {
+    setNotice(message);
+    window.setTimeout(() => setNotice(null), 3000);
   }
 
   async function handlePickerSelect(collection: Collection) {
@@ -329,8 +447,8 @@ export function App() {
               Close saved tabs
             </Button>
           ) : null}
-          {state.action === "all" && targetId && authUser && aiOrganizeCtaAvailable(plan, aiUsesThisMonth) ? (
-            <Button variant="ghost" size="sm" onClick={() => handleSaveAllAndOrganize(targetId)} disabled={busy}>
+          {state.action === "all" && lastUsedId && authUser && aiOrganizeCtaAvailable(plan, aiUsesThisMonth) ? (
+            <Button variant="ghost" size="sm" onClick={() => handleSaveAllAndOrganize(lastUsedId)} disabled={busy}>
               Save all + organize
             </Button>
           ) : null}
@@ -362,10 +480,14 @@ export function App() {
         allCount={allTabs?.length ?? 0}
         selectedCount={selectedTabs?.length ?? 0}
         canAddCurrent
+        targetName={targetName}
         onSaveCurrent={() => handleSaveClick("current")}
         onSaveAll={() => handleSaveClick("all")}
+        onSaveAllChoose={() => handleChooseFolderForSave("all")}
+        onSaveAllNewAiFolder={() => void handleSaveAllToNewAiFolder()}
         onSaveSelected={() => handleSaveClick("selected")}
-        onChooseFolder={() => dispatch({ type: "CHANGE_TARGET_CLICK" })}
+        onChangeTarget={handleChangeTarget}
+        onChangeDefault={handleChangeDefault}
         onOpenFolder={(id) => dispatch({ type: "OPEN_FOLDER", collectionId: id })}
         onAddCurrent={handleAddCurrentToFolder}
         onError={setActionError}
@@ -379,6 +501,10 @@ export function App() {
 
       {actionError && state.view !== "folderDetail" ? (
         <p className="text-xs text-[var(--accent)]">{actionError}</p>
+      ) : null}
+
+      {notice && !actionError && state.view !== "folderDetail" ? (
+        <p className="text-xs text-[var(--text-2)]">{notice}</p>
       ) : null}
 
       <footer className="mt-auto flex items-center justify-between border-t border-[var(--line)] pt-3">

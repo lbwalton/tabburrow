@@ -31,10 +31,17 @@ export interface FoldersHomeProps {
   selectedCount: number;
   /** False when there's no saveable current tab (chrome:// etc.). */
   canAddCurrent: boolean;
+  /** Resolved one-click Save target name, shown on the "Saving to {folder}" line; null when a folder must still be chosen. */
+  targetName: string | null;
   onSaveCurrent: () => void;
   onSaveAll: () => void;
+  onSaveAllChoose: () => void;
+  onSaveAllNewAiFolder: () => void;
   onSaveSelected: () => void;
-  onChooseFolder: () => void;
+  /** Open the picker to change the one-click Save target (the "Change" button + "Choose a folder…"). */
+  onChangeTarget: () => void;
+  /** Open the picker and pin the choice as the default folder. */
+  onChangeDefault: () => void;
   onOpenFolder: (collectionId: string) => void;
   onAddCurrent: (collectionId: string) => Promise<void>;
   onError: (message: string) => void;
@@ -69,10 +76,14 @@ export function FoldersHome(props: FoldersHomeProps) {
     allCount,
     selectedCount,
     canAddCurrent,
+    targetName,
     onSaveCurrent,
     onSaveAll,
+    onSaveAllChoose,
+    onSaveAllNewAiFolder,
     onSaveSelected,
-    onChooseFolder,
+    onChangeTarget,
+    onChangeDefault,
     onOpenFolder,
     onAddCurrent,
     onError,
@@ -238,14 +249,38 @@ export function FoldersHome(props: FoldersHomeProps) {
           <SaveSplitButton
             onSaveCurrent={onSaveCurrent}
             onSaveAll={onSaveAll}
+            onSaveAllChoose={onSaveAllChoose}
+            onSaveAllNewAiFolder={onSaveAllNewAiFolder}
             onSaveSelected={onSaveSelected}
-            onChooseFolder={onChooseFolder}
+            onChangeDefault={onChangeDefault}
             allCount={allCount}
             selectedCount={selectedCount}
+            targetName={targetName}
             disabled={!dataLoaded}
           />
         </div>
       </header>
+
+      {dataLoaded ? (
+        <div className="flex items-center justify-between gap-2 px-1">
+          <p className="min-w-0 truncate text-xs text-[var(--text-2)]">
+            {targetName ? (
+              <>
+                Saving to <span className="font-medium text-[var(--text)]">{targetName}</span>
+              </>
+            ) : (
+              "Choose a folder"
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={onChangeTarget}
+            className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-xs text-[var(--accent)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          >
+            Change
+          </button>
+        </div>
+      ) : null}
 
       {searchOpen ? (
         <>

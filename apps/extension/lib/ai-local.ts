@@ -281,6 +281,98 @@ export function validateAndNormalizeLocal(raw: unknown, inputIds: string[]): Loc
 }
 
 // ---------------------------------------------------------------------------
+// suggestFolderNameLocal — a tiny on-device folder-name suggestion
+// ---------------------------------------------------------------------------
+
+/**
+ * JSON Schema handed to `session.prompt` as `responseConstraint` for the
+ * folder-name suggestion — a single `{ name: string }`, the cheapest useful
+ * shape (mirrors the "tiny responseConstraint" the hybrid pattern calls for).
+ */
+const NAME_SCHEMA = {
+  type: "object",
+  properties: {
+    name: { type: "string", description: "A short, human folder name of 1 to 3 words." },
+  },
+  required: ["name"],
+} as const;
+
+/** Naming needs only a sample of the batch, not the whole thing — kept small so the prompt stays cheap regardless of how many tabs were saved. */
+export const SUGGEST_NAME_MAX_LINKS = 30;
+/** Suggested names are clamped to the same length ceiling collection names use elsewhere. */
+const SUGGESTED_NAME_MAX = 40;
+
+/**
+ * Pure: validate + normalize the model's `{ name }` output. A missing/blank
+ * name is a hard failure (`AiLocalError("upstream", ...)`) so the caller can
+ * fall back to its placeholder rather than rename a folder to "". Overlong
+ * names are clamped, not rejected.
+ */
+export function validateSuggestedName(raw: unknown): string {
+  if (raw === null || typeof raw !== "object") throw new AiLocalError("upstream", "name output is not an object");
+  const name = (raw as Record<string, unknown>).name;
+  if (typeof name !== "string") throw new AiLocalError("upstream", "name is not a string");
+  const trimmed = name.trim();
+  if (trimmed.length === 0) throw new AiLocalError("upstream", "name is empty");
+  return trimmed.length > SUGGESTED_NAME_MAX ? trimmed.slice(0, SUGGESTED_NAME_MAX) : trimmed;
+}
+
+/**
+ * Runs the on-device folder-name suggestion. Same Nano surface as
+ * `organizeLinksLocal` (tiny `responseConstraint`, single prompt, always
+ * `destroy()`ed in `finally`), just a much cheaper one-shot — no corrective
+ * retry, since a bad name simply falls back to the caller's placeholder.
+ * Throws `AiLocalError` on any failure so `lib/ai.ts`'s `suggestFolderName`
+ * can catch it and fall back.
+ */
+export async function suggestFolderNameLocal(links: Link[]): Promise<string> {
+  const lm = getLanguageModel();
+  if (!lm) throw new AiLocalError("unavailable", "On-device AI is not available on this device.");
+
+  const promptLinks = forPrompt(links.slice(0, SUGGEST_NAME_MAX_LINKS));
+  const userText = `Give a short 1-3 word folder name for these bookmarks.\n\n${JSON.stringify(promptLinks)}`;
+
+  let session: LanguageModelSession;
+  try {
+    session = await lm.create({
+      initialPrompts: [
+        {
+          role: "system",
+          content:
+            "You name a browser user's folder of saved links. Reply with only a short, human, specific folder name of 1 to 3 words.",
+        },
+      ],
+      expectedInputs: [{ type: "text", languages: ["en"] }],
+      expectedOutputs: [{ type: "text", languages: ["en"] }],
+    });
+  } catch {
+    throw new AiLocalError("upstream", "On-device AI could not start.");
+  }
+
+  try {
+    let output: string;
+    try {
+      output = await session.prompt(userText, { responseConstraint: NAME_SCHEMA });
+    } catch {
+      throw new AiLocalError("upstream", "On-device AI is temporarily unavailable.");
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(output);
+    } catch {
+      throw new AiLocalError("upstream", "On-device AI returned invalid output.");
+    }
+    return validateSuggestedName(parsed);
+  } finally {
+    try {
+      session.destroy();
+    } catch {
+      // Best-effort cleanup; a destroy failure must not mask the real result.
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // organizeLinksLocal — the on-device counterpart to ai.ts's organizeLinks
 // ---------------------------------------------------------------------------
 
