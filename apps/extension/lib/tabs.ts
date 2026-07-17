@@ -12,6 +12,29 @@ export function isHttpUrl(url: string | undefined): url is string {
 }
 
 /**
+ * Broader than {@link isHttpUrl}: also accepts local `file://` pages, which are
+ * legitimate things to bookmark (a saved HTML export, a local report, a PDF on
+ * disk). This is what the tab-capture SAVE flows use
+ * (getCurrentTab/getAllTabs/getHighlightedTabs), so saving works while sitting
+ * on a `file://` tab — the exact case that was silently failing. chrome://,
+ * about:, and extension pages stay excluded (they aren't useful links).
+ *
+ * Reading a `file://` tab's URL only needs the "tabs" permission, which is
+ * already granted, so SAVING never requires the user's "Allow access to file
+ * URLs" toggle. Re-OPENING a saved `file://` link later can require it — see
+ * lib/restore.ts.
+ */
+export function isSaveableUrl(url: string | undefined): url is string {
+  if (!url) return false;
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === "http:" || protocol === "https:" || protocol === "file:";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Discarded (and some back-forward-cache) tabs can report an undefined or
  * empty title; fall back to the URL's hostname so saved links never show a
  * blank name.
@@ -20,7 +43,13 @@ export function titleForTab(tab: { title?: string; url?: string }): string {
   if (tab.title) return tab.title;
   if (tab.url) {
     try {
-      return new URL(tab.url).hostname;
+      const u = new URL(tab.url);
+      // http(s) pages have a hostname; file:// (and similar) don't — fall back
+      // to the last path segment (the filename) so a titleless local file
+      // reads as "report.html", not a blank name.
+      if (u.hostname) return u.hostname;
+      const segment = u.pathname.split("/").filter(Boolean).pop();
+      return segment ? decodeURIComponent(segment) : tab.url;
     } catch {
       return tab.url;
     }
@@ -33,17 +62,26 @@ export function toTabInfo(tab: { title?: string; url?: string }): TabInfo {
   return { url: tab.url ?? "", title: titleForTab(tab) };
 }
 
-/** Pure filter+map: http(s)-only tabs, in their given order. Shared by getAllTabs/getHighlightedTabs. */
+/** Pure filter+map: saveable tabs (http, https, file), in their given order. Shared by getCurrentTab/getAllTabs/getHighlightedTabs. */
 export function filterTabs(tabs: Array<{ title?: string; url?: string }>): TabInfo[] {
-  return tabs.filter((t) => isHttpUrl(t.url)).map(toTabInfo);
+  return tabs.filter((t) => isSaveableUrl(t.url)).map(toTabInfo);
 }
 
-/** The active tab in the current window. Throws if it isn't an http(s) page. */
+/**
+ * The active tab in the current window, resolved fresh (never cached), so a
+ * transient miss at popup open can't leave the caller stuck on a stale null.
+ * Falls back to `lastFocusedWindow` because in some popup/focus states
+ * `currentWindow` resolves to nothing usable. Throws if the active page isn't
+ * saveable (a chrome:// or extension page, not an http(s) or file:// one).
+ */
 export async function getCurrentTab(): Promise<TabInfo> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) {
+    [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  }
   const [info] = filterTabs(tab ? [tab] : []);
   if (!info) {
-    throw new Error("No active tab to save (only http/https pages can be saved).");
+    throw new Error("This page can't be saved. Only web pages and local files can be saved.");
   }
   return info;
 }

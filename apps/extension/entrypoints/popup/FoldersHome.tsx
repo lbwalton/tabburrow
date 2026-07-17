@@ -19,7 +19,7 @@ const SEARCH_DEBOUNCE_MS = 150;
 /** Compact popup body: show at most this many combined results, collections first. */
 const POPUP_SEARCH_LIMIT = 8;
 
-type SortMode = "recent" | "az";
+type SortMode = "manual" | "recent" | "az";
 
 export interface FoldersHomeProps {
   collections: Collection[];
@@ -40,9 +40,16 @@ export interface FoldersHomeProps {
   onError: (message: string) => void;
 }
 
+const SORT_LABEL: Record<SortMode, string> = { manual: "Added", recent: "Recent", az: "A–Z" };
+const NEXT_SORT: Record<SortMode, SortMode> = { manual: "recent", recent: "az", az: "manual" };
+
 function sortCollections(collections: Collection[], mode: SortMode): Collection[] {
   if (mode === "az") return [...collections].sort((a, b) => a.name.localeCompare(b.name));
-  return sortByRecentlyUpdated(collections);
+  if (mode === "recent") return sortByRecentlyUpdated(collections);
+  // "manual" = creation order: listCollections already returns rows by position
+  // ascending, and createCollection appends at the end, so a new folder lands
+  // at the bottom of the list right where it was made.
+  return collections;
 }
 
 /**
@@ -72,7 +79,7 @@ export function FoldersHome(props: FoldersHomeProps) {
   } = props;
 
   const db = getDB();
-  const [sort, setSort] = useState<SortMode>("recent");
+  const [sort, setSort] = useState<SortMode>("manual");
 
   // ---- Search combobox (same shape as the pre-redesign App search) --------
   const [searchOpen, setSearchOpen] = useState(false);
@@ -154,21 +161,51 @@ export function FoldersHome(props: FoldersHomeProps) {
   const [newName, setNewName] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const newNameRef = useRef<HTMLInputElement>(null);
+  // Guards Enter-then-blur from creating the same folder twice, and lets
+  // Escape suppress the blur that firing setCreating(false) triggers.
+  const submittingRef = useRef(false);
+  const cancelRef = useRef(false);
 
   useEffect(() => {
     if (creating) newNameRef.current?.focus();
   }, [creating]);
 
+  // Confirm on Enter OR on click-away (blur). On success we stay on the home
+  // list (no drilling into the new folder) so it appears at the bottom, right
+  // where it was made, ready to rename or fill.
   async function handleCreateFolder() {
+    if (submittingRef.current) return;
+    const name = newName.trim();
+    if (!name) {
+      setCreating(false);
+      return;
+    }
+    submittingRef.current = true;
     setCreateError(null);
     try {
-      const created = await createCollection(newName, undefined, db);
+      await createCollection(name, undefined, db);
       setNewName("");
       setCreating(false);
-      onOpenFolder(created.id);
     } catch (err) {
       setCreateError(friendlyCreateError(err));
+    } finally {
+      submittingRef.current = false;
     }
+  }
+
+  function handleCreateBlur() {
+    if (cancelRef.current) {
+      cancelRef.current = false;
+      return;
+    }
+    void handleCreateFolder();
+  }
+
+  function cancelCreate() {
+    cancelRef.current = true;
+    setCreating(false);
+    setNewName("");
+    setCreateError(null);
   }
 
   const ordered = sortCollections(collections, sort);
@@ -187,7 +224,16 @@ export function FoldersHome(props: FoldersHomeProps) {
             onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
             className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-card)] border border-[var(--line)] text-[var(--text-2)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           >
-            <span aria-hidden="true">{searchOpen ? "×" : "⌕"}</span>
+            {searchOpen ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.2-3.2" />
+              </svg>
+            )}
           </button>
           <SaveSplitButton
             onSaveCurrent={onSaveCurrent}
@@ -290,10 +336,11 @@ export function FoldersHome(props: FoldersHomeProps) {
             <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-[var(--text-2)]">Folders</h2>
             <button
               type="button"
-              onClick={() => setSort((s) => (s === "recent" ? "az" : "recent"))}
+              aria-label={`Sort folders: ${SORT_LABEL[sort]}. Change`}
+              onClick={() => setSort((s) => NEXT_SORT[s])}
               className="rounded-[6px] px-1.5 py-0.5 text-xs text-[var(--text-2)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             >
-              {sort === "recent" ? "Recent" : "A–Z"}
+              {SORT_LABEL[sort]}
             </button>
           </div>
 
@@ -326,11 +373,11 @@ export function FoldersHome(props: FoldersHomeProps) {
                     e.preventDefault();
                     void handleCreateFolder();
                   } else if (e.key === "Escape") {
-                    setCreating(false);
-                    setNewName("");
-                    setCreateError(null);
+                    e.preventDefault();
+                    cancelCreate();
                   }
                 }}
+                onBlur={handleCreateBlur}
                 invalid={!!createError}
                 aria-label="New folder name"
               />

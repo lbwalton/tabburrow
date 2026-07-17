@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isHttpUrl, titleForTab, toTabInfo, filterTabs } from "./tabs";
+import { isHttpUrl, isSaveableUrl, titleForTab, toTabInfo, filterTabs } from "./tabs";
 
 describe("isHttpUrl", () => {
   it("accepts http and https URLs", () => {
@@ -21,6 +21,23 @@ describe("isHttpUrl", () => {
   });
 });
 
+describe("isSaveableUrl", () => {
+  it("accepts http, https, AND file URLs (local pages are saveable)", () => {
+    expect(isSaveableUrl("https://example.com")).toBe(true);
+    expect(isSaveableUrl("http://example.com/x")).toBe(true);
+    expect(isSaveableUrl("file:///Users/me/report.html")).toBe(true);
+  });
+
+  it("still rejects chrome://, extension pages, about:, and non-urls", () => {
+    expect(isSaveableUrl("chrome://extensions")).toBe(false);
+    expect(isSaveableUrl("chrome-extension://abc123/popup.html")).toBe(false);
+    expect(isSaveableUrl("about:blank")).toBe(false);
+    expect(isSaveableUrl(undefined)).toBe(false);
+    expect(isSaveableUrl("")).toBe(false);
+    expect(isSaveableUrl("not a url")).toBe(false);
+  });
+});
+
 describe("titleForTab", () => {
   it("returns the title when present", () => {
     expect(titleForTab({ title: "Example Site", url: "https://example.com" })).toBe("Example Site");
@@ -36,6 +53,10 @@ describe("titleForTab", () => {
 
   it("returns the raw url when it cannot be parsed as a hostname", () => {
     expect(titleForTab({ url: "not a url" })).toBe("not a url");
+  });
+
+  it("uses the filename for a titleless file:// page (no hostname to fall back to)", () => {
+    expect(titleForTab({ url: "file:///Users/me/docs/Partnership%20Proposal.html" })).toBe("Partnership Proposal.html");
   });
 
   it("returns empty string when neither title nor url is present", () => {
@@ -75,5 +96,17 @@ describe("filterTabs", () => {
   it("returns an empty array for an empty or all-non-http input", () => {
     expect(filterTabs([])).toEqual([]);
     expect(filterTabs([{ url: "chrome://extensions" }])).toEqual([]);
+  });
+
+  it("keeps a file:// tab and titles it by filename", () => {
+    const tabs = [
+      { title: "Proposal", url: "file:///Users/me/Proposal.html" },
+      { url: "file:///Users/me/notes.txt" },
+      { url: "chrome://settings" },
+    ];
+    expect(filterTabs(tabs)).toEqual([
+      { url: "file:///Users/me/Proposal.html", title: "Proposal" },
+      { url: "file:///Users/me/notes.txt", title: "notes.txt" },
+    ]);
   });
 });

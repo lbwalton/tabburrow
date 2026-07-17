@@ -214,6 +214,16 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
         )}
 
         <Badge variant="muted">{allTabsCount}</Badge>
+        <button
+          type="button"
+          aria-label="Add current tab to this folder"
+          title="Add current tab"
+          onClick={() => void handleAddCurrent()}
+          disabled={busy}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-card)] text-[var(--text-2)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-40"
+        >
+          <span aria-hidden="true" className="text-lg leading-none">+</span>
+        </button>
         <OpenAllButton urls={urls} collectionName={collection.name} onError={setError} compact />
       </header>
 

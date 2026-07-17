@@ -88,17 +88,30 @@ export function LinkRow({ link, onError }: LinkRowProps) {
         <span className="min-w-0 flex-1 truncate">{link.title}</span>
       </button>
 
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label={`Actions for ${link.title}`}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        onClick={() => setMenuOpen((v) => !v)}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-[var(--text-2)] opacity-0 transition-opacity hover:bg-[var(--surface)] hover:text-[var(--text)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] group-hover:opacity-100 group-focus-within:opacity-100"
-      >
-        <span aria-hidden="true">⋯</span>
-      </button>
+      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        <button
+          type="button"
+          aria-label={`Delete ${link.title}`}
+          title="Delete"
+          onClick={() => void handleDelete()}
+          className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[var(--text-2)] hover:bg-[var(--surface)] hover:text-[var(--accent)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m1 0-.7 12.1a1 1 0 0 1-1 .9H7.7a1 1 0 0 1-1-.9L6 7" />
+          </svg>
+        </button>
+        <button
+          ref={triggerRef}
+          type="button"
+          aria-label={`More actions for ${link.title}`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((v) => !v)}
+          className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[var(--text-2)] hover:bg-[var(--surface)] hover:text-[var(--text)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        >
+          <span aria-hidden="true">⋯</span>
+        </button>
+      </div>
 
       {menuOpen ? (
         <div
@@ -122,9 +135,6 @@ export function LinkRow({ link, onError }: LinkRowProps) {
             }}
           >
             Edit
-          </MenuItem>
-          <MenuItem onClick={() => void handleDelete()} danger>
-            Delete
           </MenuItem>
         </div>
       ) : null}

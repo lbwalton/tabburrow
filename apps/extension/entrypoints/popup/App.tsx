@@ -61,7 +61,6 @@ export function App() {
   const [targetLoaded, setTargetLoaded] = useState(false);
   const [allTabs, setAllTabs] = useState<TabInfo[] | null>(null);
   const [selectedTabs, setSelectedTabs] = useState<TabInfo[] | null>(null);
-  const [currentTab, setCurrentTab] = useState<TabInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   // Alt+Shift+A's "save all" shortcut can't reproduce the picker/confirm UX
@@ -148,23 +147,6 @@ export function App() {
       cancelled = true;
     };
   }, [db]);
-
-  // Current tab is fetched separately so a non-http active page (getCurrentTab
-  // throws) just disables the "add current tab" affordances rather than
-  // blocking the whole snapshot above.
-  useEffect(() => {
-    let cancelled = false;
-    void getCurrentTab()
-      .then((tab) => {
-        if (!cancelled) setCurrentTab(tab);
-      })
-      .catch(() => {
-        if (!cancelled) setCurrentTab(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Auto-reset the confirmation back to home after 6s.
   useEffect(() => {
@@ -306,10 +288,15 @@ export function App() {
     }
   }
 
-  /** FolderRow's "+" quick-add: save the current tab into that folder in place, no navigation. */
+  /**
+   * FolderRow's "+" quick-add: save the current tab into that folder in place,
+   * no navigation. Resolves the tab fresh (getCurrentTab throws a friendly
+   * message the row surfaces if the page genuinely can't be saved) rather than
+   * reading a value cached at mount — that cache going stale is what made the
+   * "+" silently dead on the first load.
+   */
   async function handleAddCurrentToFolder(collectionId: string) {
-    const tab = currentTab;
-    if (!tab) throw new Error("No active tab to add (only http/https pages can be saved).");
+    const tab = await getCurrentTab();
     await addTabToFolder(collectionId, tab, db);
     sendSyncNudge();
   }
@@ -374,7 +361,7 @@ export function App() {
         plan={plan}
         allCount={allTabs?.length ?? 0}
         selectedCount={selectedTabs?.length ?? 0}
-        canAddCurrent={currentTab !== null}
+        canAddCurrent
         onSaveCurrent={() => handleSaveClick("current")}
         onSaveAll={() => handleSaveClick("all")}
         onSaveSelected={() => handleSaveClick("selected")}
