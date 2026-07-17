@@ -1,17 +1,14 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { Collection, TabInfo } from "@tabburrow/core";
 import { createCollection, getDB, getMeta, listCollections, saveTabs, setMeta } from "@tabburrow/core";
-import { Badge, Button, Input, Kbd } from "@tabburrow/ui";
+import { Badge, Button } from "@tabburrow/ui";
 import { closeTabsByUrl, faviconFor, getAllTabs, getCurrentTab, getHighlightedTabs } from "../../lib/tabs";
+import { addTabToFolder } from "../../lib/folderActions";
 import { initialPopupState, popupReducer } from "../../lib/popupState";
 import type { PopupState, SaveAction } from "../../lib/popupState";
-import type { SearchResults } from "../../lib/search";
-import { emptyStateFor, searchAll } from "../../lib/search";
-import { nextHighlight, resolveHighlight } from "../../lib/searchNav";
-import { dashboardCollectionOrganizeUrl, dashboardCollectionUrl, dashboardSettingsUrl } from "../../lib/dashboard";
-import { formatHost } from "../../lib/links";
+import { dashboardCollectionOrganizeUrl, dashboardSettingsUrl } from "../../lib/dashboard";
 import { getPlan, onAuthChange } from "../../lib/auth";
 import type { AuthUser, Plan } from "../../lib/auth";
 import { isSupabaseConfigured } from "../../lib/supabase";
@@ -26,15 +23,11 @@ import {
   PENDING_COMMAND_SAVE_ALL,
 } from "../../lib/commands";
 import { applyTheme, parseTheme, THEME_META_KEY } from "../../lib/theme";
-import { SaveBar } from "./SaveBar";
 import { CollectionPicker } from "./CollectionPicker";
-import { RecentList } from "./RecentList";
+import { FoldersHome } from "./FoldersHome";
+import { FolderDetail } from "./FolderDetail";
 
 const LAST_USED_KEY = LAST_USED_COLLECTION_META_KEY;
-const EMPTY_SEARCH_RESULTS: SearchResults = { collections: [], links: [] };
-const SEARCH_DEBOUNCE_MS = 150;
-/** Compact popup body: show at most this many combined results (dashboard's overlay shows the full up-to-20 `searchAll` returns; the popup trims further to stay pocket-sized). */
-const POPUP_SEARCH_LIMIT = 8;
 
 function openDashboard() {
   chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
@@ -54,6 +47,11 @@ function tabsForAction(
   return selectedTabs ? Promise.resolve(selectedTabs) : getHighlightedTabs();
 }
 
+/** home ↔ folderDetail is the only pair that gets the "dig in / climb out" slide. */
+function isNavView(view: PopupState["view"]): boolean {
+  return view === "home" || view === "folderDetail";
+}
+
 export function App() {
   const db = getDB();
   const collections = useLiveQuery(() => listCollections(db), []);
@@ -63,6 +61,7 @@ export function App() {
   const [targetLoaded, setTargetLoaded] = useState(false);
   const [allTabs, setAllTabs] = useState<TabInfo[] | null>(null);
   const [selectedTabs, setSelectedTabs] = useState<TabInfo[] | null>(null);
+  const [currentTab, setCurrentTab] = useState<TabInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   // Alt+Shift+A's "save all" shortcut can't reproduce the picker/confirm UX
@@ -71,41 +70,6 @@ export function App() {
   // are loaded (see the effect after handleSaveClick).
   const [pendingSaveAll, setPendingSaveAll] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResults>(EMPTY_SEARCH_RESULTS);
-  // The exact query whose searchAll response last landed — see
-  // `emptyStateFor` (lib/search.ts): until it equals `searchQuery`,
-  // `searchResults` is stale/pending and "No results" must not render.
-  const [searchSettledQuery, setSearchSettledQuery] = useState("");
-  const [searchHighlight, setSearchHighlight] = useState(-1);
-
-  // Debounced query -> results, same shape as the dashboard SearchOverlay's
-  // (see its docstring): the cleanup both clears the pending timer and
-  // flags an in-flight `searchAll` stale, so a fast second keystroke can't
-  // have its result overwritten by an earlier, slower one landing after it.
-  useEffect(() => {
-    const trimmed = searchQuery.trim();
-    if (!trimmed) {
-      setSearchResults(EMPTY_SEARCH_RESULTS);
-      setSearchSettledQuery("");
-      setSearchHighlight(-1);
-      return;
-    }
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void searchAll(searchQuery).then((r) => {
-        if (cancelled) return;
-        setSearchResults(r);
-        setSearchSettledQuery(searchQuery);
-        setSearchHighlight(r.collections.length + r.links.length > 0 ? 0 : -1);
-      });
-    }, SEARCH_DEBOUNCE_MS);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [searchQuery]);
-
   // Applies the persisted theme on mount — same convention the dashboard's
   // App.tsx follows (see lib/theme.ts's docstring); a fresh popup document
   // every open means "on mount" is the only time this needs to run.
@@ -113,10 +77,8 @@ export function App() {
     void getMeta(THEME_META_KEY, db).then((value) => applyTheme(parseTheme(value)));
   }, [db]);
 
-  // Footer account state (T16): "Sign in" link when signed out, a plan
-  // Badge when signed in, nothing when cloud isn't configured (a "quiet"
-  // not-configured state — see AccountPane's docstring for the fuller
-  // Settings-page version of the same three states). All state via
+  // Footer account state (T16): "Sign in" link when signed out, a plan Badge
+  // when signed in, nothing when cloud isn't configured. All state via
   // onAuthChange, no polling — same precedent as AccountPane.
   const cloudConfigured = isSupabaseConfigured();
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -140,9 +102,7 @@ export function App() {
     };
   }, [authUser]);
 
-  // T20: the "Save all + organize" secondary action's gate — see
-  // lib/ai.ts's aiOrganizeCtaAvailable docstring for why plan===null (not
-  // yet resolved) never shows it.
+  // T20 "Save all + organize" gate — see lib/ai.ts's aiOrganizeCtaAvailable.
   const [aiUsesThisMonth, setAiUsesThisMonth] = useState(0);
   useEffect(() => {
     if (!authUser) {
@@ -160,14 +120,8 @@ export function App() {
 
   // Snapshot the current window's tabs + last-used target once, on open. The
   // popup is a fresh document every time it opens, so a one-shot fetch is
-  // sufficient (no live tab-change subscription needed). Also reads (and
-  // immediately clears — whether or not it will be honored) the "save-all"
+  // sufficient. Also reads (and immediately clears) the "save-all"
   // pending-command flag background.ts's Alt+Shift+A handler may have left.
-  // Clearing here, not after the replay fires below, means a popup close
-  // mid-flight can't leave a stale flag; on top of that, a flag older than
-  // PENDING_COMMAND_MAX_AGE_MS is ignored outright (stranded flags from an
-  // openPopup failure whose rollback never ran must not replay a save-all
-  // the user didn't just ask for — see lib/commands.ts).
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -195,32 +149,58 @@ export function App() {
     };
   }, [db]);
 
-  // Auto-reset the confirmation back to idle after 6s.
+  // Current tab is fetched separately so a non-http active page (getCurrentTab
+  // throws) just disables the "add current tab" affordances rather than
+  // blocking the whole snapshot above.
+  useEffect(() => {
+    let cancelled = false;
+    void getCurrentTab()
+      .then((tab) => {
+        if (!cancelled) setCurrentTab(tab);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentTab(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Auto-reset the confirmation back to home after 6s.
   useEffect(() => {
     if (state.view !== "confirm") return;
     const timer = window.setTimeout(() => dispatch({ type: "RESET" }), 6000);
     return () => window.clearTimeout(timer);
   }, [state.view]);
 
-  // Focus restoration: leaving the picker back to idle (Escape or a
-  // resolved selection) must put keyboard focus back on the "Change" target
-  // button that opened it, so the keyboard-only flow stays continuous
-  // (Tab to Change -> Enter -> picker -> Escape -> back on Change).
-  const changeTargetRef = useRef<HTMLButtonElement>(null);
+  // The horizontal "dig in / climb out" slide between home and folderDetail
+  // (transform via WAAPI, no stylesheet needed). prefers-reduced-motion
+  // downgrades to a short cross-fade.
+  const screenRef = useRef<HTMLDivElement>(null);
   const prevViewRef = useRef<PopupState["view"]>(state.view);
   useEffect(() => {
-    const prevView = prevViewRef.current;
+    const prev = prevViewRef.current;
     prevViewRef.current = state.view;
-    if (prevView === "picker" && state.view === "idle") {
-      changeTargetRef.current?.focus();
+    // Focus restoration: leaving the picker back to home puts focus somewhere
+    // sane inside home (its first focusable) rather than dropping to <body>.
+    const el = screenRef.current;
+    if (!el) return;
+    if (!isNavView(prev) || !isNavView(state.view) || prev === state.view) return;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    if (reduce) {
+      el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: "ease" });
+      return;
     }
+    const from = state.view === "folderDetail" ? "24px" : "-24px";
+    el.animate(
+      [
+        { transform: `translateX(${from})`, opacity: 0 },
+        { transform: "translateX(0)", opacity: 1 },
+      ],
+      { duration: 180, easing: "cubic-bezier(0.2, 0.7, 0.2, 1)" },
+    );
   }, [state.view]);
 
-  // useLiveQuery resolves asynchronously (starts `undefined`); until its
-  // first emission lands, `target` below can't be trusted — without this,
-  // a warm popup (valid lastUsedCollectionId) could momentarily look cold
-  // if the meta fetch happens to resolve before the live query does, and
-  // a click in that window would wrongly send the user to the picker.
   const collectionsLoaded = collections !== undefined;
   const dataLoaded = targetLoaded && collectionsLoaded;
   const target = targetId ? collections?.find((c) => c.id === targetId) ?? null : null;
@@ -238,10 +218,6 @@ export function App() {
         }
         const withFavicons = tabs.map((t) => ({ ...t, faviconUrl: faviconFor(t.url) }));
         await saveTabs(collection.id, withFavicons, db);
-        // App-level nudge (T18): tells the background service worker to
-        // debounce a sync cycle rather than waiting for the next 1-minute
-        // alarm — see lib/sync-nudge.ts's docstring for why this lives here
-        // and not inside saveTabs/createCollection themselves.
         sendSyncNudge();
         await setMeta(LAST_USED_KEY, collection.id, db);
         setTargetId(collection.id);
@@ -261,30 +237,26 @@ export function App() {
     [allTabs, selectedTabs, db],
   );
 
-  function handleSaveClick(action: SaveAction) {
-    setActionError(null);
-    if (hasTarget && target) {
-      dispatch({ type: "SAVE_CLICK", action, hasTarget: true });
-      void performSave(action, target);
-    } else {
-      dispatch({ type: "SAVE_CLICK", action, hasTarget: false });
-    }
-  }
+  const handleSaveClick = useCallback(
+    (action: SaveAction) => {
+      setActionError(null);
+      if (hasTarget && target) {
+        dispatch({ type: "SAVE_CLICK", action, hasTarget: true });
+        void performSave(action, target);
+      } else {
+        dispatch({ type: "SAVE_CLICK", action, hasTarget: false });
+      }
+    },
+    [hasTarget, target, performSave],
+  );
 
-  // Replays a pending "save-all" command (see the mount effect above) the
-  // instant this popup's own data has settled — through the SAME
-  // handleSaveClick("all") path a manual click takes, so the picker
-  // (cold start) and "Close saved tabs" confirmation (warm) behave
-  // identically whether the popup was opened by hand or by Alt+Shift+A.
+  // Replays a pending "save-all" command the instant this popup's own data has
+  // settled — through the SAME handleSaveClick("all") path a manual click takes.
   useEffect(() => {
     if (!pendingSaveAll || !dataLoaded) return;
     setPendingSaveAll(false);
     handleSaveClick("all");
-    // handleSaveClick is intentionally omitted from the deps below: it's a
-    // plain function redeclared every render (not memoized), so depending on
-    // it would fire on every render rather than only the one transition
-    // (pendingSaveAll/dataLoaded becoming true) this effect cares about.
-  }, [pendingSaveAll, dataLoaded]);
+  }, [pendingSaveAll, dataLoaded, handleSaveClick]);
 
   /** Shared tail of both picker resolutions: remember the target, close the picker, fire any pending save. */
   async function resolvePickerWith(collection: Collection, pendingAction: SaveAction | null) {
@@ -295,10 +267,6 @@ export function App() {
   }
 
   async function handlePickerSelect(collection: Collection) {
-    // Double-select guard: the first click sets `resolving`; App re-renders
-    // before the next click is processed (React discrete-event flushing), so
-    // a rapid second click on a DIFFERENT row hits this guard and is ignored
-    // instead of firing performSave twice into two collections.
     if (state.view !== "picker" || state.resolving !== null) return;
     const pendingAction = state.pendingAction;
     dispatch({ type: "PICKER_SELECT", collectionId: collection.id });
@@ -306,7 +274,6 @@ export function App() {
   }
 
   async function handlePickerCreate(name: string): Promise<Collection> {
-    // Same guard for the create path (CollectionPicker also gates on `busy`).
     if (state.view !== "picker" || state.resolving !== null) {
       throw new Error("Another choice is already being saved.");
     }
@@ -316,7 +283,6 @@ export function App() {
     try {
       created = await createCollection(name, undefined, db);
     } catch (err) {
-      // Clear the resolving flag so the user can fix the name and retry.
       dispatch({ type: "PICKER_CREATE_FAILED" });
       throw err;
     }
@@ -324,7 +290,7 @@ export function App() {
     return created;
   }
 
-  /** T20's "Save all + organize" secondary action: the tabs are already saved by the time this renders (it lives in the post-save confirm view) — this just deep-links into the dashboard, which auto-opens AiOrganizeDialog for that collection (see lib/route.ts's organize-flag handling, consumed by the dashboard's useRoute). */
+  /** T20's "Save all + organize": the tabs are already saved by the time this renders — deep-link into the dashboard, which auto-opens AiOrganizeDialog. */
   function handleSaveAllAndOrganize(collectionId: string) {
     chrome.tabs.create({ url: dashboardCollectionOrganizeUrl(collectionId) });
   }
@@ -340,242 +306,98 @@ export function App() {
     }
   }
 
-  // Compact display: trim `searchResults` (already ranked + capped at 20 by
-  // `searchAll`) down to POPUP_SEARCH_LIMIT combined, collections first —
-  // this is also the split `resolveHighlight`/`nextHighlight` navigate
-  // against below, so keyboard nav never lands on a row that isn't shown.
-  const shownCollections = searchResults.collections.slice(0, POPUP_SEARCH_LIMIT);
-  const shownLinks = searchResults.links.slice(0, Math.max(0, POPUP_SEARCH_LIMIT - shownCollections.length));
-  const shownTotal = shownCollections.length + shownLinks.length;
-  const searching = searchQuery.trim().length > 0;
-
-  function activateSearchResult(index: number) {
-    const target = resolveHighlight(index, shownCollections.length);
-    if (!target) return;
-    if (target.kind === "collection") {
-      const c = shownCollections[target.index];
-      if (!c) return;
-      chrome.tabs.create({ url: dashboardCollectionUrl(c.id) });
-      return;
-    }
-    const l = shownLinks[target.index];
-    if (!l) return;
-    // Explicitly active (unlike the dashboard's background-tab opens): the
-    // popup is expected to auto-close once the new tab gains focus.
-    chrome.tabs.create({ url: l.url, active: true });
+  /** FolderRow's "+" quick-add: save the current tab into that folder in place, no navigation. */
+  async function handleAddCurrentToFolder(collectionId: string) {
+    const tab = currentTab;
+    if (!tab) throw new Error("No active tab to add (only http/https pages can be saved).");
+    await addTabToFolder(collectionId, tab, db);
+    sendSyncNudge();
   }
 
-  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setSearchHighlight((h) => nextHighlight(h, "ArrowDown", shownTotal));
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setSearchHighlight((h) => nextHighlight(h, "ArrowUp", shownTotal));
-    } else if (event.key === "Enter") {
-      if (shownTotal === 0) return;
-      event.preventDefault();
-      activateSearchResult(searchHighlight);
-    } else if (event.key === "Escape" && searchQuery) {
-      // Clearing the query is the whole job — the view switch back to the
-      // idle SaveBar below is purely a function of `searching`.
-      event.preventDefault();
-      setSearchQuery("");
-    }
-  }
+  const detailCollection =
+    state.view === "folderDetail" ? collections?.find((c) => c.id === state.collectionId) ?? null : null;
 
-  const searchActiveId = searchHighlight >= 0 ? `popup-search-option-${searchHighlight}` : undefined;
+  // A folder deleted out from under the detail view (or an id that never
+  // resolves once collections load) falls back home.
+  useEffect(() => {
+    if (state.view === "folderDetail" && collectionsLoaded && detailCollection === null) {
+      dispatch({ type: "BACK_TO_HOME" });
+    }
+  }, [state.view, collectionsLoaded, detailCollection]);
+
+  let screen: ReactNode;
+  if (state.view === "confirm") {
+    screen = (
+      <div
+        role="status"
+        className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3 shadow-lg"
+      >
+        <p className="text-sm text-[var(--text)]">
+          <span className="text-[var(--accent)]">&#10003;</span> Saved {state.count}{" "}
+          {state.count === 1 ? "tab" : "tabs"} to {state.collectionName}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {state.action === "all" ? (
+            <Button variant="danger" size="sm" onClick={() => void handleCloseSavedTabs()} disabled={busy}>
+              Close saved tabs
+            </Button>
+          ) : null}
+          {state.action === "all" && targetId && authUser && aiOrganizeCtaAvailable(plan, aiUsesThisMonth) ? (
+            <Button variant="ghost" size="sm" onClick={() => handleSaveAllAndOrganize(targetId)} disabled={busy}>
+              Save all + organize
+            </Button>
+          ) : null}
+          <Button variant="ghost" size="sm" onClick={() => dispatch({ type: "RESET" })} disabled={busy}>
+            Done
+          </Button>
+        </div>
+      </div>
+    );
+  } else if (state.view === "picker") {
+    screen = (
+      <CollectionPicker
+        collections={collections ?? []}
+        onSelect={(c) => void handlePickerSelect(c)}
+        onCreate={handlePickerCreate}
+        onCancel={() => dispatch({ type: "ESCAPE" })}
+        busy={state.resolving !== null}
+      />
+    );
+  } else if (state.view === "folderDetail" && detailCollection) {
+    screen = <FolderDetail collection={detailCollection} onBack={() => dispatch({ type: "BACK_TO_HOME" })} />;
+  } else {
+    screen = (
+      <FoldersHome
+        collections={collections ?? []}
+        collectionsLoaded={collectionsLoaded}
+        dataLoaded={dataLoaded}
+        plan={plan}
+        allCount={allTabs?.length ?? 0}
+        selectedCount={selectedTabs?.length ?? 0}
+        canAddCurrent={currentTab !== null}
+        onSaveCurrent={() => handleSaveClick("current")}
+        onSaveAll={() => handleSaveClick("all")}
+        onSaveSelected={() => handleSaveClick("selected")}
+        onChooseFolder={() => dispatch({ type: "CHANGE_TARGET_CLICK" })}
+        onOpenFolder={(id) => dispatch({ type: "OPEN_FOLDER", collectionId: id })}
+        onAddCurrent={handleAddCurrentToFolder}
+        onError={setActionError}
+      />
+    );
+  }
 
   return (
-    <div
-      className="flex w-[360px] flex-col gap-4 bg-[var(--bg-ground)] px-4 py-4"
-      style={{ minHeight: 420 }}
-    >
-      <header>
-        <h1
-          className="text-lg font-bold text-[var(--text)]"
-          style={{ fontFamily: "var(--font-display)" }}
-        >
-          TabBurrow
-        </h1>
-      </header>
+    <div className="flex w-[360px] flex-col gap-4 bg-[var(--bg-ground)] px-4 py-4" style={{ minHeight: 480 }}>
+      <div ref={screenRef}>{screen}</div>
 
-      {state.view === "confirm" ? (
-        // Toast's visual language (tokens, spacing, role="status"), rendered
-        // inline in normal document flow rather than the floating <Toast>
-        // component itself — Toast only offers a single action slot and this
-        // state needs up to three (Close saved tabs / Save all + organize /
-        // Done).
-        <div
-          role="status"
-          className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3 shadow-lg"
-        >
-          <p className="text-sm text-[var(--text)]">
-            <span className="text-[var(--accent)]">&#10003;</span> Saved {state.count}{" "}
-            {state.count === 1 ? "tab" : "tabs"} to {state.collectionName}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {state.action === "all" ? (
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => void handleCloseSavedTabs()}
-                disabled={busy}
-              >
-                Close saved tabs
-              </Button>
-            ) : null}
-            {/* T20: only once we KNOW there's quota to spend — signed out, an
-                unresolved plan, or a free user already at the limit all show
-                nothing here rather than a button that would just 402. */}
-            {state.action === "all" && targetId && authUser && aiOrganizeCtaAvailable(plan, aiUsesThisMonth) ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleSaveAllAndOrganize(targetId)}
-                disabled={busy}
-              >
-                Save all + organize
-              </Button>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => dispatch({ type: "RESET" })}
-              disabled={busy}
-            >
-              Done
-            </Button>
-          </div>
-        </div>
-      ) : state.view === "picker" ? (
-        <CollectionPicker
-          collections={collections ?? []}
-          onSelect={(c) => void handlePickerSelect(c)}
-          onCreate={handlePickerCreate}
-          onCancel={() => dispatch({ type: "ESCAPE" })}
-          busy={state.resolving !== null}
-        />
-      ) : (
-        <>
-          <Input
-            type="text"
-            role="combobox"
-            aria-expanded={searching}
-            aria-controls="popup-search-listbox"
-            aria-activedescendant={searchActiveId}
-            aria-label="Search collections and links"
-            placeholder="Search collections and links…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={handleSearchKeyDown}
-          />
-
-          {searching ? (
-            <div
-              id="popup-search-listbox"
-              role="listbox"
-              aria-label="Search results"
-              className="flex max-h-72 flex-col gap-2 overflow-y-auto"
-            >
-              {shownCollections.length > 0 ? (
-                <PopupResultGroup label="Collections">
-                  {shownCollections.map((c, i) => (
-                    <PopupResultRow
-                      key={c.id}
-                      id={`popup-search-option-${i}`}
-                      highlighted={searchHighlight === i}
-                      onActivate={() => activateSearchResult(i)}
-                    >
-                      <span
-                        className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: c.accent ?? "var(--text-2)" }}
-                      />
-                      <span className="truncate">{c.name}</span>
-                    </PopupResultRow>
-                  ))}
-                </PopupResultGroup>
-              ) : null}
-
-              {shownLinks.length > 0 ? (
-                <PopupResultGroup label="Links">
-                  {shownLinks.map((l, i) => {
-                    const flatIndex = shownCollections.length + i;
-                    return (
-                      <PopupResultRow
-                        key={l.id}
-                        id={`popup-search-option-${flatIndex}`}
-                        highlighted={searchHighlight === flatIndex}
-                        onActivate={() => activateSearchResult(flatIndex)}
-                      >
-                        <img
-                          src={l.faviconUrl ?? faviconFor(l.url)}
-                          alt=""
-                          width={14}
-                          height={14}
-                          className="shrink-0 rounded-[3px]"
-                          onError={(e) => {
-                            e.currentTarget.style.visibility = "hidden";
-                          }}
-                        />
-                        <span className="min-w-0 flex-1 truncate">{l.title}</span>
-                        <span
-                          className="shrink-0 truncate text-xs text-[var(--text-2)]"
-                          style={{ fontFamily: "var(--font-mono)" }}
-                        >
-                          {formatHost(l.url)}
-                        </span>
-                      </PopupResultRow>
-                    );
-                  })}
-                </PopupResultGroup>
-              ) : null}
-
-              {emptyStateFor(searchQuery, searchSettledQuery, shownTotal) === "no-results" ? (
-                <p className="px-1 py-2 text-xs text-[var(--text-2)]">
-                  No results for &ldquo;{searchQuery.trim()}&rdquo;.
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <>
-              <SaveBar
-                onSaveCurrent={() => handleSaveClick("current")}
-                onSaveAll={() => handleSaveClick("all")}
-                onSaveSelected={() => handleSaveClick("selected")}
-                allCount={allTabs?.length ?? 0}
-                showSelected={(selectedTabs?.length ?? 0) >= 2}
-                disabled={busy || !dataLoaded}
-              />
-
-              <div className="flex items-center justify-between gap-2 text-sm text-[var(--text-2)]">
-                <span className="truncate">
-                  Saving to:{" "}
-                  <span className="text-[var(--text)]">{target ? target.name : "Choose a collection"}</span>
-                </span>
-                <Button
-                  ref={changeTargetRef}
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => dispatch({ type: "CHANGE_TARGET_CLICK" })}
-                  disabled={busy || !collectionsLoaded}
-                >
-                  Change
-                </Button>
-              </div>
-
-              {actionError ? <p className="text-xs text-[var(--accent-2)]">{actionError}</p> : null}
-
-              <RecentList collections={collections ?? []} />
-            </>
-          )}
-        </>
-      )}
+      {actionError && state.view !== "folderDetail" ? (
+        <p className="text-xs text-[var(--accent)]">{actionError}</p>
+      ) : null}
 
       <footer className="mt-auto flex items-center justify-between border-t border-[var(--line)] pt-3">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={openDashboard}>
-            Open dashboard
+            Dashboard
           </Button>
           {cloudConfigured ? (
             authUser ? (
@@ -591,70 +413,7 @@ export function App() {
             )
           ) : null}
         </div>
-        <span className="flex items-center gap-1 text-xs text-[var(--text-2)]">
-          {searching ? (
-            <>
-              <Kbd>Enter</Kbd>
-              <span>open</span>
-              <Kbd>Esc</Kbd>
-              <span>clear</span>
-            </>
-          ) : (
-            <>
-              <Kbd>Enter</Kbd>
-              <span>save</span>
-              {/* Esc only does anything while the picker is open — only advertise it then. */}
-              {state.view === "picker" ? (
-                <>
-                  <Kbd>Esc</Kbd>
-                  <span>back</span>
-                </>
-              ) : null}
-            </>
-          )}
-        </span>
       </footer>
     </div>
-  );
-}
-
-function PopupResultGroup({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <h2 className="px-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-2)]">{label}</h2>
-      <div className="flex flex-col gap-0.5">{children}</div>
-    </div>
-  );
-}
-
-function PopupResultRow({
-  id,
-  highlighted,
-  onActivate,
-  children,
-}: {
-  id: string;
-  highlighted: boolean;
-  onActivate: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      id={id}
-      type="button"
-      role="option"
-      aria-selected={highlighted}
-      // Options are virtually highlighted via the input's
-      // aria-activedescendant (combobox pattern) — real DOM focus stays on
-      // the input. Without this, Tab lands on a row and arrow-key nav dies.
-      tabIndex={-1}
-      onClick={onActivate}
-      style={{ boxShadow: highlighted ? "2px 0 0 var(--accent) inset" : undefined }}
-      className={`flex w-full items-center gap-2 rounded-[var(--radius-card)] px-2 py-1.5 text-left text-sm ${
-        highlighted ? "bg-[var(--surface-hover)] text-[var(--text)]" : "text-[var(--text)] hover:bg-[var(--surface-hover)]"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
