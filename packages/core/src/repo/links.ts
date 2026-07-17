@@ -72,6 +72,144 @@ export async function saveTabs(
   });
 }
 
+/**
+ * Replaces every live link in `collectionId` with `tabs`, in one transaction.
+ * First tombstones each currently non-tombstoned link (set `deletedAt` +
+ * `updatedAt` to now, one `enqueueOp` per row that actually changed — the same
+ * discipline as `softDeleteLinks`), then appends `tabs` exactly the way
+ * `saveTabs` appends new rows: fresh positions from `positionBetween(maxPosition
+ * (allRows), null)` per new row. `maxPosition` scans ALL of the collection's
+ * rows (the just-created tombstones included, whose positions are untouched by
+ * tombstoning), so the new keys sort strictly after every tombstoned row and
+ * can never collide with one that is later restored.
+ *
+ * This is an overwrite, not a merge: tombstoned rows are never revived, so a
+ * new tab whose URL matches an old (now tombstoned) link still becomes a fresh
+ * live row. Duplicate URLs WITHIN the incoming `tabs` array collapse onto a
+ * single resulting row (same as `saveTabs`).
+ *
+ * Returns one Link per input tab (newly created, or the shared row for
+ * within-batch duplicates), in input order.
+ */
+export async function overwriteTabs(
+  collectionId: string,
+  tabs: TabInfo[],
+  db: BurrowDB = getDB(),
+): Promise<Link[]> {
+  return db.transaction("rw", db.links, db.pendingOps, async () => {
+    const existing = await db.links.where("collectionId").equals(collectionId).toArray();
+    const now = Date.now();
+
+    // Tombstone every currently-live link. Only enqueue for rows that actually
+    // changed, mirroring softDeleteLinks.
+    for (const link of existing) {
+      if (link.deletedAt !== null) continue;
+      const modified = await db.links.update(link.id, { deletedAt: now, updatedAt: now });
+      if (modified > 0) await enqueueOp(db, "links", link.id);
+    }
+
+    // Append the new tabs like saveTabs. `maxPosition(existing)` scans every
+    // row (tombstones included); tombstoning never touches `position`, so this
+    // is the same max the table holds now — the fresh keys sort strictly after
+    // all of them. No live rows remain, so `byUrl` starts empty and only
+    // collapses duplicates within this batch (tombstoned rows are never
+    // revived — this is an overwrite, not a merge).
+    let lastPosition = maxPosition(existing);
+    const byUrl = new Map<string, Link>();
+    const resultUrls: string[] = [];
+
+    for (const tab of tabs) {
+      const match = byUrl.get(tab.url);
+      if (match) {
+        const patch: Partial<Link> = { title: tab.title, updatedAt: now };
+        if (tab.faviconUrl !== undefined) patch.faviconUrl = tab.faviconUrl;
+        await db.links.update(match.id, patch);
+        await enqueueOp(db, "links", match.id);
+        byUrl.set(tab.url, { ...match, ...patch });
+      } else {
+        lastPosition = positionBetween(lastPosition, null);
+        const link: Link = {
+          id: crypto.randomUUID(),
+          collectionId,
+          url: tab.url,
+          title: tab.title,
+          faviconUrl: tab.faviconUrl ?? null,
+          note: null,
+          tags: [],
+          position: lastPosition,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+        await db.links.add(link);
+        await enqueueOp(db, "links", link.id);
+        byUrl.set(tab.url, link);
+      }
+      resultUrls.push(tab.url);
+    }
+
+    // Resolve returned rows only after the whole batch applies, so a URL
+    // appearing twice yields the FINAL persisted state in both slots.
+    return resultUrls.map((url) => byUrl.get(url)!);
+  });
+}
+
+/**
+ * Appends a single manually-entered link to the end of `collectionId`. When
+ * `title` is missing or empty it defaults to the URL's hostname (`new URL(url)
+ * .hostname`), falling back to the raw `url` string if the URL fails to parse
+ * (never throws). Dedupes by URL against the collection's non-tombstoned links
+ * exactly like `saveTabs`: a matching live link has its `title` updated in
+ * place (op enqueued) and is returned instead of a duplicate being inserted.
+ *
+ * Returns the resulting Link (updated live match, or the newly created row).
+ */
+export async function addLink(
+  collectionId: string,
+  input: { url: string; title?: string },
+  db: BurrowDB = getDB(),
+): Promise<Link> {
+  return db.transaction("rw", db.links, db.pendingOps, async () => {
+    const now = Date.now();
+    const title = input.title || hostnameOf(input.url);
+
+    const existing = await db.links.where("collectionId").equals(collectionId).toArray();
+    const match = existing.find((l) => l.deletedAt === null && l.url === input.url);
+    if (match) {
+      const patch: Partial<Link> = { title, updatedAt: now };
+      await db.links.update(match.id, patch);
+      await enqueueOp(db, "links", match.id);
+      return { ...match, ...patch };
+    }
+
+    const link: Link = {
+      id: crypto.randomUUID(),
+      collectionId,
+      url: input.url,
+      title,
+      faviconUrl: null,
+      note: null,
+      tags: [],
+      position: positionBetween(maxPosition(existing), null),
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    };
+    await db.links.add(link);
+    await enqueueOp(db, "links", link.id);
+    return link;
+  });
+}
+
+/** The URL's hostname, or the raw string if it can't be parsed as a URL. */
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
 export async function updateLink(
   id: string,
   patch: Partial<Pick<Link, "title" | "note" | "tags">>,
