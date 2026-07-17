@@ -154,7 +154,9 @@ export function AiOrganizeDialog({
   async function handleOrganize() {
     setView({ kind: "loading" });
     try {
-      const nextPlan = await organizeLinks(links, db);
+      // `engine` (local vs. cloud) is ignored here for now — a later task wires
+      // the on-device/cloud label into the UI.
+      const { plan: nextPlan } = await organizeLinks(links, db);
       setView({ kind: "preview", plan: nextPlan, included: nextPlan.groups.map(() => true) });
     } catch (err) {
       if (err instanceof AiOrganizeError) {

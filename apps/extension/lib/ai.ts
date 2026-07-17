@@ -11,6 +11,7 @@
 import type { BurrowDB, Collection, Link } from "@tabburrow/core";
 import { createCollection, getDB, getMeta, listCollections, moveLinkToEnd, setMeta, updateLink } from "@tabburrow/core";
 import { getAccessToken, getUser } from "./auth";
+import { LOCAL_MAX_LINKS, nanoAvailability, organizeLinksLocal } from "./ai-local";
 import { isSupabaseConfigured } from "./supabase";
 import { sendSyncNudge } from "./sync-nudge";
 
@@ -31,6 +32,15 @@ export interface AiPlan {
   groups: AiOrganizeGroup[];
   /** link id -> up to 5 short tags, straight from the function's response. */
   tags: Record<string, string[]>;
+}
+
+/** Which engine produced a plan: `"local"` = on-device Gemini Nano (free, private, unmetered); `"cloud"` = the metered Claude edge function. The dialog uses this to label the result (a later task) and to keep the cloud-quota display honest. */
+export type AiEngine = "local" | "cloud";
+
+/** What `organizeLinks` returns now that it routes between engines: the plan plus which engine produced it. */
+export interface AiOrganizeResult {
+  plan: AiPlan;
+  engine: AiEngine;
 }
 
 export type AiOrganizeErrorKind = "quota" | "upstream" | "auth" | "network";
@@ -135,27 +145,56 @@ export function parseOrganizeResponse(raw: unknown): AiPlan {
 // ---------------------------------------------------------------------------
 
 /**
- * Calls the `ai-organize` Edge Function with `links` mapped to the wire
- * shape, authenticated with the current session's access token. Never
- * mutates local data — a pure "ask the AI for a plan" round trip; the
- * caller (AiOrganizeDialog) decides what to do with the result, and only
- * `applyPlan` (below), fired from an explicit user action, ever writes
- * anything.
+ * Produces an AI organize plan, choosing the engine automatically: on-device
+ * Gemini Nano first (free, private, unmetered) when it's ready and the batch
+ * fits its small context window, otherwise the metered Claude cloud path.
+ * Either way it NEVER mutates local data — a pure "ask the AI for a plan"
+ * round trip; only `applyPlan` (below), fired from an explicit user action,
+ * ever writes anything. Returns `{ plan, engine }` so the caller can label
+ * which engine ran.
  *
- * On success, bumps the local display-only "uses this month" counter (see
- * `recordAiUseLocally`) — the server increments the AUTHORITATIVE count
- * atomically as part of the same request (supabase/migrations/0004_ai_metering.sql);
- * this one is purely so the dialog/popup can show "X of 30 left" without an
- * extra round trip, and can drift (a failed local write, a second device)
- * without anything breaking — the server 402s regardless.
+ * Local is used only when `nanoAvailability()` is exactly `"available"` (never
+ * `"downloadable"`/`"downloading"` — those need a user gesture to kick off the
+ * multi-GB download, and this function may be called without one) AND the
+ * batch is within `LOCAL_MAX_LINKS`. ANY local failure (including a
+ * `"too_many"` batch, or Nano vanishing mid-flight) falls through to the exact
+ * same cloud path below, so the user always gets a plan when cloud is reachable.
  *
- * Throws `AiOrganizeError`:
+ * The cloud path is unchanged from before: authenticated with the current
+ * session's access token, and on success it bumps the local display-only "uses
+ * this month" counter (see `recordAiUseLocally`) — the server increments the
+ * AUTHORITATIVE count atomically as part of the same request
+ * (supabase/migrations/0004_ai_metering.sql); this one is purely so the
+ * dialog/popup can show "X of 30 left" without an extra round trip, and can
+ * drift without anything breaking — the server 402s regardless. The local path
+ * is deliberately NOT metered (free + unlimited).
+ *
+ * Throws `AiOrganizeError` (from the cloud path only):
  *  - "auth" — cloud not configured, or not signed in (no access token).
  *  - "network" — the fetch itself failed (offline, DNS, ...).
  *  - "quota" — 402, carries `used`/`limit` from the response body.
  *  - "upstream" — 401/anything else non-2xx, or a malformed 200 body.
  */
-export async function organizeLinks(links: Link[], db: BurrowDB = getDB()): Promise<AiPlan> {
+export async function organizeLinks(links: Link[], db: BurrowDB = getDB()): Promise<AiOrganizeResult> {
+  // Engine choice: on-device first when Nano is ready and the batch fits.
+  if (links.length <= LOCAL_MAX_LINKS) {
+    let availability: Awaited<ReturnType<typeof nanoAvailability>>;
+    try {
+      availability = await nanoAvailability();
+    } catch {
+      availability = "unavailable";
+    }
+    if (availability === "available") {
+      try {
+        const plan = await organizeLinksLocal(links);
+        return { plan, engine: "local" };
+      } catch {
+        // Any on-device failure (too_many, model/shape error, Nano gone)
+        // falls through to the metered cloud path below.
+      }
+    }
+  }
+
   if (!isSupabaseConfigured()) {
     throw new AiOrganizeError("auth", "Cloud features are not configured for this build.");
   }
@@ -201,7 +240,7 @@ export async function organizeLinks(links: Link[], db: BurrowDB = getDB()): Prom
   const user = await getUser();
   if (user) await recordAiUseLocally(user.id, db);
 
-  return plan;
+  return { plan, engine: "cloud" };
 }
 
 // ---------------------------------------------------------------------------
