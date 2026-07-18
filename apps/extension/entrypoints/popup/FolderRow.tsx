@@ -26,10 +26,15 @@ function AccentDot({ accent }: { accent: string | null }) {
       </span>
     );
   }
+  // Unset folders default to an accent-orange dot with a soft orange underglow,
+  // so the bullets carry the separation from the background now that rows are
+  // bare at rest. A folder with its own accent keeps that color (and glows in
+  // it). The glow is a color-mixed box-shadow, not a new hardcoded hex.
+  const color = accent ?? "var(--accent)";
   return (
     <span
-      className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-inset ring-[var(--line-hi)]"
-      style={{ backgroundColor: accent ?? "var(--muted)" }}
+      className="h-2.5 w-2.5 shrink-0 rounded-full"
+      style={{ backgroundColor: color, boxShadow: `0 0 7px 1px color-mix(in srgb, ${color} 55%, transparent)` }}
       aria-hidden="true"
     />
   );
@@ -64,7 +69,7 @@ export function FolderRow({ collection, onOpen, onAddCurrent, canAddCurrent, onE
   }
 
   return (
-    <div className="group flex items-center gap-1 rounded-[var(--radius-card)] border border-transparent bg-[var(--surface)] pr-1 transition-all duration-150 hover:border-[var(--line-hi)] hover:bg-[var(--surface-hover)] hover:shadow-[0_2px_10px_rgba(0,0,0,0.28)] focus-within:border-[var(--line-hi)] focus-within:bg-[var(--surface-hover)]">
+    <div className="group flex items-center gap-1 rounded-[var(--radius-card)] border border-transparent pr-1 transition-all duration-150 hover:border-[var(--line-hi)] hover:bg-[var(--surface-hover)] hover:shadow-[0_2px_10px_rgba(0,0,0,0.28)] focus-within:border-[var(--line-hi)] focus-within:bg-[var(--surface-hover)]">
       <button
         type="button"
         onClick={() => onOpen(collection.id)}

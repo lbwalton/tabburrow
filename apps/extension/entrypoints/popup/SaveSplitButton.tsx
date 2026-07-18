@@ -140,7 +140,11 @@ export function SaveSplitButton({
           className="absolute right-0 top-full z-50 mt-1 w-56 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface)] p-1 shadow-lg"
         >
           <MenuItem onClick={() => runItem(onSaveCurrent)}>Save this tab</MenuItem>
+          {selectedCount >= 2 ? (
+            <MenuItem onClick={() => runItem(onSaveSelected)}>Save selected tabs ({selectedCount})</MenuItem>
+          ) : null}
 
+          <MenuDivider />
           <MenuGroupLabel>Save all tabs ({allCount})</MenuGroupLabel>
           <MenuItem indent onClick={() => runItem(onSaveAll)}>
             {saveAllToLabel}
@@ -152,15 +156,16 @@ export function SaveSplitButton({
             New folder (named by AI)
           </MenuItem>
 
-          {selectedCount >= 2 ? (
-            <MenuItem onClick={() => runItem(onSaveSelected)}>Save selected tabs ({selectedCount})</MenuItem>
-          ) : null}
-
+          <MenuDivider />
           <MenuItem onClick={() => runItem(onChangeDefault)}>Change default folder…</MenuItem>
         </div>
       ) : null}
     </div>
   );
+}
+
+function MenuDivider() {
+  return <div role="separator" className="my-1 h-px bg-[var(--line)]" />;
 }
 
 function MenuGroupLabel({ children }: { children: ReactNode }) {
