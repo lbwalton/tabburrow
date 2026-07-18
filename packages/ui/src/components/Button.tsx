@@ -26,7 +26,10 @@ const sizeClasses: Record<ButtonSize, string> = {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary: "bg-[var(--accent)] text-[var(--btn-fg)] hover:brightness-110 active:brightness-95",
-  ghost: "bg-transparent text-[var(--text)] border border-[var(--line)] hover:bg-[var(--surface-hover)] hover:border-[var(--line-hi)]",
+  // A translucent cream lift (not a solid --surface fill) so a ghost button
+  // reads as raised on BOTH the dark ground AND inside a --surface dialog,
+  // where a solid --surface fill would blend into the dialog.
+  ghost: "bg-[color-mix(in_srgb,var(--text)_6%,transparent)] text-[var(--text)] border border-[var(--line)] hover:bg-[var(--surface-hover)] hover:border-[var(--line-hi)]",
   danger: "bg-transparent text-[var(--accent)] border border-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--btn-fg)]",
 };
 

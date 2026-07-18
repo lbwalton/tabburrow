@@ -262,22 +262,29 @@ export function FoldersHome(props: FoldersHomeProps) {
       </header>
 
       {dataLoaded ? (
-        <div className="flex items-center justify-between gap-2 px-1">
-          <p className="min-w-0 truncate text-xs text-[var(--text-2)]">
-            {targetName ? (
-              <>
-                Saving to <span className="font-medium text-[var(--text)]">{targetName}</span>
-              </>
-            ) : (
-              "Choose a folder"
-            )}
-          </p>
+        <div className="flex items-center gap-2.5 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--bg-well)] px-2.5 py-2">
+          <span
+            aria-hidden="true"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--accent-2)_18%,transparent)] text-[var(--accent-2)]"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="8" />
+              <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+              <path d="M12 2v2M12 20v2M2 12h2M20 12h2" />
+            </svg>
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-2)]">
+              1-click Save goes to
+            </p>
+            <p className="truncate text-sm font-medium text-[var(--text)]">{targetName ?? "a folder you choose"}</p>
+          </div>
           <button
             type="button"
             onClick={onChangeTarget}
-            className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-xs text-[var(--accent)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            className="shrink-0 rounded-[8px] border border-[var(--line-hi)] bg-[var(--surface)] px-2.5 py-1 text-xs font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           >
-            Change
+            {targetName ? "Change" : "Choose"}
           </button>
         </div>
       ) : null}
@@ -379,7 +386,7 @@ export function FoldersHome(props: FoldersHomeProps) {
             </button>
           </div>
 
-          <div className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
+          <div className="flex max-h-72 flex-col gap-1 overflow-y-auto py-0.5">
             {ordered.map((c) => (
               <FolderRow
                 key={c.id}

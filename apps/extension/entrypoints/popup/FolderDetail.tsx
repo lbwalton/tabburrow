@@ -205,12 +205,31 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
             className="h-8 flex-1"
           />
         ) : (
-          <h1
-            className="min-w-0 flex-1 truncate text-base font-semibold text-[var(--text)]"
+          <button
+            type="button"
+            onClick={() => setRenaming(true)}
+            title="Click to rename"
+            aria-label={`Rename folder ${collection.name}`}
+            className="group/title flex min-w-0 flex-1 items-center gap-1.5 truncate rounded-[6px] px-1 py-0.5 text-left text-base font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            {collection.name}
-          </h1>
+            <span className="truncate">{collection.name}</span>
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              className="shrink-0 text-[var(--text-2)] opacity-0 transition-opacity group-hover/title:opacity-100 group-focus-visible/title:opacity-100"
+            >
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+          </button>
         )}
 
         <Badge variant="muted">{allTabsCount}</Badge>

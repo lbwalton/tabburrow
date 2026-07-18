@@ -28,8 +28,8 @@ function AccentDot({ accent }: { accent: string | null }) {
   }
   return (
     <span
-      className="h-2.5 w-2.5 shrink-0 rounded-full"
-      style={{ backgroundColor: accent ?? "var(--text-2)" }}
+      className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-inset ring-[var(--line-hi)]"
+      style={{ backgroundColor: accent ?? "var(--muted)" }}
       aria-hidden="true"
     />
   );
@@ -64,7 +64,7 @@ export function FolderRow({ collection, onOpen, onAddCurrent, canAddCurrent, onE
   }
 
   return (
-    <div className="group flex items-center gap-1 rounded-[var(--radius-card)] pr-1 hover:bg-[var(--surface-hover)] focus-within:bg-[var(--surface-hover)]">
+    <div className="group flex items-center gap-1 rounded-[var(--radius-card)] border border-transparent bg-[var(--surface)] pr-1 transition-all duration-150 hover:border-[var(--line-hi)] hover:bg-[var(--surface-hover)] hover:shadow-[0_2px_10px_rgba(0,0,0,0.28)] focus-within:border-[var(--line-hi)] focus-within:bg-[var(--surface-hover)]">
       <button
         type="button"
         onClick={() => onOpen(collection.id)}
