@@ -111,7 +111,7 @@ requirements).
    redesigned hub): the "1-click Save goes to Kitchen reno research" control
    with a pinned default, the full folder list with live link counts, one row
    hovered so its quick actions (add current tab, open all) are visible, and
-   the dismissible Pro strip — composited over a real captured tab titled
+   the dismissible Pro strip, composited over a real captured tab titled
    "Sourdough Starter Guide - King Arthur Baking" so the shot reads as a real
    session. (Playwright cannot drive the real toolbar popup overlay — see
    `apps/extension/e2e/MANUAL.md` — so this is a real screenshot of the
