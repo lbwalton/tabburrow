@@ -41,8 +41,11 @@ WHY TABBURROW
   choose if and when to sign in.
 
 • AI auto-organize, with a preview. One click groups and tags your tabs by
-  intent. You see exactly what moves where before anything changes;
-  nothing is ever applied automatically. (PRO, launching with v1.0.)
+  intent, and you see exactly what moves where before anything changes;
+  nothing is ever applied automatically. On a capable desktop Chrome it
+  runs on-device with Chrome's built-in Gemini Nano: free, and nothing
+  leaves your browser. Cloud AI (Claude) covers any device with a signed-in
+  account.
 
 • Open source, AGPL-3.0. Every part of TabBurrow (the popup, the
   dashboard, the sync engine, the AI organize function) is public on
@@ -70,20 +73,22 @@ WHAT YOU CAN DO TODAY
 FREE VS PRO
 
 Local saving, organizing, sessions, search, and import/export are free,
-unlimited, forever: no trial, no nag screens. PRO ($4/month or
-$29/year) adds cloud sync across devices, shareable collection pages, and
-unlimited AI organize (free accounts get 30 AI organize runs a month).
-Prefer to run your own backend? Self-host the entire stack, including AI
-organize with your own API key, for $0; see the self-hosting guide on
-GitHub.
+unlimited, forever: no trial, no nag screens. On-device AI organize
+(Chrome's built-in Gemini Nano, on a capable desktop Chrome) is free too.
+PRO ($4/month or $29/year) adds cloud sync across devices, shareable
+collection pages, and unlimited cloud AI organize (free accounts get 30
+cloud runs a month). Prefer to run your own backend? Self-host the entire
+stack, including cloud AI organize with your own API key, for $0; see the
+self-hosting guide on GitHub.
 
 PRIVACY
 
 TabBurrow works fully offline by default; nothing leaves your device
-unless you sign in. AI organize sends only link titles and URLs, never
-page content. TabBurrow runs no ads, uses no ad trackers, and does not
-sell your data. Full privacy policy and source code are linked from the
-GitHub repository.
+unless you sign in. On-device AI organize runs entirely in your browser
+and sends nothing anywhere. The cloud AI path sends only link titles and
+URLs, never page content. TabBurrow runs no ads, uses no ad trackers, and
+does not sell your data. Full privacy policy and source code are linked
+from the GitHub repository.
 
 Built in the open: every commit is public, every acceptance criterion is
 checked before it ships.
@@ -102,12 +107,13 @@ URLs (referenced by title/URL only, never fetched). Re-run with
 stack running — see the script's own header comment for the full
 requirements).
 
-1. **`screenshots/01-popup-save.png`** — Popup save, mid-flow: the
-   extension's popup open on "Save to…" (clicked "Change" from a warm
-   "Saving to: Kitchen reno research" state), with the collection picker
-   list visible, composited over a real captured tab titled "Sourdough
-   Starter Guide - King Arthur Baking" so the shot reads as a real save in
-   progress. (Playwright cannot drive the real toolbar popup overlay — see
+1. **`screenshots/01-popup-save.png`** — The popup's folders home (the
+   redesigned hub): the "1-click Save goes to Kitchen reno research" control
+   with a pinned default, the full folder list with live link counts, one row
+   hovered so its quick actions (add current tab, open all) are visible, and
+   the dismissible Pro strip — composited over a real captured tab titled
+   "Sourdough Starter Guide - King Arthur Baking" so the shot reads as a real
+   session. (Playwright cannot drive the real toolbar popup overlay — see
    `apps/extension/e2e/MANUAL.md` — so this is a real screenshot of the
    popup's own DOM composited onto a real background-tab screenshot, not an
    invented browser chrome.)
