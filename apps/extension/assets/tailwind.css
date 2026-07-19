@@ -75,3 +75,33 @@
     opacity: 0.85;
   }
 }
+
+/* Actuation glow: a brief accent underglow pulse when a control is pressed,
+   confirming the tap. lib/actuation.ts adds .tb-actuate to the nearest
+   button / link / menuitem / option on pointerdown and removes it on
+   animationend. Token color only (--accent); the box-shadow follows the
+   element's own border-radius, so a rounded control glows with a rounded
+   halo. Deliberately short and small — tactile, not decorative. */
+.tb-actuate {
+  animation: tb-actuate-glow 340ms ease-out;
+}
+
+@keyframes tb-actuate-glow {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  55% {
+    box-shadow: 0 0 12px 3px color-mix(in srgb, var(--accent) 42%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+}
+
+/* Pointer-triggered only (see lib/actuation.ts), so keyboard focus rings are
+   never overridden — but honor the OS reduce-motion opt-out regardless. */
+@media (prefers-reduced-motion: reduce) {
+  .tb-actuate {
+    animation: none;
+  }
+}
