@@ -11,13 +11,13 @@ export const SITE_TAGLINE = "Your tabs deserve a burrow.";
 export const SITE_DESCRIPTION =
   "Open-source, local-first tab and bookmark manager for Chrome. Save a tab, a selection, or a whole window in one click, zero signup. Free on-device AI organizing on a capable Chrome, with cloud sync and cloud AI as PRO options.";
 
+export const GITHUB_URL = "https://github.com/lbwalton/tabburrow";
+
 /**
- * TODO(T25): the GitHub repo isn't public yet and the Chrome Web Store
- * listing hasn't shipped. Both stay "#" until those go live; every CTA on
- * the site reads from these two constants, so flipping them here is the
- * only change needed once the repo/listing are public.
+ * TODO(launch): stays "#" until the Chrome Web Store listing is approved and
+ * live. Every install CTA on the site reads from this constant, so flipping it
+ * here is the only change needed once the listing ships.
  */
-export const GITHUB_URL = "#";
 export const CHROME_STORE_URL = "#";
 
 export const PRICING = {

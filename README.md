@@ -4,8 +4,8 @@
 
 **Your tabs, saved in one click, yours forever. No account required. AI organizing and cloud sync land with v1.0.**
 
-[![CI](REPO_URL_PLACEHOLDER/actions/workflows/ci.yml/badge.svg)](REPO_URL_PLACEHOLDER/actions/workflows/ci.yml)
-[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-B9C3BB)](REPO_URL_PLACEHOLDER/blob/main/LICENSE)
+[![CI](https://github.com/lbwalton/tabburrow/actions/workflows/ci.yml/badge.svg)](https://github.com/lbwalton/tabburrow/actions/workflows/ci.yml)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-B9C3BB)](https://github.com/lbwalton/tabburrow/blob/main/LICENSE)
 [![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-coming%20soon-F97316)](#project-status)
 
 TabBurrow is an open-source, local-first tab and bookmark manager for Chrome.
@@ -61,7 +61,7 @@ built.
 **Build from source:**
 
 ```sh
-git clone REPO_URL_PLACEHOLDER.git
+git clone https://github.com/lbwalton/tabburrow.git
 cd tabburrow
 pnpm install
 pnpm --filter extension build

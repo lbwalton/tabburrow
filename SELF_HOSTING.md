@@ -343,4 +343,4 @@ pointing at wherever this app is actually reachable.
 
 ## Questions or issues
 
-Open an issue: [REPO_URL_PLACEHOLDER/issues](REPO_URL_PLACEHOLDER/issues).
+Open an issue: [https://github.com/lbwalton/tabburrow/issues](https://github.com/lbwalton/tabburrow/issues).

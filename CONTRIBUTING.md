@@ -10,7 +10,7 @@ get productive quickly.
 Requires **Node 20+** and **pnpm 9+**.
 
 ```sh
-git clone REPO_URL_PLACEHOLDER.git
+git clone https://github.com/lbwalton/tabburrow.git
 cd tabburrow
 pnpm install
 ```
