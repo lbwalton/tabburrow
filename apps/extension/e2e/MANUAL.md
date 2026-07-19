@@ -156,3 +156,42 @@ REAL customer clicking through Stripe's hosted Checkout UI is simulated
 with Stripe's documented test card (4242 4242 4242 4242), never a live
 card — that's Stripe's own test-mode guarantee, not something this harness
 needs to re-verify.
+
+## 9. On-device AI (Gemini Nano) via the Prompt API
+
+"Organize with AI" and the caret's "New folder (named by AI)" run on Chrome's
+built-in Gemini Nano through the Prompt API (`LanguageModel`), on-device.
+
+Two reasons this is a real-Chrome-only check:
+- **No manifest permission is (or should be) needed.** The Prompt API is
+  available to extension pages on Chrome 138+ with no extra `permissions` entry
+  (verified against developer.chrome.com/docs/ai/prompt-api, 2026-07-18). The
+  expired `aiLanguageModelOriginTrial` permission is deliberately NOT in
+  `wxt.config.ts` — adding it would be flagged, not helpful.
+- **The harness Chromium has no Gemini Nano model**, so `LanguageModel` is
+  absent there and the code correctly treats AI as unavailable. The
+  "New folder (named by AI)" flow keeps its "New folder" placeholder and never
+  errors (this graceful path IS covered by the specs); the actual on-device
+  naming/organizing is what needs a human on real Chrome.
+
+**Check** (on a machine that meets the requirements: desktop Chrome 138+, ~22GB
+free disk, a GPU with >4GB VRAM or 16GB RAM + 4 cores):
+1. **Availability + first-run download.** In the popup or dashboard DevTools
+   console: `await LanguageModel.availability()`. Expect `"downloadable"` (first
+   time) then `"available"`. If `"unavailable"`, enable
+   `chrome://flags/#prompt-api-for-gemini-nano` and
+   `chrome://flags/#optimization-guide-on-device-model`, restart, and confirm on
+   `chrome://on-device-internals`.
+2. **New folder named by AI.** Open a few http tabs, Save caret →
+   "New folder (named by AI)". All tabs save into a folder; once Nano finishes,
+   it renames from "New folder" to a short AI name (a brief "Named this folder
+   …" notice). If Nano is still downloading or unavailable it stays "New folder"
+   and you rename by hand — never an error, never a lost save.
+3. **Organize with AI.** In the dashboard, open a messy folder →
+   "Organize with AI". With Nano available it groups the links on-device
+   (nothing leaves the machine).
+
+Note: the hosted cloud (Pro) AI path is not deployed in this build, so on a
+machine WITHOUT Nano the AI features simply have no engine and degrade
+gracefully; they light up once Nano is available (or a cloud endpoint is
+deployed and configured).

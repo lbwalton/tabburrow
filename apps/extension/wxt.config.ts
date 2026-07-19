@@ -9,6 +9,11 @@ export default defineConfig({
   }),
   manifest: (env) => ({
     name: "TabBurrow: Tab & Bookmark Manager",
+    // The on-device AI (Gemini Nano via the Prompt API, `LanguageModel`) needs
+    // NO permission here: it's available to extension pages on Chrome 138+ with
+    // no manifest entry (developer.chrome.com/docs/ai/prompt-api, checked
+    // 2026-07-18). The old `aiLanguageModelOriginTrial` permission is expired
+    // and intentionally absent — see e2e/MANUAL.md §9.
     permissions: ["tabs", "storage", "favicon", "identity", "alarms"],
     // Supabase: any hosted/self-hosted *.supabase.co project (T15) always
     // gets host access. The local dev stack's fixed loopback origin
