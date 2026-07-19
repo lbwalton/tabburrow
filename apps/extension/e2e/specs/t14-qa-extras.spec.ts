@@ -150,7 +150,7 @@ test("window resize is handled without breaking the layout", async ({ cleanDashb
   await dashboard.setViewportSize({ width: 1400, height: 900 });
 });
 
-test("double-click spam on 'Save this tab' (warm target) saves exactly once", async ({
+test("double-click spam on the 'Save' button (warm target) saves exactly once", async ({
   context,
   extensionId,
   testServer,
@@ -158,7 +158,9 @@ test("double-click spam on 'Save this tab' (warm target) saves exactly once", as
 }) => {
   const dashboard = cleanDashboard;
   await seedCollectionsAndLinks(dashboard, [{ id: "spam-col", name: "Spam Collection", position: seedPosition(0) }], []);
-  await seedMeta(dashboard, { lastUsedCollectionId: "spam-col" });
+  // Pin it as the default so the redesigned "Save" split button has a warm,
+  // one-click target (the current popup resolves from defaultCollectionId).
+  await seedMeta(dashboard, { defaultCollectionId: "spam-col", saveTargetMode: "default" });
 
   const httpPage = await context.newPage();
   await httpPage.goto(testServer.pageUrl("Spam Save Page"));
@@ -166,12 +168,15 @@ test("double-click spam on 'Save this tab' (warm target) saves exactly once", as
   const popup = await popupPage(context, extensionId);
   await httpPage.bringToFront();
 
-  await expect(popup.getByText(/Saving to:\s*Spam Collection/)).toBeVisible();
-  const saveBtn = popup.getByRole("button", { name: "Save this tab" });
-  // Fire two clicks back-to-back without awaiting the first's effects —
-  // this is the "double-click spam" scenario: does the busy/disabled guard
-  // win the race, or does a second save slip through before React commits
-  // the disabled state?
+  // Warm: the "1-click Save goes to" line shows the pinned folder (its button
+  // reads "Change"), so the main "Save" click saves straight away, no picker.
+  await expect(popup.getByRole("button", { name: "Change", exact: true })).toBeVisible();
+  const saveBtn = popup.getByRole("button", { name: "Save", exact: true });
+  // Fire two clicks back-to-back without awaiting the first's effects — this
+  // is the "double-click spam" scenario. The warm path fires performSave
+  // directly (the view doesn't change until the save resolves), so both clicks
+  // land; saveTabs' per-URL dedupe (in a serialized Dexie rw transaction) is
+  // what keeps it to a single link.
   await Promise.all([saveBtn.click(), saveBtn.click()]);
   await expect(popup.getByText(/Saved \d+ tabs? to Spam Collection/)).toBeVisible();
 
