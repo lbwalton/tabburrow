@@ -95,13 +95,18 @@ const MIXED_LINKS: Array<{ title: string; url: string }> = [
 
 test(
   "live: organize 12 mixed links, uncheck a group, apply — rail gains the accepted groups' collections, source count drops, tags visible",
-  { tag: "@live-ai" },
+  // timeout lives in the OPTIONS object, not test.setTimeout() inside the
+  // body: the body's first await (probeAiOrganizeReachable) runs before a
+  // body-level setTimeout takes effect, and the run was observed failing at
+  // the 30s config default despite the old setTimeout(120_000) below it.
+  // 240s total because the live Anthropic call alone was measured at ~20s for
+  // 4 links on 2026-07-19 (12 links proportionally more, plus OTP sign-in).
+  { tag: "@live-ai", timeout: 240_000 },
   async () => {
     test.skip(!SERVICE_ROLE_KEY, "SUPABASE_SERVICE_ROLE_KEY not set in root .env — see SELF_HOSTING.md");
     test.skip(!ANTHROPIC_API_KEY, "ANTHROPIC_API_KEY not set in root .env — this test needs a real key");
     const reachable = await probeAiOrganizeReachable();
     test.skip(!reachable, "ai-organize function not reachable on the local stack — is `supabase start` running?");
-    test.setTimeout(120_000);
 
     const email = "e2e-ai-organize-live@tabburrow.test";
     await cleanupStrayUser(email);
@@ -138,10 +143,11 @@ test(
       await expect(dialog.getByText(/of 30 left this month/)).toBeVisible();
       await dialog.getByRole("button", { name: "Organize", exact: true }).click();
 
-      // The live Anthropic call — T19's report observed ~6.5s for 10 links;
-      // budget generously for network variance.
+      // The live Anthropic call — T19's report observed ~6.5s for 10 links,
+      // but 2026-07-19 measured ~20s for a 4-link call; budget for the API's
+      // slow days, not its fast ones.
       const groupCards = dialog.getByRole("group");
-      await expect(groupCards.first()).toBeVisible({ timeout: 45_000 });
+      await expect(groupCards.first()).toBeVisible({ timeout: 150_000 });
 
       const groupCount = await groupCards.count();
       expect(groupCount).toBeGreaterThanOrEqual(2); // server relaxes to 1 only under 4 input links

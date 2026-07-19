@@ -320,7 +320,15 @@ async function seedMainCollections(dash: Page) {
     ...toSeedLinks(recipesId, RECIPES_LINKS),
   ];
   await seedCollectionsAndLinks(dash, collections, links);
-  await seedMeta(dash, { lastUsedCollectionId: kitchenRenoId }); // duplicated literal — see lib/commands.ts's LAST_USED_COLLECTION_META_KEY
+  // Duplicated literals — see lib/commands.ts's LAST_USED_COLLECTION_META_KEY and
+  // lib/saveTarget.ts's meta keys. defaultCollectionId + saveTargetMode make the
+  // redesigned popup's "1-click Save goes to Kitchen reno research" control show
+  // a real pinned target in shot 01 instead of the unset "a folder you choose".
+  await seedMeta(dash, {
+    lastUsedCollectionId: kitchenRenoId,
+    defaultCollectionId: kitchenRenoId,
+    saveTargetMode: "default",
+  });
   await dash.reload();
 
   return { kitchenRenoId, competitorId, portlandId, devDocsId, recipesId };
@@ -426,7 +434,11 @@ async function phaseMain(): Promise<void> {
     // --- Shot 02: dashboard grid — own separate context/session, signed-in PRO (see phaseDashboardGrid's docstring above) ---
     await phaseDashboardGrid();
 
-    // --- Shot 01: popup save (mid-flow, picker open, over a real tab) ---
+    // --- Shot 01: the redesigned popup's folders home over a real tab — the
+    // "1-click Save goes to" control with a pinned target (seeded above), the
+    // full folder list with live counts, and one row hovered so its quick
+    // actions (+ / open-all) are visible. This IS the product now; the old
+    // mid-flow picker shot showed a UI that no longer exists. ---
     const bgPage = await context.newPage();
     await bgPage.setViewportSize(STORE_VIEWPORT);
     await bgPage.goto(localServer.pageUrl("Sourdough Starter Guide - King Arthur Baking"));
@@ -434,10 +446,13 @@ async function phaseMain(): Promise<void> {
 
     const popup = await popupPage(context, extensionId);
     await bgPage.bringToFront();
-    await expect(popup.getByText(/Saving to:\s*Kitchen reno research/)).toBeVisible();
-    await popup.getByRole("button", { name: "Change" }).click();
-    await expect(popup.getByText("Save to…")).toBeVisible();
-    await expect(popup.getByText("Kitchen reno research", { exact: true })).toBeVisible();
+    await expect(popup.getByText("1-click Save goes to")).toBeVisible();
+    // The pinned target's name appears in BOTH the save-target control and the
+    // folder list (that duplication is the point of the shot) — .first() keeps
+    // the strict-mode locator happy.
+    await expect(popup.getByText("Kitchen reno research", { exact: true }).first()).toBeVisible();
+    await popup.locator("div.group", { hasText: "Weekend in Portland" }).first().hover();
+    await popup.waitForTimeout(250);
 
     const bgShotBuf = await bgPage.screenshot();
     const popupShotBuf = await popup.locator("#root > div").screenshot();
@@ -557,7 +572,9 @@ async function phaseMain(): Promise<void> {
         const dialog = dash.getByRole("dialog", { name: "Organize with AI" });
         await expect(dialog).toBeVisible();
         await dialog.getByRole("button", { name: "Organize", exact: true }).click();
-        await expect(dialog.getByRole("group").first()).toBeVisible({ timeout: 45_000 });
+        // Generous: the live call was measured at ~20s for 4 links on a slow
+        // day (2026-07-19), and this shot sends 16.
+        await expect(dialog.getByRole("group").first()).toBeVisible({ timeout: 150_000 });
         await dash.waitForTimeout(300);
         await dash.screenshot({ path: path.join(SCREENSHOTS_DIR, "03-ai-organize-preview.png") });
         console.log("  wrote screenshots/03-ai-organize-preview.png (1280x800)");
@@ -908,7 +925,10 @@ async function phaseGif(): Promise<void> {
     await tabB.bringToFront();
     const popup = await popupPage(context, extensionId);
     await tabB.bringToFront();
-    await popup.getByRole("button", { name: /Save all tabs/ }).click();
+    // Redesigned popup: "Save all" lives in the Save split-button's caret menu;
+    // "Choose a folder…" opens the picker with the save-all pending.
+    await popup.getByRole("button", { name: "More save options" }).click();
+    await popup.getByRole("menuitem", { name: "Choose a folder…" }).click();
     await popup.getByPlaceholder("Collection name").fill("Quick Saves");
     await popup.getByRole("button", { name: "Create" }).click();
     await expect(popup.getByText(/Saved 2 tabs to Quick Saves/)).toBeVisible();
