@@ -27,7 +27,7 @@ export default function UpgradeSuccessPage() {
           You&apos;re PRO now.
         </h1>
         <p className="mt-4 text-[var(--ink-soft)]">
-          Cloud sync, shareable collections, and unlimited AI organize are unlocked on your account.
+          Cloud sync, shareable collections, and cloud AI organize are unlocked on your account.
         </p>
         <p className="mt-4 text-sm text-[var(--ink-soft)]">
           The extension usually picks this up within 12 hours on its own. To see PRO right away, open the

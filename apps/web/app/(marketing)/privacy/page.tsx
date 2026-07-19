@@ -70,12 +70,15 @@ export default function PrivacyPage() {
                 What AI organize sends
               </h2>
               <p className="mt-3">
-                When you run AI organize, TabBurrow sends only the{" "}
-                <strong>titles and URLs</strong> of the links in that
-                collection to Claude (Anthropic) through our server-side
-                function. It never sends the content of the pages themselves.
-                Suggested groupings and tags are shown to you as a preview;
-                nothing is applied until you confirm it.
+                On a capable desktop Chrome, AI organize runs on-device with
+                Chrome&apos;s built-in Gemini Nano, so nothing about your links
+                leaves your browser at all. When the on-device model is not
+                available, or a folder is too large for it, the cloud path
+                sends only the <strong>titles and URLs</strong> of the links in
+                that collection to Claude (Anthropic) through our server-side
+                function, never the content of the pages themselves. Either
+                way, suggested groupings and tags are shown to you as a
+                preview; nothing is applied until you confirm it.
               </p>
             </div>
 
@@ -136,10 +139,10 @@ export default function PrivacyPage() {
                 Open source
               </h2>
               <p className="mt-3">
-                TabBurrow&apos;s source, including the sync and AI organize
-                server code, is AGPL-3.0 licensed and publicly auditable, so
-                you can verify these claims against the actual code rather
-                than take our word for it.
+                TabBurrow&apos;s source, including the sync code and both the
+                on-device and cloud AI organize code, is AGPL-3.0 licensed and
+                publicly auditable, so you can verify these claims against the
+                actual code rather than take our word for it.
               </p>
             </div>
 

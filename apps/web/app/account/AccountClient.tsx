@@ -307,7 +307,7 @@ export function AccountClient() {
         {plan === "pro" ? (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-[var(--ink-soft)]">
-              You&apos;re on PRO: cloud sync, sharing, and unlimited AI organize.
+              You&apos;re on PRO: cloud sync, sharing, and cloud AI organize.
             </p>
             <Button
               type="button"
@@ -320,7 +320,7 @@ export function AccountClient() {
         ) : plan === "free" ? (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-[var(--ink-soft)]">
-              Upgrade to PRO for cloud sync, sharing, and unlimited AI organize.
+              Upgrade to PRO for cloud sync, sharing, and cloud AI organize.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button

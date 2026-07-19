@@ -28,8 +28,8 @@ const FEATURES = [
     body: "Everything runs on your device from the very first tab you save. Collections live in your browser's IndexedDB; nothing is required to sign up, and nothing leaves your machine unless you choose to sign in.",
   },
   {
-    title: "AI organize, with a preview",
-    body: "One click sends your link titles and URLs (never page content) to Claude, which groups and tags them into collections. You review exactly what moves where before anything changes; nothing is ever applied automatically.",
+    title: "AI organize, on your machine",
+    body: "On a capable desktop Chrome, AI organize and folder naming run on-device with Chrome's built-in Gemini Nano: no API key, no server, nothing leaves your browser, and no per-use cost. For any device, or folders too big for the on-device model, cloud AI (Claude) is a PRO option. Either way you review a preview before anything moves, and the AI only ever sees titles and links, never page content.",
   },
   {
     title: "Sessions & crash restore",
@@ -88,8 +88,9 @@ export default function HomePage() {
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-[var(--text-2)]">
             Save any tab, selection, or whole window in one click. No signup,
-            no account wall, everything stays on your device. Sign in when
-            you want cloud sync, AI auto-organize, and shareable collections.
+            no account wall, everything stays on your device. AI organize runs
+            free and on-device on a capable Chrome; sign in for cloud sync,
+            shareable collections, and cloud AI.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <LinkButton href={CHROME_STORE_URL} size="md" data-cta="hero-add-to-chrome">
@@ -198,7 +199,8 @@ export default function HomePage() {
             Give your tabs a home.
           </h2>
           <p className="max-w-md text-[var(--text-2)]">
-            Free forever for local use. PRO adds sync and AI for $4/month or $29/year.
+            Free forever for local use, with on-device AI on a capable Chrome.
+            PRO adds cloud sync, sharing, and cloud AI for $4/month or $29/year.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <LinkButton href={CHROME_STORE_URL} size="md" data-cta="final-add-to-chrome">

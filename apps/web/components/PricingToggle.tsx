@@ -57,7 +57,7 @@ export function PricingToggle() {
             <li>Unlimited collections and links</li>
             <li>Drag-and-drop, sessions, crash restore</li>
             <li>Fuzzy search, import/export</li>
-            <li>AI organize: 30 runs/month</li>
+            <li>On-device AI organize (capable Chrome)</li>
             <li>No account required</li>
           </ul>
           <LinkButton href={CHROME_STORE_URL} className="w-full justify-center">
@@ -74,7 +74,7 @@ export function PricingToggle() {
             <h3 className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
               PRO
             </h3>
-            <p className="mt-1 text-sm text-[var(--ink-soft)]">Sync, sharing, unlimited AI.</p>
+            <p className="mt-1 text-sm text-[var(--ink-soft)]">Sync, sharing, cloud AI.</p>
           </div>
           <div>
             <p className="text-4xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
@@ -91,7 +91,7 @@ export function PricingToggle() {
             <li>Everything in Free</li>
             <li>Cloud sync across devices</li>
             <li>Shareable collection pages</li>
-            <li>AI organize: unlimited (fair use)</li>
+            <li>Cloud AI for any device (fair use)</li>
           </ul>
           <LinkButton href={CHROME_STORE_URL} className="w-full justify-center">
             Add to Chrome

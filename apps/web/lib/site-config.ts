@@ -9,7 +9,7 @@ export const SITE_NAME = "TabBurrow";
 export const SITE_TAGLINE = "Your tabs deserve a burrow.";
 
 export const SITE_DESCRIPTION =
-  "Open-source, local-first tab and bookmark manager for Chrome. Save a tab, a selection, or a whole window in one click, zero signup. AI auto-organize and cloud sync when you want them.";
+  "Open-source, local-first tab and bookmark manager for Chrome. Save a tab, a selection, or a whole window in one click, zero signup. Free on-device AI organizing on a capable Chrome, with cloud sync and cloud AI as PRO options.";
 
 /**
  * TODO(T25): the GitHub repo isn't public yet and the Chrome Web Store

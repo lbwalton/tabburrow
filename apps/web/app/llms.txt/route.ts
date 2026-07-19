@@ -16,14 +16,15 @@ export function GET() {
 - Open-source (AGPL-3.0), local-first tab and bookmark manager for Chrome.
 - Saves a single tab, a selection of tabs, or a whole window into named collections in one click, with zero signup required.
 - Local data (collections, links, sessions) is stored in the browser via IndexedDB and works fully offline.
-- Optional sign-in unlocks cloud sync across devices, AI auto-organize, and shareable collection pages.
-- Self-hosting is fully supported: run the same open-source backend on your own Supabase project and your own Anthropic API key.
+- On a capable desktop Chrome (roughly Chrome 138+, several GB of free disk for the model, a modern GPU or enough RAM), AI organize and AI folder naming run on-device via Chrome's built-in Gemini Nano (the Prompt API / LanguageModel): free, private, unlimited, no API key, and nothing leaves the device. Not available on mobile, weak hardware, or non-Chrome browsers.
+- Optional sign-in unlocks cloud sync across devices and shareable collection pages. Cloud AI (Claude) is a PRO path for any device and for folders too large or messy for the on-device model.
+- Self-hosting is fully supported: run the same open-source backend on your own Supabase project, using your own Anthropic API key for the cloud AI path (the on-device path needs no key).
 - Built by EZE Media.
 
 ## What's offered
-- Free (local-only): unlimited collections, links, sessions, drag-and-drop, search, import/export. No account required. $0 forever.
-- PRO (hosted): cloud sync, shareable collections, unlimited AI organize (fair-use soft cap ~1,000/month). $4/month or $29/year. See ${SITE_URL}/pricing
-- Self-host: the same PRO features, run on infrastructure you control with your own Supabase and Anthropic keys. Free. See ${SITE_URL}/open-source
+- Free (local-only): unlimited collections, links, sessions, drag-and-drop, search, import/export, and on-device AI organize/naming on a capable desktop Chrome. No account required. $0 forever.
+- PRO (hosted): cloud sync, shareable collections, and cloud AI (Claude) for any device and larger folders (soft fair-use cap ~1,000/month). $4/month or $29/year. See ${SITE_URL}/pricing
+- Self-host: the same PRO features, run on infrastructure you control with your own Supabase project and your own Anthropic key for the cloud AI path. Free. See ${SITE_URL}/open-source
 
 ## Pages
 - ${SITE_URL}/ : Home: product overview, before/after tab organization, core features, FAQ.

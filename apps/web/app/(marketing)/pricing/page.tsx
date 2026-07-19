@@ -7,7 +7,7 @@ import { pricingFaq, toFaqPageJsonLd } from "../../../lib/faq";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Free forever for local use. PRO is $4/month or $29/year for cloud sync, sharing, and unlimited AI organize. Self-host the whole stack for free with your own keys.",
+    "Free forever for local use, with on-device AI organizing on a capable Chrome. PRO is $4/month or $29/year for cloud sync, sharing, and cloud AI. Self-host the whole stack for free with your own keys.",
   alternates: { canonical: "/pricing" },
 };
 
@@ -18,7 +18,8 @@ const COMPARISON_ROWS: Array<{ feature: string; free: string; pro: string; selfH
   { feature: "Search, import & export", free: "Yes", pro: "Yes", selfHost: "Yes" },
   { feature: "Cloud sync across devices", free: "No", pro: "Yes", selfHost: "Yes (your Supabase)" },
   { feature: "Shareable collection pages", free: "No", pro: "Yes", selfHost: "Yes (your Supabase)" },
-  { feature: "AI organize", free: "30 runs/month", pro: "Unlimited (fair use)", selfHost: "Your Anthropic key" },
+  { feature: "AI organize, on-device (Gemini Nano)", free: "Unlimited (capable Chrome)", pro: "Unlimited (capable Chrome)", selfHost: "Unlimited (capable Chrome)" },
+  { feature: "Cloud AI, any device (Claude)", free: "No", pro: "Yes (fair use)", selfHost: "Your Anthropic key" },
   { feature: "Price", free: "$0", pro: "$4/mo or $29/yr", selfHost: "$0 to us" },
 ];
 
@@ -36,8 +37,10 @@ export default function PricingPage() {
             Simple pricing, no surprises.
           </h1>
           <p className="mt-4 text-lg text-[var(--text-2)]">
-            Local use is free forever. PRO is optional, for people who want
-            sync, sharing, and unlimited AI. Self-hosting is always free too.
+            Local use is free forever, and on a capable Chrome the AI
+            organizing runs on-device at no cost. PRO is optional, for people
+            who want cloud sync, sharing, and cloud AI on any device.
+            Self-hosting is always free too.
           </p>
         </div>
         {/* Visually hidden so the plan cards' h3s nest under an h2 instead
@@ -51,11 +54,15 @@ export default function PricingPage() {
       <section aria-label="Fair use" className="mx-auto max-w-6xl px-6 pb-16">
         <div className="rounded-[var(--radius-arch)] border border-[var(--line)] bg-[var(--surface)] p-6">
           <p className="text-sm text-[var(--text-2)]">
-            <strong className="text-[var(--text)]">Fair use on AI organize:</strong>{" "}
-            free accounts get 30 AI organize runs a month; PRO is unlimited
-            with a soft fair-use cap around 1,000 runs a month, enough for
-            real use by a real person. Self-hosters set their own Anthropic
-            key and their own limits.
+            <strong className="text-[var(--text)]">How AI organize runs:</strong>{" "}
+            on a capable desktop Chrome (roughly Chrome 138+, a few GB of free
+            disk for the model, and a modern GPU or enough RAM), AI organize
+            and folder naming run on-device with Chrome&apos;s built-in Gemini
+            Nano. That path is free, private, and unlimited, and nothing leaves
+            your browser. On other devices, or for folders too large for the
+            on-device model, cloud AI (Claude) is a PRO option with a soft
+            fair-use cap of about 1,000 runs a month. Self-hosters point the
+            cloud path at their own Anthropic key and set their own limits.
           </p>
         </div>
       </section>

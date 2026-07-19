@@ -30,10 +30,11 @@ export default function TermsPage() {
               </h2>
               <p className="mt-3">
                 The TabBurrow browser extension is free to use, with or
-                without an account. Signing in and subscribing to PRO is
-                optional and adds cloud sync, sharing, and unlimited AI
-                organize. By using the extension or this website, you agree
-                to these terms.
+                without an account, and on a capable desktop Chrome its AI
+                organize runs on-device at no cost. Signing in and subscribing
+                to PRO is optional and adds cloud sync, sharing, and cloud AI.
+                By using the extension or this website, you agree to these
+                terms.
               </p>
             </div>
 
@@ -45,8 +46,7 @@ export default function TermsPage() {
                 Creating an account is only required for PRO features. You&apos;re
                 responsible for keeping your sign-in method secure. We may
                 suspend an account used to abuse the service, for example
-                sustained attempts to bypass AI organize&apos;s fair-use
-                limits.
+                sustained attempts to bypass the cloud AI fair-use limits.
               </p>
             </div>
 
@@ -69,10 +69,11 @@ export default function TermsPage() {
                 Fair use
               </h2>
               <p className="mt-3">
-                AI organize is metered: 30 runs a month on the free plan, and
-                a soft fair-use cap of roughly 1,000 runs a month on PRO. We
-                may throttle or ask you to slow down if usage looks
-                automated or abusive rather than normal personal use.
+                On-device AI organize (Chrome&apos;s Gemini Nano) is free and
+                unmetered. The cloud AI path is a PRO feature and is metered,
+                with a soft fair-use cap of roughly 1,000 runs a month. We may
+                throttle or ask you to slow down if usage looks automated or
+                abusive rather than normal personal use.
               </p>
             </div>
 
@@ -84,10 +85,10 @@ export default function TermsPage() {
                 TabBurrow&apos;s source code is separately licensed under
                 AGPL-3.0. That license governs your rights to use, modify,
                 and redistribute the code itself; these Terms govern your use
-                of our hosted PRO service (sync, sharing, and the AI organize
-                function running on our infrastructure). Self-hosting your
-                own instance is covered by the AGPL-3.0 license, not by these
-                Terms.
+                of our hosted PRO service (sync, sharing, and the cloud AI
+                organize function running on our infrastructure). Self-hosting
+                your own instance is covered by the AGPL-3.0 license, not by
+                these Terms.
               </p>
             </div>
 
@@ -97,10 +98,11 @@ export default function TermsPage() {
               </h2>
               <p className="mt-3">
                 You own the links, collections, and notes you save. We only
-                process them to provide the service, sync, AI organize
-                previews, and shared collection pages you explicitly turn on.
-                If you share a collection publicly, anyone with the link can
-                view it until you unshare it.
+                process them to provide the service: sync, the cloud AI
+                organize preview, and shared collection pages you explicitly
+                turn on. On-device AI organize runs in your browser and does
+                not send your links to us. If you share a collection publicly,
+                anyone with the link can view it until you unshare it.
               </p>
             </div>
 

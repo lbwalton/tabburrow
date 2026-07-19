@@ -22,8 +22,8 @@ export default function OpenSourcePage() {
             Open source, actually.
           </h1>
           <p className="mt-6 text-lg leading-relaxed text-[var(--text-2)]">
-            The popup, the dashboard, the sync engine, the AI organize
-            function, all of it, is public source under AGPL-3.0. Not a
+            The popup, the dashboard, the sync engine, the on-device and cloud
+            AI organize code, all of it, is public source under AGPL-3.0. Not a
             trimmed-down community edition: the exact same code the hosted
             PRO service runs.
           </p>
@@ -81,8 +81,9 @@ export default function OpenSourcePage() {
             </li>
             <li>
               <strong className="text-[var(--text)]">Your own Anthropic API key</strong>:
-              powers the AI organize Edge Function; you set your own usage
-              limits and pay Anthropic directly for what you use.
+              powers the cloud AI organize Edge Function (the on-device Gemini
+              Nano path needs no key); you set your own usage limits and pay
+              Anthropic directly for what you use.
             </li>
             <li>
               <strong className="text-[var(--text)]">Your own build</strong>:
@@ -91,9 +92,9 @@ export default function OpenSourcePage() {
             </li>
           </ul>
           <p className="mt-4 leading-relaxed text-[var(--text-2)]">
-            The result is the same sync, sharing, and AI organize features as
-            PRO, running entirely on infrastructure you control, at no
-            recurring cost to us or you beyond your own hosting.
+            The result is the same sync, sharing, and cloud AI features as PRO,
+            plus the free on-device AI, running entirely on infrastructure you
+            control, at no recurring cost to us or you beyond your own hosting.
           </p>
         </Card>
       </section>
