@@ -2,7 +2,10 @@
   "name": "tabburrow",
   "private": true,
   "license": "AGPL-3.0-only",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
