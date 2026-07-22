@@ -54,7 +54,7 @@ export default function TermsPage() {
                 Subscriptions & billing
               </h2>
               <p className="mt-3">
-                PRO is billed through Stripe at $4/month or $29/year and
+                PRO is billed through Stripe at $3.99/month or $29/year and
                 renews automatically until canceled. Cancel anytime from the
                 extension&apos;s billing settings, which opens the Stripe
                 customer portal; access continues until the end of the

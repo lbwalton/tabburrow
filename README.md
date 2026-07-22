@@ -46,7 +46,7 @@ auto-organize, and shareable collection pages.
 | Cloud sync across devices | No | Yes | Yes (your Supabase) |
 | Shareable collection pages | No | Yes | Yes (your Supabase) |
 | AI organize | 30 runs/month | Unlimited (fair use) | Your Anthropic key |
-| Price | $0 | $4/mo or $29/yr | $0 to us |
+| Price | $0 | $3.99/mo or $29/yr | $0 to us |
 
 Local saving, organizing, sessions, search, and import/export are live in
 this repo today. Cloud sync, AI organize, sharing, and billing are PRO

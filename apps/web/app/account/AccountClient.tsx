@@ -328,7 +328,7 @@ export function AccountClient() {
                 onClick={() => void startBilling({ interval: "month" }, "month")}
                 disabled={billingBusy !== null}
               >
-                {billingBusy === "month" ? "Opening…" : "Upgrade monthly ($4/mo)"}
+                {billingBusy === "month" ? "Opening…" : "Upgrade monthly ($3.99/mo)"}
               </Button>
               <Button
                 type="button"

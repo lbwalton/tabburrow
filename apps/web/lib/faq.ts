@@ -20,7 +20,7 @@ export const homeFaq: FaqItem[] = [
   {
     question: "What does PRO add?",
     answer:
-      "$4/month or $29/year unlocks cloud sync across devices, public share pages for your collections, and cloud AI (Claude) that works on any device and handles larger, messier folders. On a capable desktop Chrome, AI organize already runs on-device for free, with or without PRO. Local use has no limits either way.",
+      "$3.99/month or $29/year unlocks cloud sync across devices, public share pages for your collections, and cloud AI (Claude) that works on any device and handles larger, messier folders. On a capable desktop Chrome, AI organize already runs on-device for free, with or without PRO. Local use has no limits either way.",
   },
   {
     question: "Can I self-host TabBurrow?",

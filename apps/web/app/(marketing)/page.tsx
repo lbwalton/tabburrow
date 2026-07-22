@@ -58,7 +58,7 @@ export default function HomePage() {
             {
               "@type": "Offer",
               name: "PRO Monthly",
-              price: "4",
+              price: "3.99",
               priceCurrency: "USD",
               url: `${SITE_URL}/pricing`,
             },
@@ -200,7 +200,7 @@ export default function HomePage() {
           </h2>
           <p className="max-w-md text-[var(--text-2)]">
             Free forever for local use, with on-device AI on a capable Chrome.
-            PRO adds cloud sync, sharing, and cloud AI for $4/month or $29/year.
+            PRO adds cloud sync, sharing, and cloud AI for $3.99/month or $29/year.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <LinkButton href={CHROME_STORE_URL} size="md" data-cta="final-add-to-chrome">

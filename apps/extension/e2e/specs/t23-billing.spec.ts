@@ -26,7 +26,7 @@ import { finalScreenshot } from "../test-utils";
  * the brief's "for that customer" framing:
  *
  *  (a) sign in a fresh user -> AccountPane shows FREE -> click "Monthly
- *      $4/month" -> a real Stripe-hosted Checkout page opens in a new tab
+ *      $3.99/month" -> a real Stripe-hosted Checkout page opens in a new tab
  *      (captured via `context.waitForEvent("page")`, the same pattern
  *      t07-popup-save.spec.ts uses for extension-initiated
  *      `chrome.tabs.create` tabs) -> filled with Stripe's documented
@@ -72,7 +72,7 @@ import { finalScreenshot } from "../test-utils";
  * as t20's `@live-ai`) stays green.
  *
  * Real Stripe test-mode resources this test creates (a Stripe customer, one
- * $4/month subscription) are cleaned up in a `finally` block regardless of
+ * $3.99/month subscription) are cleaned up in a `finally` block regardless of
  * pass/fail, alongside the Supabase test user. Never logs the test card
  * number beyond the `STRIPE_TEST_CARD` constant below (Stripe's own
  * publicly documented always-succeeds test-mode number, not a real card).
@@ -402,7 +402,7 @@ test(
 
       // --- (a) live checkout ---
       await expect(dash.getByText("Free", { exact: true })).toBeVisible();
-      const monthlyButton = dash.getByRole("button", { name: "Monthly $4/month" });
+      const monthlyButton = dash.getByRole("button", { name: "$3.99/month" });
       await expect(monthlyButton).toBeVisible();
 
       const [checkoutPage] = await Promise.all([context.waitForEvent("page"), monthlyButton.click()]);
@@ -448,7 +448,7 @@ test(
 
       await refreshUntilBadge(dash, "Free");
       await expect(dash.getByText("Upgrade to PRO", { exact: true })).toBeVisible();
-      await expect(dash.getByRole("button", { name: "Monthly $4/month" })).toBeVisible();
+      await expect(dash.getByRole("button", { name: "$3.99/month" })).toBeVisible();
 
       // Local data untouched: the collection seeded before checkout still renders.
       await dash.goto(`chrome-extension://${extensionId}/dashboard.html#/c/${collectionId}`);

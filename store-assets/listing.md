@@ -75,7 +75,7 @@ FREE VS PRO
 Local saving, organizing, sessions, search, and import/export are free,
 unlimited, forever: no trial, no nag screens. On-device AI organize
 (Chrome's built-in Gemini Nano, on a capable desktop Chrome) is free too.
-PRO ($4/month or $29/year) adds cloud sync across devices, shareable
+PRO ($3.99/month or $29/year) adds cloud sync across devices, shareable
 collection pages, and unlimited cloud AI organize (free accounts get 30
 cloud runs a month). Prefer to run your own backend? Self-host the entire
 stack, including cloud AI organize with your own API key, for $0; see the

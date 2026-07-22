@@ -23,7 +23,7 @@ export function GET() {
 
 ## What's offered
 - Free (local-only): unlimited collections, links, sessions, drag-and-drop, search, import/export, and on-device AI organize/naming on a capable desktop Chrome. No account required. $0 forever.
-- PRO (hosted): cloud sync, shareable collections, and cloud AI (Claude) for any device and larger folders (soft fair-use cap ~1,000/month). $4/month or $29/year. See ${SITE_URL}/pricing
+- PRO (hosted): cloud sync, shareable collections, and cloud AI (Claude) for any device and larger folders (soft fair-use cap ~1,000/month). $3.99/month or $29/year. See ${SITE_URL}/pricing
 - Self-host: the same PRO features, run on infrastructure you control with your own Supabase project and your own Anthropic key for the cloud AI path. Free. See ${SITE_URL}/open-source
 
 ## Pages

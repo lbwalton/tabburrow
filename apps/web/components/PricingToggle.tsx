@@ -8,7 +8,7 @@ import { CHROME_STORE_URL, GITHUB_URL } from "../lib/site-config";
 type Billing = "monthly" | "yearly";
 
 const PRO_PRICE: Record<Billing, { amount: string; suffix: string; note?: string }> = {
-  monthly: { amount: "$4", suffix: "/month" },
+  monthly: { amount: "$3.99", suffix: "/month" },
   yearly: { amount: "$29", suffix: "/year", note: "≈ $2.42/month, about 40% less than monthly" },
 };
 

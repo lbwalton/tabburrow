@@ -395,7 +395,7 @@ export function AccountPane() {
                   onClick={() => void handleUpgrade("month")}
                   disabled={billingBusy !== null}
                 >
-                  {billingBusy === "month" ? "Opening…" : "Monthly $4/month"}
+                  {billingBusy === "month" ? "Opening…" : "$3.99/month"}
                 </Button>
                 <Button
                   type="button"
@@ -404,7 +404,7 @@ export function AccountPane() {
                   onClick={() => void handleUpgrade("year")}
                   disabled={billingBusy !== null}
                 >
-                  {billingBusy === "year" ? "Opening…" : "Yearly $29/year (save ~40%)"}
+                  {billingBusy === "year" ? "Opening…" : "$29/year (save ~40%)"}
                 </Button>
               </div>
               {checkoutOpened ? (

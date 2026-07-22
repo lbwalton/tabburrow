@@ -7,7 +7,7 @@ import { pricingFaq, toFaqPageJsonLd } from "../../../lib/faq";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Free forever for local use, with on-device AI organizing on a capable Chrome. PRO is $4/month or $29/year for cloud sync, sharing, and cloud AI. Self-host the whole stack for free with your own keys.",
+    "Free forever for local use, with on-device AI organizing on a capable Chrome. PRO is $3.99/month or $29/year for cloud sync, sharing, and cloud AI. Self-host the whole stack for free with your own keys.",
   alternates: { canonical: "/pricing" },
 };
 
@@ -20,7 +20,7 @@ const COMPARISON_ROWS: Array<{ feature: string; free: string; pro: string; selfH
   { feature: "Shareable collection pages", free: "No", pro: "Yes", selfHost: "Yes (your Supabase)" },
   { feature: "AI organize, on-device (Gemini Nano)", free: "Unlimited (capable Chrome)", pro: "Unlimited (capable Chrome)", selfHost: "Unlimited (capable Chrome)" },
   { feature: "Cloud AI, any device (Claude)", free: "No", pro: "Yes (fair use)", selfHost: "Your Anthropic key" },
-  { feature: "Price", free: "$0", pro: "$4/mo or $29/yr", selfHost: "$0 to us" },
+  { feature: "Price", free: "$0", pro: "$3.99/mo or $29/yr", selfHost: "$0 to us" },
 ];
 
 export default function PricingPage() {

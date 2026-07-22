@@ -21,7 +21,7 @@ export const GITHUB_URL = "https://github.com/lbwalton/tabburrow";
 export const CHROME_STORE_URL = "#";
 
 export const PRICING = {
-  monthly: { amount: 4, period: "month" as const },
+  monthly: { amount: 3.99, period: "month" as const },
   yearly: { amount: 29, period: "year" as const },
 };
 
