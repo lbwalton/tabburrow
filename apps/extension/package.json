@@ -20,7 +20,8 @@
     "make-icons": "node scripts/make-icons.mjs",
     "sync-env": "node scripts/sync-env.mjs",
     "e2e": "playwright test -c e2e/playwright.config.ts",
-    "capture-assets": "tsx e2e/capture-assets.ts"
+    "capture-assets": "tsx e2e/capture-assets.ts",
+    "build:prod": "node scripts/build-prod.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
