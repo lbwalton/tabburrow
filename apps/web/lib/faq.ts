@@ -74,6 +74,6 @@ export const pricingFaq: FaqItem[] = [
   {
     question: "Can I switch between monthly and yearly billing?",
     answer:
-      "Yes, from the billing portal at any time. Yearly billing is $29/year (about $2.42/month), roughly 40% less than paying $4 every month.",
+      "Yes, from the billing portal at any time. Yearly billing is $29/year (about $2.42/month), roughly 40% less than paying $3.99 every month.",
   },
 ];
