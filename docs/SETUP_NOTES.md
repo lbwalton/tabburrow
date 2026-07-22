@@ -80,6 +80,22 @@ supabase stop && supabase start
 Google → paste the client id/secret from step 2, toggle it on. No config.toml
 edit needed for a hosted project (that file only drives the local CLI stack).
 
+**Hosted project, URL configuration (REQUIRED, easy to miss):** Supabase
+Dashboard → Authentication → URL Configuration:
+
+1. **Site URL** → `https://tabburrow.com`. The default is
+   `http://localhost:3000`, and GoTrue falls back to the Site URL whenever a
+   sign-in's redirect target isn't on the allow list — which is exactly the
+   "signed in with Google, landed on localhost:3000" symptom (hit for real on
+   2026-07-22).
+2. **Redirect URLs** → add `https://*.chromiumapp.org/*` so the extension's
+   `chrome.identity` callback (`https://<extension-id>.chromiumapp.org/`) is
+   permitted. The wildcard covers unpacked dev copies, whose ids differ per
+   machine. **Tighten before launch:** once the Chrome Web Store assigns the
+   final extension id, replace the wildcard with
+   `https://<store-extension-id>.chromiumapp.org/*` (tracked in
+   docs/launch/store-submission.md's post-approval list).
+
 ### 4. Verify
 
 Manual only — see `apps/extension/e2e/MANUAL.md`'s Google OAuth section for
