@@ -11,6 +11,7 @@ import type { PopupState, SaveAction } from "../../lib/popupState";
 import { dashboardCollectionOrganizeUrl, dashboardSettingsUrl } from "../../lib/dashboard";
 import { getPlan, onAuthChange } from "../../lib/auth";
 import type { AuthUser, Plan } from "../../lib/auth";
+import { proBadgeState } from "../../lib/proBadge";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { aiOrganizeCtaAvailable, getAiUsesThisMonth, suggestFolderName } from "../../lib/ai";
 import {
@@ -477,6 +478,8 @@ export function App() {
         collectionsLoaded={collectionsLoaded}
         dataLoaded={dataLoaded}
         plan={plan}
+        proBadge={proBadgeState(cloudConfigured, authUser, plan)}
+        onUpgradeToPro={openDashboardSettings}
         allCount={allTabs?.length ?? 0}
         selectedCount={selectedTabs?.length ?? 0}
         canAddCurrent

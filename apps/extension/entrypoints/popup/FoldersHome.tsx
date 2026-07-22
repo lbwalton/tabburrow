@@ -12,6 +12,8 @@ import { nextHighlight, resolveHighlight } from "../../lib/searchNav";
 import { SaveSplitButton } from "./SaveSplitButton";
 import { FolderRow } from "./FolderRow";
 import { ProBanner } from "./ProBanner";
+import { ProBadge } from "../dashboard/ProBadge";
+import type { ProBadgeState } from "../../lib/proBadge";
 import type { Plan } from "../../lib/auth";
 
 const EMPTY_SEARCH_RESULTS: SearchResults = { collections: [], links: [] };
@@ -27,6 +29,10 @@ export interface FoldersHomeProps {
   /** Both tabs snapshot + collections loaded — gates the Save control. */
   dataLoaded: boolean;
   plan: Plan | null;
+  /** Which "PRO" chip to show next to the wordmark — App computes this via lib/proBadge.ts's `proBadgeState` ("hidden" on builds with no cloud backend). */
+  proBadge: ProBadgeState;
+  /** The muted chip's click-through: opens the dashboard Settings tab (the upgrade path). */
+  onUpgradeToPro: () => void;
   allCount: number;
   selectedCount: number;
   /** False when there's no saveable current tab (chrome:// etc.). */
@@ -73,6 +79,8 @@ export function FoldersHome(props: FoldersHomeProps) {
     collectionsLoaded,
     dataLoaded,
     plan,
+    proBadge,
+    onUpgradeToPro,
     allCount,
     selectedCount,
     canAddCurrent,
@@ -224,9 +232,12 @@ export function FoldersHome(props: FoldersHomeProps) {
   return (
     <div className="flex flex-col gap-3">
       <header className="flex items-center justify-between gap-2">
-        <h1 className="text-lg font-bold text-[var(--text)]" style={{ fontFamily: "var(--font-display)" }}>
-          TabBurrow
-        </h1>
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="text-lg font-bold text-[var(--text)]" style={{ fontFamily: "var(--font-display)" }}>
+            TabBurrow
+          </h1>
+          <ProBadge state={proBadge} onUpgrade={onUpgradeToPro} />
+        </div>
         <div className="flex items-center gap-2">
           <button
             type="button"

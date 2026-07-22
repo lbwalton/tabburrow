@@ -1,9 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type { Collection } from "@tabburrow/core";
 import { Button, Input } from "@tabburrow/ui";
 import { friendlyCreateError } from "../../lib/collections";
+import { getPlan, onAuthChange } from "../../lib/auth";
+import type { AuthUser, Plan } from "../../lib/auth";
+import { isSupabaseConfigured } from "../../lib/supabase";
+import { proBadgeState } from "../../lib/proBadge";
 import { CollectionRow } from "./CollectionRow";
+import { ProBadge } from "./ProBadge";
 
 export interface RailProps {
   collections: Collection[];
@@ -26,6 +31,30 @@ export interface RailProps {
 export function Rail({ collections, order, linkCounts, selectedId, onCreateCollection, onDeleteCollection }: RailProps) {
   const byId = useMemo(() => new Map(collections.map((c) => [c.id, c])), [collections]);
   const ordered = order.map((id) => byId.get(id)).filter((c): c is Collection => !!c);
+
+  // Plan state for the wordmark's "PRO" chip — same "components subscribe to
+  // onAuthChange themselves" precedent AccountPane and AiOrganizeDialog set
+  // (onAuthChange fires once immediately on subscribe; no polling).
+  const cloudConfigured = isSupabaseConfigured();
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
+  useEffect(() => {
+    if (!cloudConfigured) return;
+    return onAuthChange(setAuthUser);
+  }, [cloudConfigured]);
+  useEffect(() => {
+    if (!authUser) {
+      setPlan(null);
+      return;
+    }
+    let cancelled = false;
+    void getPlan().then((p) => {
+      if (!cancelled) setPlan(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser]);
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -55,10 +84,14 @@ export function Rail({ collections, order, linkCounts, selectedId, onCreateColle
 
   return (
     <nav className="flex h-screen w-[280px] shrink-0 flex-col bg-[var(--bg-well)]" aria-label="Collections">
-      <div className="px-4 py-5">
+      <div className="flex items-center gap-2 px-4 py-5">
         <span className="text-lg font-bold text-[var(--text)]" style={{ fontFamily: "var(--font-display)" }}>
           TabBurrow
         </span>
+        <ProBadge
+          state={proBadgeState(cloudConfigured, authUser, plan)}
+          onUpgrade={() => (window.location.hash = "#/settings")}
+        />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2">
