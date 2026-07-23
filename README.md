@@ -2,7 +2,7 @@
 
 # TabBurrow
 
-**Your tabs, saved in one click, yours forever. No account required. AI organizing and cloud sync land with v1.0.**
+**Your tabs, saved in one click, yours forever. No account required. Free on-device AI organizing, with cloud sync and sharing when you want them.**
 
 [![CI](https://github.com/lbwalton/tabburrow/actions/workflows/ci.yml/badge.svg)](https://github.com/lbwalton/tabburrow/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-B9C3BB)](https://github.com/lbwalton/tabburrow/blob/main/LICENSE)
@@ -11,10 +11,12 @@
 TabBurrow is an open-source, local-first tab and bookmark manager for Chrome.
 One click saves a tab, a selection of tabs, or a whole window into a
 collection; everything works instantly with zero signup, and nothing leaves
-your device unless you choose to sign in. Sign in later for cloud sync, AI
-auto-organize, and shareable collection pages.
+your device unless you choose to sign in. On a capable desktop Chrome, AI
+organizing runs on-device with Chrome's built-in Gemini Nano, free, private,
+no key. Sign in later for cloud sync, cloud AI, and shareable collection
+pages.
 
-![TabBurrow demo: saving two tabs, signing in to run AI organize, and reviewing the suggested group](assets/readme-demo.gif)
+![TabBurrow demo: one-click save, saving all tabs into a new collection, live AI organize with preview and apply, and restoring a session](assets/readme-demo.gif)
 
 ## Why TabBurrow
 
@@ -22,11 +24,12 @@ auto-organize, and shareable collection pages.
   action works instantly on a fresh install. Data lives in your browser's
   IndexedDB; nothing is required to sign up, and nothing syncs anywhere
   unless you opt in.
-- **AI auto-organize, with a preview.** One click sends only your tabs'
-  titles and URLs (never page content) to Claude, which groups and tags
-  them into collections. You approve the exact diff before anything
-  changes; nothing is ever applied automatically. *(PRO, launching with
-  v1.0; see [Project status](#project-status).)*
+- **AI auto-organize, with a preview.** One click groups and tags your
+  tabs into collections, and you approve the exact diff before anything
+  changes; nothing is ever applied automatically. On a capable desktop
+  Chrome it runs on-device (Chrome's built-in Gemini Nano): free, and
+  nothing leaves your browser. The cloud path (Claude) covers any device
+  and sends only titles and URLs, never page content.
 - **Open source, AGPL-3.0.** Every line is public: the popup, the
   dashboard, the sync engine, the AI organize function. Audit it, fork
   it, or [self-host](SELF_HOSTING.md) the whole stack on your own
@@ -45,14 +48,13 @@ auto-organize, and shareable collection pages.
 | Search, import & export | Yes | Yes | Yes |
 | Cloud sync across devices | No | Yes | Yes (your Supabase) |
 | Shareable collection pages | No | Yes | Yes (your Supabase) |
-| AI organize | 30 runs/month | Unlimited (fair use) | Your Anthropic key |
+| AI organize, on-device (Gemini Nano) | Free, unlimited* | Free, unlimited* | Free, unlimited* |
+| AI organize, cloud (Claude) | 30 runs/month | Unlimited (fair use) | Your Anthropic key |
 | Price | $0 | $3.99/mo or $29/yr | $0 to us |
 
-Local saving, organizing, sessions, search, and import/export are live in
-this repo today. Cloud sync, AI organize, sharing, and billing are PRO
-features currently in active development and will land before the v1.0
-store release; see [Project status](#project-status) for exactly what's
-built.
+\* On-device AI needs a Chrome that can run Gemini Nano (roughly Chrome
+138+, a decent GPU or 16 GB RAM, and ~22 GB free disk). Everything else in
+the Free column has no hardware caveat.
 
 ## Quickstart
 
@@ -74,8 +76,8 @@ Then load it unpacked:
 3. Click **Load unpacked**
 4. Select `apps/extension/.output/chrome-mv3`
 
-Requires Node 20+ and pnpm 9+. No environment variables are needed for a
-local build; see [SELF_HOSTING.md](SELF_HOSTING.md) if you also want
+Requires Node 22+ and pnpm 11 (via corepack; the repo pins
+`packageManager`). No environment variables are needed for a local build; see [SELF_HOSTING.md](SELF_HOSTING.md) if you also want
 cloud sync, AI organize, and sharing running against your own Supabase
 project.
 
@@ -102,7 +104,7 @@ tabburrow/
 ├── supabase/
 │   ├── migrations/        # Postgres schema + RLS policies
 │   └── functions/         # Edge Functions: ai-organize, checkout-session,
-│                           #   stripe-webhook, share-resolve
+│                           #   stripe-webhook
 ├── docs/                   # specs, plans, self-hosting guide
 └── stories/                 # implementation stories + fix stories (bug bash)
 ```
@@ -124,16 +126,17 @@ TabBurrow is built in the open, one story at a time; every commit maps to
 a story in [`stories/stories.json`](stories/stories.json), each with its
 own acceptance criteria.
 
-**Built and tested today:** the local extension: popup save flows,
-dashboard with drag-and-drop, sessions and crash restore, fuzzy search,
-import/export, keyboard shortcuts, and the sync engine's merge logic
-(unit-tested, not yet wired to a backend).
+**v1.0 is feature-complete and live-tested:** the full local extension
+(popup hub, dashboard with drag-and-drop, sessions and crash restore,
+fuzzy search, import/export, keyboard shortcuts), on-device AI organizing
+via Chrome's built-in Gemini Nano, and the full cloud layer (auth with
+email codes and Google, cross-device sync, cloud AI organize, share
+pages, and Stripe billing), verified by 560+ unit tests and an end-to-end
+suite that drives the real built extension in Chrome, including a live
+Stripe test checkout and a live AI organize.
 
-**In active development:** Supabase schema and auth, wiring the sync
-engine into the extension, the AI organize Edge Function and UI, share
-pages, and Stripe billing. These are the PRO features described above and
-in the [design spec](docs/specs/2026-07-15-tabburrow-design.md); they
-ship together as v1.0, not yet in this build.
+**Now:** the Chrome Web Store listing is being prepared for review. Until
+it's live, install by building from source (above).
 
 No fake stars, no fake user counts, no testimonials here. Watch the repo
 or check `stories/stories.json` for real, current progress.
