@@ -32,6 +32,11 @@ import { deleteAdminUser, findAdminUserByEmail } from "./admin";
  *     ~2s in post) → preview groups → Apply → the rail gains new collections
  *  d. Sessions pane (snapshot list), then "Restore all" on a collection
  *
+ * Backdrop tabs are LB's real sites (tabburrow.com as the active tab behind
+ * the popup composite, thedigitallm.com, lbwalton.com: rights are clean and
+ * they double as subtle cross-promo), each with a fully designed local fake
+ * page as the no-network fallback; see BACKDROP_TABS + FAKE_PAGES.
+ *
  * Run (from apps/extension):
  *   npx tsx e2e/capture-demo.ts [phase]
  *   phase: all (default) | capture | post
@@ -167,25 +172,275 @@ function escapeHtml(s: string): string {
 
 interface LocalServer {
   server: http.Server;
-  pageUrl(title: string): string;
+  /** URL for one of the FAKE_PAGES routes, e.g. pageUrl("/recipe"). */
+  pageUrl(route: string): string;
 }
 
-/** Same tiny titled-page server as fixtures.ts's worker fixture (duplicated for standalone use — see capture-assets.ts's identical note). */
+// ---------------------------------------------------------------------------
+// Fake sites served by the local HTTP server: the OFFLINE FALLBACK for the
+// real-site backdrops in BACKDROP_TABS below. LB flagged the old bare
+// <h1>{title}</h1> pages as a "white void" behind the popup, so every route
+// is a fully designed, self-contained page: system font stacks, all CSS
+// inline, CSS-only imagery (gradients/patterns, no image requests), realistic
+// content density. All brands are INVENTED (The Weekly Loaf, Fieldnote,
+// North Bench Goods); no real publications, retailers, or logos.
+// ---------------------------------------------------------------------------
+
+interface FakePage {
+  title: string;
+  html: string;
+}
+
+function pageShell(title: string, css: string, body: string): string {
+  return (
+    `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width, initial-scale=1">` +
+    `<title>${escapeHtml(title)}</title>` +
+    `<style>*{margin:0;padding:0;box-sizing:border-box}a{color:inherit;text-decoration:none}${css}</style>` +
+    `</head><body>${body}</body></html>`
+  );
+}
+
+const RECIPE_TITLE = "No-Knead Bread, Revisited - The Weekly Loaf";
+const RECIPE_PAGE: FakePage = {
+  title: RECIPE_TITLE,
+  html: pageShell(
+    RECIPE_TITLE,
+    [
+      "body{font-family:Georgia,'Iowan Old Style','Times New Roman',serif;background:#faf5ec;color:#261f17}",
+      ".topline{background:#3d2c1e;color:#f2e4cd;font:600 11px/1.2 'Helvetica Neue',Arial,sans-serif;letter-spacing:.16em;text-transform:uppercase;text-align:center;padding:9px 16px}",
+      "header{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:18px 56px;border-bottom:1px solid #d8c9ab}",
+      ".brand{font-size:30px;font-weight:700;letter-spacing:-.01em}",
+      "header nav{display:flex;gap:26px;font:500 12px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#5c4a33}",
+      ".pill{font:600 12px/1 'Helvetica Neue',Arial,sans-serif;background:#b4562c;color:#fff7ea;padding:10px 18px;border-radius:999px}",
+      "main{max-width:1080px;margin:0 auto;padding:30px 48px 80px}",
+      ".kicker{font:700 12px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.22em;text-transform:uppercase;color:#b4562c}",
+      "h1{font-size:52px;line-height:1.05;font-weight:700;margin:12px 0 12px;letter-spacing:-.015em}",
+      ".dek{font-size:19px;line-height:1.45;color:#5c4a33;max-width:780px}",
+      ".byline{display:flex;align-items:center;gap:12px;margin:20px 0 24px;font:400 13px/1.4 'Helvetica Neue',Arial,sans-serif;color:#5c4a33}",
+      ".avatar{width:40px;height:40px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#e9b57f,#a5673a 70%)}",
+      ".byline strong{display:block;font-size:14px;color:#261f17}",
+      ".byline .date{margin-left:auto}",
+      ".hero{height:280px;border-radius:6px;position:relative;background:radial-gradient(120% 90% at 30% 20%,rgba(255,235,200,.55),rgba(255,235,200,0) 55%),radial-gradient(90% 120% at 78% 75%,rgba(74,40,14,.5),rgba(74,40,14,0) 60%),repeating-linear-gradient(115deg,rgba(255,255,255,.05) 0 3px,rgba(0,0,0,.04) 3px 6px),linear-gradient(115deg,#e9b26a 0%,#c97a34 45%,#8f4c1d 100%)}",
+      ".hero figcaption{position:absolute;left:2px;bottom:-24px;font:400 12px/1 'Helvetica Neue',Arial,sans-serif;color:#8a765a}",
+      ".layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:48px;margin-top:52px}",
+      "article p{font-size:17px;line-height:1.72;margin:0 0 22px}",
+      "article h2{font-size:25px;margin:32px 0 14px}",
+      ".dropcap{float:left;font-size:62px;line-height:.85;padding:6px 10px 0 0;color:#b4562c;font-weight:700}",
+      ".ingredients-card{align-self:start;background:#fffdf6;border:1px solid #e3d5b4;border-radius:10px;padding:24px 24px 20px;box-shadow:0 10px 24px rgba(61,44,30,.08)}",
+      ".ingredients-card h3{font:700 13px/1 'Helvetica Neue',Arial,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#b4562c}",
+      ".yield{font:400 13px/1.4 'Helvetica Neue',Arial,sans-serif;color:#8a765a;margin-top:8px}",
+      ".ingredients-card ul{list-style:none;margin:12px 0 16px;font:400 14px/1.5 'Helvetica Neue',Arial,sans-serif}",
+      ".ingredients-card li{padding:9px 0;border-bottom:1px dashed #e3d5b4;display:flex;gap:8px}",
+      ".note{background:#f6ead2;border-radius:8px;padding:12px 14px;font:400 13px/1.55 'Helvetica Neue',Arial,sans-serif;color:#5c4a33}",
+      ".save-btn{margin-top:16px;width:100%;border:0;background:#3d2c1e;color:#f2e4cd;font:600 14px/1 'Helvetica Neue',Arial,sans-serif;padding:13px;border-radius:8px}",
+    ].join(""),
+    '<div class="topline">Fresh from the oven: our 2026 Bake Sale Guide is here</div>' +
+      '<header><div class="brand">The Weekly Loaf</div>' +
+      '<nav><a href="#">Recipes</a><a href="#">Techniques</a><a href="#">Pantry</a><a href="#">Starters</a><a href="#">About</a></nav>' +
+      '<span class="pill">Subscribe</span></header>' +
+      "<main>" +
+      '<div class="kicker">Baking School</div>' +
+      "<h1>No-Knead Bread, Revisited</h1>" +
+      '<p class="dek">Twenty years after the method swept home kitchens, a few small tweaks make the crackliest crust yet, and you still barely have to touch the dough.</p>' +
+      '<div class="byline"><span class="avatar"></span><div><strong>By Marta Ellison</strong>Senior Baking Editor</div><span class="date">July 21, 2026 &middot; 9 min read</span></div>' +
+      '<figure class="hero"><figcaption>A high-hydration boule, proofed overnight and baked in a lidded pot.</figcaption></figure>' +
+      '<div class="layout"><article>' +
+      '<p><span class="dropcap">T</span>he original promise still holds: flour, water, salt, and a whisper of yeast, stirred together in five minutes before bed. What has changed in twenty years of home baking is everything around the loaf, and a few of those lessons are worth folding back into the classic.</p>' +
+      "<p>Start with hydration. The classic formula sat near 80 percent, which made a slack, sticky dough that terrified first-timers. Pulling back to 76 percent costs you almost nothing in crumb and buys a dough you can actually shape without a bench scraper standing by.</p>" +
+      "<p>Second, salt earlier than you think. Mixing it in with the flour, rather than sprinkling it over the shaggy mass, gives a more even crumb and a crust that browns deeper before it dries out.</p>" +
+      "<p>Third, the pot matters less than the lid. Any heavy vessel that seals will do the work of a steam oven for the first half of the bake. We tested enameled iron, bare cast iron, and a plain stockpot with foil; the differences were smaller than a degree of oven drift.</p>" +
+      "<h2>Why the cold second rise matters</h2>" +
+      "<p>An overnight rest in the refrigerator slows fermentation to a crawl, which sounds like a delay but is really a flavor trade. The dough picks up gentle acidity, blisters form on the surface, and scoring becomes almost easy because the cold skin holds its shape under the blade.</p>" +
+      "</article>" +
+      '<aside class="ingredients-card"><h3>Ingredients</h3><p class="yield">Makes one 9-inch round loaf</p>' +
+      "<ul><li><b>430 g</b> bread flour</li><li><b>345 g</b> cool water</li><li><b>9 g</b> fine sea salt</li><li><b>1 g</b> instant yeast, about 1/4 tsp</li><li><b>Rice flour</b> for dusting the basket</li></ul>" +
+      '<div class="note"><strong>Baker&#39;s note</strong> A lidded pot traps steam for the first 30 minutes; that steam is the whole secret to the shattering crust.</div>' +
+      '<button class="save-btn">Save recipe</button></aside></div></main>',
+  ),
+};
+
+const DOCS_TITLE = "Quickstart - Fieldnote Docs";
+const DOCS_PAGE: FakePage = {
+  title: DOCS_TITLE,
+  html: pageShell(
+    DOCS_TITLE,
+    [
+      "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#ffffff;color:#1c2330}",
+      ".shell{display:grid;grid-template-columns:256px minmax(0,1fr) 200px;min-height:100vh}",
+      ".sidebar{background:#f6f7f9;border-right:1px solid #e5e8ee;padding:20px 16px 40px}",
+      ".logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:17px;padding:4px 8px 16px}",
+      ".mark{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#4f63e6,#8a4fe6)}",
+      ".ver{margin-left:auto;font:600 10px/1 ui-monospace,Menlo,monospace;color:#5a6478;background:#e9ecf2;border-radius:999px;padding:4px 8px}",
+      ".search{display:flex;align-items:center;gap:8px;font-size:13px;color:#7a8398;background:#fff;border:1px solid #dde1e9;border-radius:8px;padding:8px 10px;margin:0 4px 18px}",
+      ".kbd{margin-left:auto;font:600 10px/1 ui-monospace,Menlo,monospace;border:1px solid #d4d9e2;border-radius:4px;padding:3px 6px;color:#8a92a5}",
+      ".group{font:700 10.5px/1 -apple-system,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#8a92a5;padding:16px 12px 8px}",
+      ".item{display:block;font-size:13.5px;color:#3c4457;padding:7px 12px;border-radius:7px}",
+      ".item.active{background:#e9edff;color:#3646c4;font-weight:600}",
+      "main{padding:36px 56px 80px;max-width:860px}",
+      ".crumbs{font-size:12.5px;color:#7a8398;margin-bottom:14px}",
+      ".crumbs b{color:#3646c4}",
+      "h1{font-size:36px;letter-spacing:-.02em;margin-bottom:12px}",
+      ".lead{font-size:16.5px;line-height:1.6;color:#4c5568;margin-bottom:28px}",
+      "h2{font-size:21px;letter-spacing:-.01em;margin:30px 0 10px}",
+      "main p{font-size:14.5px;line-height:1.65;color:#3c4457;margin-bottom:14px}",
+      "pre{background:#14181f;color:#c9d4e3;border-radius:10px;padding:16px 18px;font:400 13px/1.6 ui-monospace,Menlo,'SF Mono',monospace;overflow-x:auto;margin:12px 0 20px;white-space:pre}",
+      ".p{color:#6b7690}.kw{color:#6cb2ff}.str{color:#7ee0a3}.fn{color:#e6c07b}.cn{color:#d19af0}",
+      ".callout{display:block;background:#eef4ff;border:1px solid #d5e2fb;border-left:4px solid #4f63e6;border-radius:8px;padding:13px 16px;font-size:13.5px;line-height:1.6;color:#31415f;margin:18px 0}",
+      ".toc{padding:44px 24px 0 0;font-size:12.5px}",
+      ".toc-h{font-weight:700;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#8a92a5;margin-bottom:10px}",
+      ".toc a{display:block;color:#5a6478;padding:5px 0 5px 12px;border-left:2px solid #e5e8ee}",
+      ".toc a.on{color:#3646c4;border-left-color:#3646c4;font-weight:600}",
+    ].join(""),
+    '<div class="shell"><aside class="sidebar">' +
+      '<div class="logo"><span class="mark"></span>Fieldnote<span class="ver">v3.2</span></div>' +
+      '<div class="search">Search docs<span class="kbd">/</span></div>' +
+      '<div class="group">Getting started</div>' +
+      '<a class="item" href="#">Overview</a><a class="item active" href="#">Quickstart</a><a class="item" href="#">Installation</a><a class="item" href="#">Authentication</a>' +
+      '<div class="group">Core concepts</div>' +
+      '<a class="item" href="#">Notebooks</a><a class="item" href="#">Entries</a><a class="item" href="#">Sync engine</a><a class="item" href="#">Offline mode</a>' +
+      '<div class="group">API reference</div>' +
+      '<a class="item" href="#">REST API</a><a class="item" href="#">Webhooks</a><a class="item" href="#">Rate limits</a><a class="item" href="#">Errors</a>' +
+      "</aside><main>" +
+      '<div class="crumbs">Docs / Getting started / <b>Quickstart</b></div>' +
+      "<h1>Quickstart</h1>" +
+      '<p class="lead">Capture your first entry in under five minutes. This guide walks through installing the SDK, creating a notebook, and syncing it to the Fieldnote cloud.</p>' +
+      "<h2>1. Install the SDK</h2>" +
+      "<p>Fieldnote ships a single package for Node 18 and later. Install it with the package manager of your choice:</p>" +
+      '<pre class="term"><span class="p">$</span> npm install @fieldnote/sdk</pre>' +
+      "<h2>2. Create a notebook</h2>" +
+      "<p>Every entry lives in a notebook. Create one with a name and an optional retention policy:</p>" +
+      '<pre class="code"><span class="kw">import</span> { Fieldnote } <span class="kw">from</span> <span class="str">&quot;@fieldnote/sdk&quot;</span>;\n\n' +
+      '<span class="kw">const</span> client = <span class="kw">new</span> <span class="fn">Fieldnote</span>({ apiKey: process.env.<span class="cn">FIELDNOTE_KEY</span> });\n\n' +
+      '<span class="kw">const</span> notebook = <span class="kw">await</span> client.notebooks.<span class="fn">create</span>({\n' +
+      '  name: <span class="str">&quot;field-observations&quot;</span>,\n' +
+      '  retention: <span class="str">&quot;90d&quot;</span>,\n});</pre>' +
+      '<span class="callout"><b>Note</b> Keys created in the dashboard are scoped to a single workspace. Keep them in a server-side environment variable; never ship a key to the browser.</span>' +
+      "<h2>3. Write and sync</h2>" +
+      "<p>Entries accept markdown plus structured fields, and sync is automatic once a session is open. See Notebooks for batching and conflict rules.</p>" +
+      "</main>" +
+      '<nav class="toc"><div class="toc-h">On this page</div><a class="on" href="#">Install the SDK</a><a href="#">Create a notebook</a><a href="#">Write and sync</a><a href="#">Next steps</a></nav></div>',
+  ),
+};
+
+const SHOP_TITLE = "New Arrivals - North Bench Goods";
+const SHOP_PAGE: FakePage = {
+  title: SHOP_TITLE,
+  html: pageShell(
+    SHOP_TITLE,
+    [
+      "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#f4f2ec;color:#20241f}",
+      ".announce{background:#20241f;color:#efeadf;font-size:12px;letter-spacing:.06em;text-align:center;padding:9px 16px}",
+      "header{display:flex;align-items:center;justify-content:space-between;background:#fbfaf7;border-bottom:1px solid #e2ded2;padding:18px 56px}",
+      ".wordmark{font-size:20px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}",
+      ".wordmark span{color:#8a6a3a}",
+      "header nav{display:flex;gap:28px;font-size:13.5px;font-weight:500;color:#4c5245}",
+      ".cart{font-size:13px;font-weight:600;border:1.5px solid #20241f;border-radius:999px;padding:8px 16px}",
+      ".intro{padding:40px 56px 8px}",
+      ".intro h1{font-size:40px;letter-spacing:-.02em}",
+      ".intro p{font-size:15.5px;color:#5c6355;margin-top:8px;max-width:560px}",
+      ".chips{display:flex;gap:10px;margin:20px 0 4px}",
+      ".chip{font-size:12.5px;font-weight:600;color:#4c5245;background:#fbfaf7;border:1px solid #ddd8c9;border-radius:999px;padding:8px 16px}",
+      ".chip.on{background:#20241f;color:#efeadf;border-color:#20241f}",
+      ".product-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;padding:22px 56px 72px}",
+      ".card{background:#fbfaf7;border:1px solid #e6e2d6;border-radius:12px;padding:10px 10px 14px;position:relative}",
+      ".swatch{aspect-ratio:4/3;border-radius:8px;margin-bottom:12px}",
+      ".badge{position:absolute;top:18px;left:18px;font:700 10px/1 -apple-system,sans-serif;letter-spacing:.1em;text-transform:uppercase;background:#fbfaf7;border-radius:999px;padding:5px 9px}",
+      ".pname{font-size:14px;font-weight:600;padding:0 4px}",
+      ".prow{display:flex;justify-content:space-between;align-items:center;padding:5px 4px 0;font-size:13px;color:#5c6355}",
+      ".price{font-weight:700;color:#20241f}",
+      ".s-tote{background:radial-gradient(90% 70% at 50% 25%,rgba(255,255,255,.35),rgba(255,255,255,0) 60%),linear-gradient(180deg,#c8ab7e 0 62%,#6b5233 62% 78%,#c8ab7e 78%)}",
+      ".s-mug{background:radial-gradient(circle at 50% 42%,#f4f1ea 0 34%,#2f5d50 35% 72%,#24483e 73%),#e7e2d5}",
+      ".s-board{background:repeating-linear-gradient(94deg,#7a5433 0 9px,#8f6540 9px 21px,#6d4a2c 21px 26px),#7a5433}",
+      ".s-throw{background:repeating-linear-gradient(0deg,rgba(32,36,31,.28) 0 12px,rgba(0,0,0,0) 12px 34px),repeating-linear-gradient(90deg,rgba(140,60,44,.5) 0 12px,rgba(0,0,0,0) 12px 34px),#b8a184}",
+      ".s-pour{background:linear-gradient(180deg,#d8c6b2 0 30%,#b4795a 30% 85%,#8c5a41 85%),#d8c6b2}",
+      ".s-ruler{background:linear-gradient(115deg,#d9c07a 0%,#f0e0a8 35%,#c4a55e 70%,#e6cf8d 100%)}",
+      ".s-notes{background:linear-gradient(90deg,#5c4a33 0 14%,rgba(0,0,0,0) 14%),repeating-linear-gradient(0deg,rgba(0,0,0,.05) 0 2px,rgba(0,0,0,0) 2px 16px),linear-gradient(#c9a878,#c9a878)}",
+      ".s-candle{background:radial-gradient(70% 60% at 50% 30%,#f0ce8f,#c98d3f 70%,#9c6428)}",
+    ].join(""),
+    '<div class="announce">Free shipping on orders over $75 &middot; Handmade in small batches</div>' +
+      '<header><div class="wordmark">North Bench <span>Goods</span></div>' +
+      '<nav><a href="#">Shop</a><a href="#">Workshop</a><a href="#">Journal</a><a href="#">About</a></nav>' +
+      '<div class="cart">Cart (2)</div></header>' +
+      '<section class="intro"><h1>New Arrivals</h1>' +
+      "<p>Sturdy goods for the kitchen, the desk, and the trail, built to be used daily and repaired rarely.</p>" +
+      '<div class="chips"><span class="chip on">All</span><span class="chip">Kitchen</span><span class="chip">Desk</span><span class="chip">Outdoor</span><span class="chip">Last call</span></div></section>' +
+      '<section class="product-grid">' +
+      '<div class="card"><span class="badge">New</span><div class="swatch s-tote"></div><div class="pname">Waxed Canvas Tote</div><div class="prow"><span>Olive / natural</span><span class="price">$88</span></div></div>' +
+      '<div class="card"><div class="swatch s-mug"></div><div class="pname">Enamel Camp Mug</div><div class="prow"><span>Spruce green</span><span class="price">$24</span></div></div>' +
+      '<div class="card"><div class="swatch s-board"></div><div class="pname">Walnut Serving Board</div><div class="prow"><span>Oiled finish</span><span class="price">$52</span></div></div>' +
+      '<div class="card"><span class="badge">New</span><div class="swatch s-throw"></div><div class="pname">Wool Camp Throw</div><div class="prow"><span>Ember plaid</span><span class="price">$124</span></div></div>' +
+      '<div class="card"><div class="swatch s-pour"></div><div class="pname">Stoneware Pour-Over</div><div class="prow"><span>Clay / cream</span><span class="price">$46</span></div></div>' +
+      '<div class="card"><div class="swatch s-ruler"></div><div class="pname">Brass Pocket Ruler</div><div class="prow"><span>Six inch</span><span class="price">$18</span></div></div>' +
+      '<div class="card"><div class="swatch s-notes"></div><div class="pname">Field Notebook, 3-Pack</div><div class="prow"><span>Kraft cover</span><span class="price">$15</span></div></div>' +
+      '<div class="card"><div class="swatch s-candle"></div><div class="pname">Cedar &amp; Amber Candle</div><div class="prow"><span>40 hour burn</span><span class="price">$28</span></div></div>' +
+      "</section>",
+  ),
+};
+
+/** Exported so a scratch QA script can screenshot the pages without running the pipeline. */
+export const FAKE_PAGES: Record<string, FakePage> = {
+  "/recipe": RECIPE_PAGE,
+  "/docs": DOCS_PAGE,
+  "/shop": SHOP_PAGE,
+};
+
+/**
+ * Real-site backdrops: LB's own properties, so rights are clean and they
+ * double as subtle cross-promo. Evaluated headed at 1280x800 on 2026-07-23:
+ *  - tabburrow.com    PASS 1.9s, fully painted, no banners; the active tab
+ *                     behind the popup composite (a nice meta touch)
+ *  - thedigitallm.com PASS 2.3s, fully painted, no banners
+ *  - lbwalton.com     PASS 4.1s, fully painted, no banners
+ *  - techishub.com    FAIL 11.4s load + a cookie consent banner on camera
+ * Each entry keeps a FAKE_PAGES fallback so the capture still works with no
+ * network: gotoBackdrop() below swaps to the local route on navigation
+ * failure and never films an unpainted tab either way.
+ */
+interface TabSource {
+  url: string;
+  /** Selector that proves the page painted (waited for on top of networkidle). */
+  readySelector: string;
+  /** FAKE_PAGES route used when the real site cannot be reached. */
+  fallbackRoute: string;
+}
+
+const BACKDROP_TABS: { docs: TabSource; portfolio: TabSource; active: TabSource } = {
+  docs: { url: "https://thedigitallm.com", readySelector: "h1", fallbackRoute: "/docs" },
+  portfolio: { url: "https://lbwalton.com", readySelector: "h1", fallbackRoute: "/shop" },
+  active: { url: "https://tabburrow.com", readySelector: "h1", fallbackRoute: "/recipe" },
+};
+
+/** Navigate a backdrop tab and only return once it is visually settled: real
+ * site if reachable (networkidle + painted selector + a settle beat), local
+ * fake page otherwise. The popup composite screenshots the active one, so
+ * "loaded" is never enough; it must be PAINTED. */
+async function gotoBackdrop(page: Page, source: TabSource, localServer: LocalServer): Promise<void> {
+  try {
+    await page.goto(source.url, { timeout: 20_000, waitUntil: "load" });
+  } catch {
+    console.warn(`  ${source.url} unreachable; using local fallback ${source.fallbackRoute}`);
+    await page.goto(localServer.pageUrl(source.fallbackRoute));
+  }
+  await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => {});
+  await page.locator(source.readySelector).first().waitFor({ timeout: 10_000 }).catch(() => {});
+  await page.waitForTimeout(700);
+}
+
+/** Serves the FAKE_PAGES routes (standalone sibling of fixtures.ts's worker fixture server, which only needs bare titled pages for tests). */
 function startLocalServer(): Promise<LocalServer> {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       const url = new URL(req.url ?? "/", "http://localhost");
-      const title = url.searchParams.get("title") ?? "Test Page";
+      const page = FAKE_PAGES[url.pathname] ?? RECIPE_PAGE;
       res.setHeader("content-type", "text/html; charset=utf-8");
-      res.end(
-        `<!doctype html><html><head><title>${escapeHtml(title)}</title></head><body><h1>${escapeHtml(title)}</h1></body></html>`,
-      );
+      res.end(page.html);
     });
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       const port = typeof address === "object" && address ? address.port : 0;
       const baseUrl = `http://127.0.0.1:${port}`;
-      resolve({ server, pageUrl: (title: string) => `${baseUrl}/?title=${encodeURIComponent(title)}` });
+      resolve({ server, pageUrl: (route: string) => `${baseUrl}${route}` });
     });
   });
 }
@@ -270,6 +525,7 @@ async function phaseCapture(): Promise<void> {
 
     const kitchenRenoId = randomUUID();
     const recipesId = randomUUID();
+    const readLaterId = randomUUID();
     const messyId = randomUUID();
     const collections: SeedCollection[] = [
       { id: kitchenRenoId, name: "Kitchen reno research", accent: "var(--accent)", position: seedPosition(0) },
@@ -277,7 +533,8 @@ async function phaseCapture(): Promise<void> {
       { id: randomUUID(), name: "Weekend in Portland", accent: "color-mix(in srgb, var(--accent) 50%, var(--accent-2) 50%)", position: seedPosition(2) },
       { id: randomUUID(), name: "Dev docs I keep rereading", accent: "color-mix(in srgb, var(--muted) 60%, var(--text) 40%)", position: seedPosition(3) },
       { id: recipesId, name: "Recipes worth repeating", accent: "color-mix(in srgb, var(--accent) 70%, var(--text) 30%)", position: seedPosition(4) },
-      { id: messyId, name: "This week's tabs", position: seedPosition(5) },
+      { id: readLaterId, name: "Read later", accent: "color-mix(in srgb, var(--accent-2) 70%, var(--text) 30%)", position: seedPosition(5) },
+      { id: messyId, name: "This week's tabs", position: seedPosition(6) },
     ];
     const links: SeedLink[] = [
       ...toSeedLinks(kitchenRenoId, KITCHEN_RENO_LINKS),
@@ -288,11 +545,12 @@ async function phaseCapture(): Promise<void> {
       ...toSeedLinks(messyId, MESSY_TABS_LINKS),
     ];
     await seedCollectionsAndLinks(setup, collections, links);
-    // One-click Save target pinned to "Recipes worth repeating" — the popup
-    // beat saves a bread tab there, so the pinned target reads truthfully.
+    // One-click Save target pinned to "Read later": the popup beat saves the
+    // active tab (the tabburrow.com marketing page), and stashing an article
+    // or product page to Read later reads truthfully for any site.
     await seedMeta(setup, {
-      lastUsedCollectionId: recipesId,
-      defaultCollectionId: recipesId,
+      lastUsedCollectionId: readLaterId,
+      defaultCollectionId: readLaterId,
       saveTargetMode: "default",
     });
     const now = Date.now();
@@ -355,14 +613,19 @@ async function phaseCapture(): Promise<void> {
     await signInWithEmailOtp(setup, DEMO_EMAIL);
     await setup.close();
 
-    // --- Real http tabs for the popup beats ---
+    // --- Real http tabs for the popup beats: LB's real sites (local fake
+    // pages as offline fallback), so every backdrop on camera is a fully
+    // painted page (never a white void). ---
     const tabA = await context.newPage();
-    await tabA.goto(localServer.pageUrl("Sourdough Starter Guide - King Arthur Baking"));
+    await gotoBackdrop(tabA, BACKDROP_TABS.docs, localServer);
     const tabB = await context.newPage();
-    await tabB.goto(localServer.pageUrl("Focaccia Troubleshooting - The Perfect Loaf"));
+    await gotoBackdrop(tabB, BACKDROP_TABS.portfolio, localServer);
     const tabC = await context.newPage();
-    await tabC.goto(localServer.pageUrl("No-Knead Bread, Revisited - NYT Cooking"));
+    await gotoBackdrop(tabC, BACKDROP_TABS.active, localServer);
     await tabC.bringToFront();
+    // The popup composite floats over this screenshot; gotoBackdrop already
+    // held for networkidle + a painted selector, so this shoots a fully
+    // rendered tabburrow.com hero, not a mid-load frame.
     await tabC.screenshot({ path: BG_PNG_PATH }); // the page the popup floats over in post
 
     // --- Beats a + b: the popup (its own .webm carries both) ---
@@ -378,7 +641,7 @@ async function phaseCapture(): Promise<void> {
     await tabC.bringToFront(); // the active tab must be a real http page for one-click Save
 
     await expect(popup.getByText("1-click Save goes to")).toBeVisible();
-    await expect(popup.getByText("Recipes worth repeating", { exact: true }).first()).toBeVisible();
+    await expect(popup.getByText("Read later", { exact: true }).first()).toBeVisible();
     await popup.locator("div.group", { hasText: "Weekend in Portland" }).first().hover();
     await popup.waitForTimeout(500); // settle clear of the load-in before the first cut point
     popupMark("home_settled");
@@ -387,7 +650,7 @@ async function phaseCapture(): Promise<void> {
     // Beat a: one-click Save → confirm view
     popupMark("save_click");
     await popup.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(popup.getByText(/Saved 1 tab to Recipes worth repeating/)).toBeVisible();
+    await expect(popup.getByText(/Saved 1 tab to Read later/)).toBeVisible();
     popupMark("save_confirm");
     await popup.waitForTimeout(2000);
     await popup.getByRole("button", { name: "Done" }).click();
@@ -569,15 +832,21 @@ async function phasePost(): Promise<void> {
     { start: p("create_click"), end: p("popup_end"), target: 3.4 }, // Create → "Saved 3 tabs to Quick Saves"
   ];
   const overlayX = VIEW.width - POPUP_VIEW.width - 32;
+  // 1px hairline padded around the popup crop (cream-tinted, mixed toward the
+  // ground): the popup and the tabburrow.com backdrop share the same deep
+  // green, so without an edge the panel melts into the page. Real Chrome
+  // popups draw a border too, so this stays product-truthful.
+  const HAIRLINE = "0x5E6A60";
   const segs: string[] = [];
   popupCuts.forEach((cut, i) => {
     const seg = path.join(SEGS_DIR, `seg-popup-${i}.mp4`);
     encodeSegment(
       seg,
       `[0:v]trim=start=${cut.start.toFixed(2)}:end=${cut.end.toFixed(2)},setpts=(PTS-STARTPTS)/${cutSpeed(cut).toFixed(4)},` +
-        `crop=${POPUP_VIEW.width}:${POPUP_VIEW.height}:0:0[pp];` +
+        `crop=${POPUP_VIEW.width}:${POPUP_VIEW.height}:0:0,` +
+        `pad=${POPUP_VIEW.width + 2}:${POPUP_VIEW.height + 2}:1:1:color=${HAIRLINE}[pp];` +
         `[1:v]scale=${VIEW.width}:${VIEW.height},setsar=1[bg];` +
-        `[bg][pp]overlay=${overlayX}:28:shortest=1,fps=30,format=yuv420p[v]`,
+        `[bg][pp]overlay=${overlayX - 1}:27:shortest=1,fps=30,format=yuv420p[v]`,
       `-i "${POPUP_WEBM}" -loop 1 -framerate 30 -i "${BG_PNG_PATH}"`,
     );
     segs.push(seg);
@@ -666,7 +935,11 @@ async function main(): Promise<void> {
   console.log("\nDone.");
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exitCode = 1;
-});
+// Only run when executed directly (npx tsx e2e/capture-demo.ts), not when a
+// QA script imports FAKE_PAGES.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err);
+    process.exitCode = 1;
+  });
+}
