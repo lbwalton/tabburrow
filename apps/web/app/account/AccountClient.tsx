@@ -39,6 +39,9 @@ export function AccountClient() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
+
   const [billingBusy, setBillingBusy] = useState<BillingKey | null>(null);
   const [billingError, setBillingError] = useState<string | null>(null);
 
@@ -59,6 +62,7 @@ export function AccountClient() {
         setEmail("");
         setCode("");
         setError(null);
+        setGoogleError(null);
       }
     });
     return () => subscription.unsubscribe();
@@ -143,6 +147,40 @@ export function AccountClient() {
     }
   }
 
+  /**
+   * Google sign-in via Supabase OAuth — the web counterpart to the
+   * extension's lib/auth.ts `signInWithGoogle`, backed by the SAME Supabase
+   * Google provider (no separate Google Cloud client). Where the extension
+   * drives `chrome.identity.launchWebAuthFlow`, an ordinary web page uses
+   * the standard full-tab redirect: supabase-js sends this tab to Google,
+   * and on the way back to `${origin}/account` the browser client's default
+   * `detectSessionInUrl` establishes the session client-side — no server
+   * callback route, because this app uses the plain @supabase/supabase-js
+   * client (localStorage sessions), not @supabase/ssr cookies. The
+   * `onAuthStateChange` subscription above then flips the view to signed-in.
+   * `${origin}/account` (not `/`) is deliberate: the redirect must land on a
+   * page that instantiates the Supabase client, and only `/account` does.
+   */
+  async function handleGoogleSignIn(): Promise<void> {
+    if (googleBusy) return;
+    const client = getBrowserClient();
+    if (!client) return;
+    setGoogleBusy(true);
+    setGoogleError(null);
+    try {
+      const { error: oauthError } = await client.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${window.location.origin}/account` },
+      });
+      if (oauthError) throw oauthError;
+      // On success supabase-js navigates this tab to Google, so the page
+      // unloads here; `googleBusy` is intentionally left set.
+    } catch (err) {
+      setGoogleError(err instanceof Error ? err.message : "Google sign-in isn't available right now.");
+      setGoogleBusy(false);
+    }
+  }
+
   async function handleSignOut(): Promise<void> {
     const client = getBrowserClient();
     if (!client || busy) return;
@@ -223,27 +261,38 @@ export function AccountClient() {
           Sign in
         </h1>
         <p className="mt-2 text-sm text-[var(--ink-soft)]">
-          Sign in with an email code to manage your TabBurrow account and billing.
+          Sign in to manage your TabBurrow account and billing.
         </p>
         {stage === "email" ? (
-          <form className="mt-6 flex flex-col gap-3" onSubmit={(e) => void handleSendCode(e)}>
-            <label className="text-xs text-[var(--ink-soft)]" htmlFor="account-email">
-              Email
-            </label>
-            <Input
-              id="account-email"
-              type="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={busy}
-            />
-            {error ? <p className="text-xs text-[var(--accent-2)]">{error}</p> : null}
-            <Button type="submit" disabled={busy}>
-              Send code
+          <div className="mt-6 flex flex-col gap-3">
+            <Button type="button" onClick={() => void handleGoogleSignIn()} disabled={googleBusy || busy}>
+              {googleBusy ? "Redirecting…" : "Sign in with Google"}
             </Button>
-          </form>
+            {googleError ? <p className="text-xs text-[var(--accent-2)]">{googleError}</p> : null}
+            <div className="flex items-center gap-3 py-1" aria-hidden="true">
+              <span className="h-px flex-1 bg-[var(--paper-line)]" />
+              <span className="text-xs text-[var(--ink-soft)]">or</span>
+              <span className="h-px flex-1 bg-[var(--paper-line)]" />
+            </div>
+            <form className="flex flex-col gap-3" onSubmit={(e) => void handleSendCode(e)}>
+              <label className="text-xs text-[var(--ink-soft)]" htmlFor="account-email">
+                Email
+              </label>
+              <Input
+                id="account-email"
+                type="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={busy}
+              />
+              {error ? <p className="text-xs text-[var(--accent-2)]">{error}</p> : null}
+              <Button type="submit" disabled={busy}>
+                Send code
+              </Button>
+            </form>
+          </div>
         ) : (
           <form className="mt-6 flex flex-col gap-3" onSubmit={(e) => void handleVerifyCode(e)}>
             <label className="text-xs text-[var(--ink-soft)]" htmlFor="account-code">
