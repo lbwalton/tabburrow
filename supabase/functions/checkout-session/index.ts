@@ -134,6 +134,42 @@ export async function findOrCreateCustomerId(
 }
 
 /**
+ * Builds the subscription Checkout Session. Extracted so the "stored customer
+ * no longer exists" retry below can call it a second time with a fresh
+ * customer without duplicating the (identical) session parameters.
+ */
+async function createSubscriptionCheckout(
+  stripe: Stripe,
+  customerId: string,
+  priceId: string,
+  site: string,
+  userId: string,
+): Promise<Stripe.Checkout.Session> {
+  return await stripe.checkout.sessions.create({
+    mode: "subscription",
+    customer: customerId,
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: `${site}/upgrade/success`,
+    cancel_url: `${site}/account`,
+    client_reference_id: userId,
+    subscription_data: { metadata: { user_id: userId } },
+  });
+}
+
+/**
+ * True for Stripe's "No such customer" — a `resource_missing` on the
+ * `customer` param — which is what `checkout.sessions.create` throws when the
+ * stored `stripe_customer_id` belongs to a different Stripe account (after an
+ * account migration) or was deleted in the dashboard. Deliberately narrow
+ * (`param === "customer"`) so a `resource_missing` on the PRICE is never
+ * mistaken for a stale customer and does not trigger the recreate path.
+ */
+function isMissingCustomerError(err: unknown): boolean {
+  const e = err as { code?: string; param?: string };
+  return e.code === "resource_missing" && e.param === "customer";
+}
+
+/**
  * Handles both checkout-session creation and billing-portal-session
  * creation behind one JWT-authed endpoint (this repo's design choice,
  * documented per task-23a's brief: "a NEW small function or reuse ... your
@@ -208,15 +244,24 @@ export async function handleRequest(req: Request): Promise<Response> {
     });
     if (!customerResult.ok) return errorResponse("upstream", 502);
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer: customerResult.customerId,
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${site}/upgrade/success`,
-      cancel_url: `${site}/account`,
-      client_reference_id: user.id,
-      subscription_data: { metadata: { user_id: user.id } },
-    });
+    let session: Stripe.Checkout.Session;
+    try {
+      session = await createSubscriptionCheckout(stripe, customerResult.customerId, priceId, site, user.id);
+    } catch (err) {
+      // Self-heal a stored customer that no longer exists in THIS Stripe
+      // account (an id left over from a previous Stripe account after a
+      // migration, or a customer deleted in the dashboard) — otherwise it
+      // 404s "No such customer" on every checkout forever. Mint a fresh
+      // customer, overwrite the dead id (last-write-wins under the rare
+      // concurrent-stale-checkout race — a bounded orphan, same class of edge
+      // as findOrCreateCustomerId's own claim), and retry exactly once. Any
+      // other error propagates to the outer catch unchanged.
+      if (!isMissingCustomerError(err)) throw err;
+      console.error("[checkout-session] stored customer missing; recreating for user", user.id);
+      const fresh = await stripe.customers.create({ email: user.email ?? undefined, metadata: { user_id: user.id } });
+      await serviceClient.from("profiles").update({ stripe_customer_id: fresh.id }).eq("user_id", user.id);
+      session = await createSubscriptionCheckout(stripe, fresh.id, priceId, site, user.id);
+    }
     if (!session.url) return errorResponse("upstream", 502);
     return jsonResponse({ url: session.url }, 200);
   } catch (err) {
