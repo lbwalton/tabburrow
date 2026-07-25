@@ -220,7 +220,10 @@ async function main() {
   const modeWord = MODE === "LIVE" ? "live" : MODE === "TEST" ? "test" : "this account's";
   console.log(`\n=== Set these on Supabase (${modeWord} values) ===`);
   console.log("  supabase secrets set \\");
-  console.log(`    STRIPE_SECRET_KEY=${SECRET_KEY.slice(0, 12)}...  \\   # the FULL key you ran this with`);
+  // Deliberately a PLACEHOLDER, not the real key: never print a secret to the
+  // terminal (scrollback/logs), and never print a TRUNCATED key that could be
+  // pasted verbatim and silently set an invalid STRIPE_SECRET_KEY.
+  console.log(`    STRIPE_SECRET_KEY='<paste the FULL ${MODE === "LIVE" ? "sk_live_" : "sk_test_"} key here>' \\`);
   console.log(
     `    STRIPE_WEBHOOK_SECRET=${webhookSecret ?? "whsec_...(reuse: reveal/roll it in the Stripe dashboard → Webhooks)"} \\`,
   );
