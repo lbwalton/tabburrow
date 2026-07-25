@@ -107,7 +107,8 @@ export async function findOrCreateCustomerId(
       email: user.email,
       metadata: { user_id: user.id },
     });
-  } catch {
+  } catch (err) {
+    console.error("[checkout-session] customers.create failed:", err instanceof Error ? err.message : String(err));
     return { ok: false, reason: "stripe_error" };
   }
 
@@ -218,7 +219,8 @@ export async function handleRequest(req: Request): Promise<Response> {
     });
     if (!session.url) return errorResponse("upstream", 502);
     return jsonResponse({ url: session.url }, 200);
-  } catch {
+  } catch (err) {
+    console.error("[checkout-session] upstream error:", err instanceof Error ? err.message : String(err));
     return errorResponse("upstream", 502);
   }
 }
