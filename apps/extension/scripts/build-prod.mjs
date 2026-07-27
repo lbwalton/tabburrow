@@ -32,9 +32,14 @@ const run = (cmd) => execSync(cmd, { cwd: EXT_DIR, stdio: "inherit" });
 
 fs.writeFileSync(ENV_LOCAL, PROD_ENV);
 try {
-  // Plain `wxt build` (production mode) — NOT the pnpm script, whose prebuild
-  // hook would regenerate .env.local from the root .env's local-stack values.
-  run("npx wxt build");
+  // Plain `wxt zip` (production mode; builds then zips) — NOT the pnpm
+  // scripts, whose prebuild hook would regenerate .env.local from the root
+  // .env's local-stack values. The zip MUST be produced here, inside the
+  // hosted-env window: running `wxt zip` on its own later rebuilds from
+  // whatever .env.local then holds (the dev stack, after this script's
+  // finally-block restore) and silently bakes 127.0.0.1 into the store
+  // artifact — exactly the near-miss caught on 2026-07-27.
+  run("npx wxt zip");
   fs.rmSync(DIST, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(DIST), { recursive: true });
   fs.cpSync(OUT, DIST, { recursive: true });
@@ -49,13 +54,16 @@ try {
       return false;
     }
   })();
+  const zipPath = path.join(EXT_DIR, ".output", `tabburrowextension-${manifest.version}-chrome.zip`);
+  const zipExists = fs.existsSync(zipPath);
   console.log("\n=== build:prod verification ===");
   console.log("version:", manifest.version, "| host_permissions:", JSON.stringify(manifest.host_permissions));
-  console.log("hosted URL baked:", baked, "| local URL leaked:", localLeak);
-  if (!baked || localLeak || manifest.host_permissions.some((h) => h.includes("127.0.0.1"))) {
+  console.log("hosted URL baked:", baked, "| local URL leaked:", localLeak, "| store zip written:", zipExists);
+  if (!baked || localLeak || !zipExists || manifest.host_permissions.some((h) => h.includes("127.0.0.1"))) {
     throw new Error("build:prod verification failed — see flags above");
   }
-  console.log("\nLoad in Chrome: apps/extension/dist-prod/chrome-mv3 (stable, dev builds never touch it)");
+  console.log(`\nStore upload artifact: ${path.relative(EXT_DIR, zipPath)} (hosted backend baked in)`);
+  console.log("Load in Chrome: apps/extension/dist-prod/chrome-mv3 (stable, dev builds never touch it)");
 } finally {
   // Leave .env.local pointing back at the dev stack so a later `pnpm dev` /
   // `build:e2e` behaves as every doc in e2e/ assumes.
