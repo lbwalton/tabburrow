@@ -498,8 +498,13 @@ export function App() {
     );
   }
 
+  // Width/height in rem, not px: the popup's content is rem-sized, so a
+  // user's Chrome font-size setting (e.g. Large = 20px root) scales it.
+  // A px-fixed box made the header overflow and overlap at Large fonts;
+  // 22.5rem/30rem are identical to the old 360/480px at the default 16px
+  // root, and Chrome auto-sizes toolbar popups up to 800x600.
   return (
-    <div className="flex w-[360px] flex-col gap-4 bg-[var(--bg-ground)] px-4 py-4" style={{ minHeight: 480 }}>
+    <div className="flex w-[22.5rem] flex-col gap-4 bg-[var(--bg-ground)] px-4 py-4" style={{ minHeight: "30rem" }}>
       <div ref={screenRef}>{screen}</div>
 
       {actionError && state.view !== "folderDetail" ? (
