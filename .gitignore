@@ -15,3 +15,8 @@ supabase/.temp/
 apps/extension/e2e/test-results/
 apps/extension/e2e/report/
 .vercel
+
+# Internal — kept locally, never in the public repo (also purged from git history)
+/LAUNCH.md
+/docs/launch/
+/docs/plans/

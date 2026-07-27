@@ -93,8 +93,8 @@ Dashboard → Authentication → URL Configuration:
    permitted. The wildcard covers unpacked dev copies, whose ids differ per
    machine. **Tighten before launch:** once the Chrome Web Store assigns the
    final extension id, replace the wildcard with
-   `https://<store-extension-id>.chromiumapp.org/*` (tracked in
-   docs/launch/store-submission.md's post-approval list).
+   `https://<store-extension-id>.chromiumapp.org/*` as part of the
+   post-approval tightening step.
 
 ### 4. Verify
 

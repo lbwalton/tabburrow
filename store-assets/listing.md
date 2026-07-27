@@ -30,9 +30,11 @@ Save any tab in one click. Local-first, no account needed. AI organize and sync 
 ## Full description
 
 ```
-TabBurrow is an open-source, local-first tab and bookmark manager. Save a
-tab, a selection of tabs, or a whole window in one click; no signup, no
-account wall. Everything lives in your browser from the first save.
+TabBurrow saves your open tabs into tidy folders in one click and keeps
+everything on your device. It's local-first, needs no account, and fully
+open source (AGPL-3.0). Save a single tab, a selection, or a whole
+window; no signup, no account wall. Everything lives in your browser
+from the first save.
 
 WHY TABBURROW
 
@@ -76,8 +78,8 @@ Local saving, organizing, sessions, search, and import/export are free,
 unlimited, forever: no trial, no nag screens. On-device AI organize
 (Chrome's built-in Gemini Nano, on a capable desktop Chrome) is free too.
 PRO ($3.99/month or $29/year) adds cloud sync across devices, shareable
-collection pages, and unlimited cloud AI organize (free accounts get 30
-cloud runs a month). Prefer to run your own backend? Self-host the entire
+collection pages, and cloud AI organize with a generous fair-use cap of
+about 1,000 runs a month (free accounts get 30 cloud runs a month). Prefer to run your own backend? Self-host the entire
 stack, including cloud AI organize with your own API key, for $0; see the
 self-hosting guide on GitHub.
 

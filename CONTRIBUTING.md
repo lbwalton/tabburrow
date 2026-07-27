@@ -105,6 +105,14 @@ docs: TabBurrow implementation plan (26 tasks, 4 phases)
 
 ## Pull requests
 
+TabBurrow is maintained by one person right now, and that shapes a few
+things: external PRs are read and merged at the maintainer's discretion,
+review can take a while, and nothing reaches `main` without a human
+review. For anything larger than a small fix, open an issue first so we
+can agree on the approach before you invest time. None of this is a knock
+on your work; it is how a small project keeps the code it ships
+trustworthy.
+
 - One logical change per PR: a story, a bug fix, a doc update. Avoid
   bundling unrelated changes.
 - Fill out the PR template: what changed, why, and how you tested it.
