@@ -17,7 +17,7 @@ import { deleteAdminUser, deleteCloudDataForUser, findAdminUserByEmail, setUserP
 
 /**
  * T25b — captures the five Chrome Web Store screenshots listing.md specs,
- * renders the promo tile (440x280) and README hero (1600x800) from small
+ * renders the promo tiles (440x280 small + 1400x560 marquee) and README hero (1600x800) from small
  * HTML compositor pages, and best-effort records+converts the README demo
  * GIF.
  *
@@ -78,6 +78,7 @@ const BRAND_SURFACE = "#1E3128";
 const BRAND_CREAM = "#EEE8D9";
 const BRAND_CREAM_DIM = "#B9C3BB";
 const BRAND_ORANGE = "#F97316";
+const BRAND_YELLOW = "#D9A441";
 
 function fontDataUri(filename: string, mime = "font/woff2"): string {
   const buf = fs.readFileSync(path.join(UI_FONTS_DIR, filename));
@@ -434,14 +435,32 @@ async function phaseMain(): Promise<void> {
     // --- Shot 02: dashboard grid — own separate context/session, signed-in PRO (see phaseDashboardGrid's docstring above) ---
     await phaseDashboardGrid();
 
-    // --- Shot 01: the redesigned popup's folders home over a real tab — the
-    // "1-click Save goes to" control with a pinned target (seeded above), the
-    // full folder list with live counts, and one row hovered so its quick
-    // actions (+ / open-all) are visible. This IS the product now; the old
-    // mid-flow picker shot showed a UI that no longer exists. ---
+    // --- Shot 01: the redesigned popup's folders home over a real website —
+    // the "1-click Save goes to" control with a pinned target (seeded above),
+    // the full folder list with live counts, and one row hovered so its quick
+    // actions (+ / open-all) are visible. The backdrop is a live capture of
+    // newsbooklm.com (subtly blurred in the composite, with an orange glow
+    // around the popup, so the shot reads as "the extension, highlighted over
+    // a real site"); offline, it falls back to the local stub page. ---
     const bgPage = await context.newPage();
     await bgPage.setViewportSize(STORE_VIEWPORT);
-    await bgPage.goto(localServer.pageUrl("Sourdough Starter Guide - King Arthur Baking"));
+    try {
+      await bgPage.goto("https://newsbooklm.com", { waitUntil: "networkidle", timeout: 45_000 });
+      await bgPage.waitForTimeout(1200);
+      // Dismiss the site's cookie banner if it's up (best-effort — the banner
+      // copy may change; a stale selector just leaves the banner in shot).
+      for (const name of [/essential only/i, /accept all/i]) {
+        const btn = bgPage.getByRole("button", { name });
+        if (await btn.count().catch(() => 0)) {
+          await btn.first().click().catch(() => {});
+          await bgPage.waitForTimeout(600);
+          break;
+        }
+      }
+    } catch {
+      console.warn("  shot 01: newsbooklm.com unreachable — falling back to the local stub background");
+      await bgPage.goto(localServer.pageUrl("Sourdough Starter Guide - King Arthur Baking"));
+    }
     await bgPage.bringToFront();
 
     const popup = await popupPage(context, extensionId);
@@ -458,12 +477,19 @@ async function phaseMain(): Promise<void> {
     const popupShotBuf = await popup.locator("#root > div").screenshot();
     const popupBox = await popup.locator("#root > div").boundingBox();
     const popupHeight = popupBox?.height ?? 420;
+    // The backdrop is blurred just enough to stay recognizable while pushing
+    // it behind the popup; the slight scale-up hides the blur's soft edge
+    // bleed at the canvas border, the scrim dims it a touch, and the two-layer
+    // orange glow (wide soft halo + tight bright ring, brand #F97316) makes
+    // the popup unmistakably the subject.
     const composite01 = `<!doctype html><html><head><style>
-      html,body{margin:0;padding:0;width:${STORE_VIEWPORT.width}px;height:${STORE_VIEWPORT.height}px;overflow:hidden;background:#fff;}
-      .bg{position:absolute;top:0;left:0;width:${STORE_VIEWPORT.width}px;height:${STORE_VIEWPORT.height}px;object-fit:cover;}
-      .popup{position:absolute;top:28px;right:36px;width:360px;height:${popupHeight}px;border-radius:12px;box-shadow:0 28px 56px rgba(0,0,0,0.45),0 6px 16px rgba(0,0,0,0.3);}
+      html,body{margin:0;padding:0;width:${STORE_VIEWPORT.width}px;height:${STORE_VIEWPORT.height}px;overflow:hidden;background:#101613;}
+      .bg{position:absolute;top:0;left:0;width:${STORE_VIEWPORT.width}px;height:${STORE_VIEWPORT.height}px;object-fit:cover;filter:blur(4px);transform:scale(1.02);}
+      .scrim{position:absolute;top:0;left:0;width:${STORE_VIEWPORT.width}px;height:${STORE_VIEWPORT.height}px;background:rgba(8,12,10,0.12);}
+      .popup{position:absolute;top:28px;right:36px;width:360px;height:${popupHeight}px;border-radius:12px;box-shadow:0 0 18px 4px rgba(249,115,22,0.92),0 0 42px 12px rgba(249,115,22,0.80);}
     </style></head><body>
       <img class="bg" src="${pngDataUri(bgShotBuf)}">
+      <div class="scrim"></div>
       <img class="popup" src="${pngDataUri(popupShotBuf)}">
     </body></html>`;
     await renderHtmlToPng(composite01, STORE_VIEWPORT.width, STORE_VIEWPORT.height, path.join(SCREENSHOTS_DIR, "01-popup-save.png"));
@@ -750,11 +776,31 @@ async function phaseShare(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Phase: tile (440x280 promo tile + 128x128 store icon)
+// Phase: tile (440x280 small promo tile + 1400x560 marquee + 128x128 icon)
 // ---------------------------------------------------------------------------
 
+/**
+ * A tiny "tab chip" — a rounded card with a favicon dot and a text bar —
+ * used by both promo tiles to tell the product story visually (tabs flowing
+ * into the burrow) instead of with copy, per the Chrome Web Store's promo
+ * guidance ("avoid too much text", "communicate the brand", "don't just use
+ * a screenshot"). Chips are painted BEFORE the arch SVG in the DOM, so a
+ * chip positioned over the doorway hollow shows through it (the hollow is
+ * transparent) while the arch band occludes it — reading as "this tab is
+ * entering the burrow".
+ */
+function tabChip(opts: { x: number; y: number; w: number; h: number; rot: number; opacity: number; dot: string }): string {
+  const { x, y, w, h, rot, opacity, dot } = opts;
+  const dotSize = Math.round(h * 0.45);
+  const barH = Math.max(3, Math.round(h * 0.22));
+  return `<div style="position:absolute;left:${x}px;top:${y}px;width:${w}px;height:${h}px;transform:rotate(${rot}deg);opacity:${opacity};background:${BRAND_SURFACE};border:1px solid rgba(238,232,217,0.22);border-radius:${Math.round(h * 0.55)}px;display:flex;align-items:center;gap:${Math.round(h * 0.3)}px;padding:0 ${Math.round(h * 0.45)}px;box-sizing:border-box;">
+    <div style="width:${dotSize}px;height:${dotSize}px;border-radius:50%;background:${dot};flex-shrink:0;"></div>
+    <div style="flex:1;height:${barH}px;border-radius:${barH}px;background:rgba(238,232,217,0.28);"></div>
+  </div>`;
+}
+
 async function phaseTile(): Promise<void> {
-  log("Phase tile: promo tile (440x280) + store icon (128x128)");
+  log("Phase tile: small promo tile (440x280) + marquee (1400x560) + store icon (128x128)");
 
   const builtIcon128 = path.resolve(EXTENSION_DIR, ".output/chrome-mv3/icons/128.png");
   if (fs.existsSync(builtIcon128)) {
@@ -764,40 +810,110 @@ async function phaseTile(): Promise<void> {
     console.warn("  SKIPPING icon-128.png: .output/chrome-mv3/icons/128.png missing — run `pnpm --filter extension build` first");
   }
 
-  // Text column budget: 440 - 32(left pad) - 132(icon) - 28(gap) - 32(right
-  // pad) = 216px. At the original 40px Syne Bold, "TabBurrow" measures
-  // ~241.8px wide — wider than that budget, so the flex item (no max-width,
-  // default overflow:visible) rendered past the right padding and nearly to
-  // the canvas edge (~6px margin, measured via a headless render's
-  // getBoundingClientRect). 36px measures ~217.6px, fitting inside a 220px
-  // cap (matching .tagline's own existing max-width) with a comfortable
-  // ~28px right margin — `max-width` on `.text` + `overflow:hidden` on
-  // `.wordmark` are a belt-and-suspenders clip so a future copy/font change
-  // can't silently reintroduce the edge-touching bleed.
-  const html = `<!doctype html><html><head><style>
+  // --- Small promo tile (440x280) ---------------------------------------
+  // Layout: the familiar icon+wordmark lockup, with two upgrades over the
+  // launch draft: the tagline is now a value proposition ("Save every tab in
+  // one click.") instead of the poetic line, and three tab chips arc from
+  // the top-right into the arch's doorway so the graphic itself says "tabs
+  // go into the burrow". Text column budget: 440 - 32(left pad) - 132(icon)
+  // - 28(gap) - 32(right pad) = 216px. At 40px Syne Bold, "TabBurrow"
+  // measures ~241.8px — too wide — so the wordmark stays at 36px (~217.6px)
+  // with `max-width` + `overflow:hidden` as belt-and-suspenders clipping.
+  // Chips live in the icon's 132px box coordinate space (position:relative);
+  // the trailing chip may overflow it (overflow stays visible), but never
+  // into the text column's y-range.
+  const smallChips = [
+    tabChip({ x: 134, y: -8, w: 44, h: 14, rot: -14, opacity: 0.7, dot: BRAND_YELLOW }),
+    tabChip({ x: 96, y: 30, w: 48, h: 14, rot: -8, opacity: 0.9, dot: BRAND_ORANGE }),
+    // Inside the doorway: occluded by the arch band, visible through the
+    // hollow, dimmed as if in the dark of the burrow.
+    tabChip({ x: 47, y: 86, w: 46, h: 14, rot: 0, opacity: 0.55, dot: BRAND_CREAM }),
+  ].join("");
+  const smallTileHtml = `<!doctype html><html><head><style>
     ${brandFontFaces()}
     html,body{margin:0;padding:0;width:440px;height:280px;background:${BRAND_GROUND};overflow:hidden;}
     .wrap{display:flex;align-items:center;gap:28px;width:440px;height:280px;padding:0 32px;box-sizing:border-box;}
-    .icon{width:132px;height:132px;flex-shrink:0;}
+    .icon{width:132px;height:132px;flex-shrink:0;position:relative;}
+    .icon svg{position:relative;}
+    .warmth{position:absolute;left:-60px;top:-60px;width:252px;height:252px;background:radial-gradient(closest-side, rgba(249,115,22,0.12), rgba(249,115,22,0) 70%);}
     .text{display:flex;flex-direction:column;gap:10px;max-width:220px;}
     .wordmark{font-family:"Syne",sans-serif;font-weight:700;font-size:36px;line-height:1;color:${BRAND_CREAM};margin:0;white-space:nowrap;overflow:hidden;}
-    .tagline{font-family:"Inter",sans-serif;font-weight:400;font-size:16px;line-height:1.3;color:${BRAND_CREAM_DIM};margin:0;max-width:220px;}
+    .tagline{font-family:"Inter",sans-serif;font-weight:400;font-size:17px;line-height:1.35;color:${BRAND_CREAM_DIM};margin:0;max-width:216px;}
   </style></head><body>
     <div class="wrap">
-      <div class="icon">${BURROW_ARCH_SVG}</div>
+      <div class="icon"><div class="warmth"></div>${smallChips}${BURROW_ARCH_SVG}</div>
       <div class="text">
         <p class="wordmark">TabBurrow</p>
-        <p class="tagline">Your tabs deserve a burrow.</p>
+        <p class="tagline">Save every tab<br>in one click.</p>
       </div>
     </div>
   </body></html>`;
 
   await renderHtmlToPng(
-    html,
+    smallTileHtml,
     440,
     280,
     path.join(STORE_ASSETS_DIR, "promo-tile-440x280.png"),
     path.join(STORE_ASSETS_DIR, "promo-tile.html"),
+  );
+
+  // --- Marquee promo tile (1400x560) ------------------------------------
+  // Optional in the console but REQUIRED for the extension to be eligible
+  // for the store's rotating marquee carousel. Same visual system as the
+  // small tile, with room to breathe: brand lockup + value line on the
+  // left, and on the right a large arch with a parade of tab chips flowing
+  // in from the edge. No screenshots (the store's guidance says promos
+  // should communicate the brand, not the UI), minimal text, saturated
+  // ground, full bleed. Wordmark: Syne Bold measures ~6.04px width per 1px
+  // of font-size for "TabBurrow", so 80px ≈ 484px — inside the 532px left
+  // column budget (620 - 88 padding).
+  // Chip coordinates are in `.right`'s space. The arch box is at (60,130),
+  // 340px (viewBox scale 2.656): doorway hollow ≈ x 166-294, y 279-428.
+  // The trail arcs down-left from the top-right; the last chip sits in the
+  // hollow with its right edge tucked under the right band leg (chips paint
+  // before the SVG), reading as "entering the burrow".
+  const marqueeChips = [
+    tabChip({ x: 560, y: 52, w: 104, h: 28, rot: -18, opacity: 0.65, dot: BRAND_YELLOW }),
+    tabChip({ x: 470, y: 110, w: 118, h: 30, rot: -14, opacity: 0.78, dot: BRAND_ORANGE }),
+    tabChip({ x: 395, y: 175, w: 126, h: 30, rot: -10, opacity: 0.9, dot: BRAND_CREAM }),
+    tabChip({ x: 350, y: 245, w: 122, h: 30, rot: -5, opacity: 1, dot: BRAND_ORANGE }),
+    // Entering the doorway (occluded by the band, visible in the hollow).
+    tabChip({ x: 210, y: 330, w: 112, h: 30, rot: 0, opacity: 0.5, dot: BRAND_YELLOW }),
+  ].join("");
+  const marqueeHtml = `<!doctype html><html><head><style>
+    ${brandFontFaces()}
+    html,body{margin:0;padding:0;width:1400px;height:560px;background:linear-gradient(180deg, ${BRAND_GROUND} 0%, #101B15 100%);overflow:hidden;}
+    .wrap{display:flex;align-items:center;width:1400px;height:560px;box-sizing:border-box;}
+    .left{display:flex;flex-direction:column;gap:22px;width:620px;flex-shrink:0;padding-left:88px;box-sizing:border-box;}
+    .lockicon{width:84px;height:84px;}
+    .wordmark{font-family:"Syne",sans-serif;font-weight:700;font-size:80px;line-height:1;color:${BRAND_CREAM};margin:0;white-space:nowrap;}
+    .value{font-family:"Inter",sans-serif;font-weight:600;font-size:27px;line-height:1.35;color:${BRAND_CREAM};margin:0;max-width:460px;}
+    .sub{font-family:"Inter",sans-serif;font-weight:400;font-size:22px;line-height:1.35;color:${BRAND_CREAM_DIM};margin:0;max-width:460px;}
+    .right{flex:1;position:relative;height:560px;}
+    .glow{position:absolute;left:-40px;top:60px;width:560px;height:560px;background:radial-gradient(closest-side, rgba(249,115,22,0.16), rgba(249,115,22,0) 70%);}
+    .arch{position:absolute;left:60px;top:130px;width:340px;height:340px;}
+  </style></head><body>
+    <div class="wrap">
+      <div class="left">
+        <div class="lockicon">${BURROW_ARCH_SVG}</div>
+        <p class="wordmark">TabBurrow</p>
+        <p class="value">Save every tab in one click.</p>
+        <p class="sub">Local-first. Private. Open source.</p>
+      </div>
+      <div class="right">
+        <div class="glow"></div>
+        ${marqueeChips}
+        <div class="arch">${BURROW_ARCH_SVG}</div>
+      </div>
+    </div>
+  </body></html>`;
+
+  await renderHtmlToPng(
+    marqueeHtml,
+    1400,
+    560,
+    path.join(STORE_ASSETS_DIR, "marquee-promo-tile-1400x560.png"),
+    path.join(STORE_ASSETS_DIR, "marquee-promo-tile.html"),
   );
 }
 

@@ -113,10 +113,11 @@ requirements).
    redesigned hub): the "1-click Save goes to Kitchen reno research" control
    with a pinned default, the full folder list with live link counts, one row
    hovered so its quick actions (add current tab, open all) are visible, and
-   the dismissible Pro strip, composited over a real captured tab titled
-   "Sourdough Starter Guide - King Arthur Baking" so the shot reads as a real
-   session. (Playwright cannot drive the real toolbar popup overlay — see
-   `apps/extension/e2e/MANUAL.md` — so this is a real screenshot of the
+   the dismissible Pro strip, composited over a subtly blurred capture of the
+   live newsbooklm.com homepage, with an orange glow around the popup so the
+   shot reads as the extension highlighted over a real site. (Playwright
+   cannot drive the real toolbar popup overlay, see
+   `apps/extension/e2e/MANUAL.md`, so this is a real screenshot of the
    popup's own DOM composited onto a real background-tab screenshot, not an
    invented browser chrome.)
 2. **`screenshots/02-dashboard-grid.png`** — Dashboard grid: the rail
@@ -139,23 +140,33 @@ requirements).
    `WXT_SITE_URL` rebuild + local `next dev` dance t22-share.spec.ts uses,
    with the extension build restored to normal afterward.
 
-## Promo tile
+## Promo tiles
 
-**Small promo tile: 440×280 px, PNG, no alpha transparency** (Chrome Web
-Store requirement).
+Both tiles follow the store's promo-image guidance (communicate the brand,
+not a screenshot; minimal text; saturated colors; full bleed; legible at
+half size) and share one visual system: Deep Green ground, the real
+burrow-arch mark embedded byte-for-byte from
+`apps/extension/assets/icon.svg` (never redrawn), the TabBurrow wordmark
+in Syne Bold cream, the value line "Save every tab in one click.", and a
+trail of small "tab chips" (rounded cards with a favicon dot and text bar)
+arcing into the arch's doorway — the graphic itself tells the product
+story, with the last chip visible through the hollow as if inside the
+burrow. Rendered by `capture-assets.ts`'s tile phase from self-contained
+compositor pages (literal hex brand values are sanctioned there, and only
+there, for this one standalone asset generator; product source keeps using
+`packages/ui/src/tokens.css`'s `var(--bg-ground)` etc.).
 
-Deliverables (both captured in T25b):
-- `store-assets/promo-tile-440x280.png`, rendered from
-  `store-assets/promo-tile.html` (a self-contained compositor page the
-  capture script generates and screenshots at the exact 440×280 — literal
-  hex brand values are sanctioned there, and only there, for this one
-  standalone asset generator; product source keeps using
-  `packages/ui/src/tokens.css`'s `var(--bg-ground)` etc.). Deep Green
-  ground, the real burrow-arch mark embedded byte-for-byte from
-  `apps/extension/assets/icon.svg` (never redrawn), the TabBurrow wordmark
-  in Syne Bold cream, and the tagline "Your tabs deserve a burrow." — no
-  screenshot content, orange stays a sparse accent (the arch's own
-  outline/base bar).
+Deliverables:
+- **`store-assets/promo-tile-440x280.png`** — small promo tile, 440×280,
+  PNG (required; appears on the homepage, category pages, and search).
+  Rendered from `store-assets/promo-tile.html`. Icon+wordmark lockup with
+  the value line and a three-chip trail.
+- **`store-assets/marquee-promo-tile-1400x560.png`** — marquee tile,
+  1400×560, PNG (optional in the console, but required for the extension
+  to be *eligible* for the store's rotating marquee carousel). Rendered
+  from `store-assets/marquee-promo-tile.html`. Lockup + value line +
+  "Local-first. Private. Open source." on the left; large arch with a
+  five-chip parade on the right.
 - `store-assets/icon-128.png` — copied straight from the extension's own
   build output (`apps/extension/.output/chrome-mv3/icons/128.png`), i.e.
   `icon.svg` rasterized at 128×128 through the extension's real build
