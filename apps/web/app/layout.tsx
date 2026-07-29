@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { JsonLd } from "../components/JsonLd";
 import { SITE_URL, SITE_NAME, SITE_TAGLINE, SITE_DESCRIPTION } from "../lib/site-config";
@@ -61,6 +62,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           }}
         />
         {children}
+        {/* Vercel Web Analytics: cookieless, no cross-site tracking, no PII;
+            visitors are counted via a per-request hash, aggregated only. See
+            the /privacy "No ads, no data sales" section, kept in sync with this. */}
+        <Analytics />
       </body>
     </html>
   );
