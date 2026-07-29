@@ -14,11 +14,11 @@ export const SITE_DESCRIPTION =
 export const GITHUB_URL = "https://github.com/lbwalton/tabburrow";
 
 /**
- * TODO(launch): stays "#" until the Chrome Web Store listing is approved and
- * live. Every install CTA on the site reads from this constant, so flipping it
- * here is the only change needed once the listing ships.
+ * The live Chrome Web Store listing. Every install CTA on the site reads from
+ * this constant. (Listing ID onfkgmfnfoblfeaggmpmpeoikfelheln.)
  */
-export const CHROME_STORE_URL = "#";
+export const CHROME_STORE_URL =
+  "https://chromewebstore.google.com/detail/tabburrow-tab-bookmark-ma/onfkgmfnfoblfeaggmpmpeoikfelheln";
 
 export const PRICING = {
   monthly: { amount: 3.99, period: "month" as const },
