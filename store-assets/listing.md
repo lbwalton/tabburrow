@@ -16,28 +16,26 @@ Character counts below were verified with a script; see
 
 ## Title
 
-Live now (33 characters):
+**Not a dashboard field.** The Chrome Web Store takes the listing title from
+the extension's manifest `name`, so the title changes only when a new version
+is published, never by editing the dashboard.
 
-```
-TabBurrow: Tab & Bookmark Manager
-```
-
-Proposed (42 characters, limit 45):
+Approved and already committed to `apps/extension/wxt.config.ts`; it goes live
+with the next release (42 characters, limit 45):
 
 ```
 TabBurrow: Tab, Session & Bookmark Manager
 ```
 
-Rationale: "session" is a high-volume store query ("session manager", "restore
-tabs") that the current title does not cover at all, and it is genuinely a
-headline feature (5-minute auto snapshots + crash restore). Alternative if the
-three-noun stack reads as stuffing: `TabBurrow: Tab Manager & Session Saver`
-(38 characters).
+Previously live (33 characters): `TabBurrow: Tab & Bookmark Manager`
 
-**Cost to change:** the store title must stay identical to the extension's
-manifest name (`apps/extension/wxt.config.ts`), so this requires a version
-bump and a new store review. Not worth shipping on its own; fold it into the
-next release. Leaving the title alone is a perfectly reasonable call.
+Rationale: "session" is a high-volume store query ("session manager", "restore
+tabs") that the old title did not cover at all, and it is genuinely a headline
+feature (5-minute auto snapshots + crash restore).
+
+At release time, confirm the rendered manifest name matches this string before
+uploading, since a mismatch between this file and the shipped manifest is what
+would silently change the store title.
 
 ## Summary
 

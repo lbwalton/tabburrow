@@ -8,7 +8,11 @@ export default defineConfig({
     plugins: [tailwindcss()],
   }),
   manifest: (env) => ({
-    name: "TabBurrow: Tab & Bookmark Manager",
+    // This IS the Chrome Web Store listing title, not just the toolbar name,
+    // so it doubles as store-search copy: "session" covers a high-volume store
+    // query ("session manager", "restore tabs") that the previous name missed.
+    // 42/45 chars. Ships with the next release; see store-assets/listing.md.
+    name: "TabBurrow: Tab, Session & Bookmark Manager",
     // The on-device AI (Gemini Nano via the Prompt API, `LanguageModel`) needs
     // NO permission here: it's available to extension pages on Chrome 138+ with
     // no manifest entry (developer.chrome.com/docs/ai/prompt-api, checked

@@ -182,7 +182,10 @@ No account is needed to test TabBurrow's core features, so no login credentials 
       `wxt build` default excludes it; do NOT build with
       `WXT_INCLUDE_LOCAL_HOSTS=1`).
 - [ ] Manifest `name` matches `listing.md`'s Title
-      ("TabBurrow: Tab & Bookmark Manager").
+      ("TabBurrow: Tab, Session & Bookmark Manager"). The store derives the
+      listing title from the manifest, so this is what actually renames the
+      listing. The store URL slug is fixed at creation and does not follow a
+      rename, so `CHROME_STORE_URL` stays valid.
 - [ ] Single purpose, all permission justifications, remote-code = No, data
       categories, three certifications, and privacy policy URL all filled in on
       the Privacy practices tab.
