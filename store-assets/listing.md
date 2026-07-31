@@ -1,27 +1,61 @@
 # Chrome Web Store listing draft
 
-Status: draft, not yet submitted. Screenshots, the promo tile, and the store
+Status: the listing is LIVE. Screenshots, the promo tile, and the store
 icon were captured/rendered in T25b (see [Screenshots](#screenshots-t25b) and
 [Promo tile](#promo-tile) below for the real files and how each was staged).
 Character counts below were verified with a script; see
 [Verification](#verification).
 
+> **Proposed store-search revision, 2026-07-30. Needs LB's review before any
+> dashboard edit.** Two drivers: (1) an unrelated Firefox add-on also ships as
+> "TabBurrow", so the listing should lean on what the extension *does*, not on
+> the brand name alone; (2) store search weights the title and the first lines
+> of the description, and the current copy spends them on positioning rather
+> than on the words people type. Each section below marks what is **live now**
+> and what is **proposed**.
+
 ## Title
+
+Live now (33 characters):
 
 ```
 TabBurrow: Tab & Bookmark Manager
 ```
 
-33 characters (limit: 45). This is also the extension's manifest name
-(`apps/extension/wxt.config.ts`); keep the two identical.
+Proposed (42 characters, limit 45):
+
+```
+TabBurrow: Tab, Session & Bookmark Manager
+```
+
+Rationale: "session" is a high-volume store query ("session manager", "restore
+tabs") that the current title does not cover at all, and it is genuinely a
+headline feature (5-minute auto snapshots + crash restore). Alternative if the
+three-noun stack reads as stuffing: `TabBurrow: Tab Manager & Session Saver`
+(38 characters).
+
+**Cost to change:** the store title must stay identical to the extension's
+manifest name (`apps/extension/wxt.config.ts`), so this requires a version
+bump and a new store review. Not worth shipping on its own; fold it into the
+next release. Leaving the title alone is a perfectly reasonable call.
 
 ## Summary
+
+Live now (99 characters):
 
 ```
 Save any tab in one click. Local-first, no account needed. AI organize and sync when you want them.
 ```
 
-99 characters (limit: 132).
+Proposed (118 characters, limit 132):
+
+```
+Save, organize and restore tabs in one click. Local-first, no account, open source, with free on-device AI organizing.
+```
+
+Rationale: adds "organize", "restore", and "open source" (all searched, all
+true) while keeping the one-click hook first. Unlike the title, the summary is
+a dashboard-only field: it can be changed without touching the extension.
 
 ## Category
 
@@ -29,9 +63,16 @@ Save any tab in one click. Local-first, no account needed. AI organize and sync 
 
 ## Full description
 
+Proposed revision, 2026-07-30. Two changes from what is live: the opening two
+lines now name the three things people actually search for (tab manager,
+session manager, bookmark manager) before getting to positioning, and the
+GitHub/privacy references are corrected now that the repository is public.
+Everything below is a dashboard-only field; no extension release needed.
+
 ```
-TabBurrow saves your open tabs into tidy folders in one click and keeps
-everything on your device. It's local-first, needs no account, and fully
+TabBurrow is a tab manager, session manager, and bookmark manager in one.
+Save, organize, and restore your open tabs in one click, and keep every one
+of them on your own device. It's local-first, needs no account, and is fully
 open source (AGPL-3.0). Save a single tab, a selection, or a whole
 window; no signup, no account wall. Everything lives in your browser
 from the first save.
@@ -89,8 +130,10 @@ TabBurrow works fully offline by default; nothing leaves your device
 unless you sign in. On-device AI organize runs entirely in your browser
 and sends nothing anywhere. The cloud AI path sends only link titles and
 URLs, never page content. TabBurrow runs no ads, uses no ad trackers, and
-does not sell your data. Full privacy policy and source code are linked
-from the GitHub repository.
+does not sell your data.
+
+Privacy policy: https://tabburrow.com/privacy
+Source code (AGPL-3.0): https://github.com/lbwalton/tabburrow
 
 Built in the open: every commit is public, every acceptance criterion is
 checked before it ships.
@@ -178,11 +221,19 @@ Character counts verified with:
 
 ```sh
 python3 - <<'EOF'
-title = "TabBurrow: Tab & Bookmark Manager"
-summary = "Save any tab in one click. Local-first, no account needed. AI organize and sync when you want them."
-print("title:", len(title), "/ 45")
-print("summary:", len(summary), "/ 132")
+live_title = "TabBurrow: Tab & Bookmark Manager"
+live_summary = "Save any tab in one click. Local-first, no account needed. AI organize and sync when you want them."
+new_title = "TabBurrow: Tab, Session & Bookmark Manager"
+new_summary = "Save, organize and restore tabs in one click. Local-first, no account, open source, with free on-device AI organizing."
+for label, value, limit in [
+    ("live title", live_title, 45),
+    ("live summary", live_summary, 132),
+    ("proposed title", new_title, 45),
+    ("proposed summary", new_summary, 132),
+]:
+    print(f"{label}: {len(value)} / {limit}")
 EOF
 ```
 
-Output: `title: 33 / 45`, `summary: 99 / 132`. Both under limit.
+Output: `live title: 33 / 45`, `live summary: 99 / 132`,
+`proposed title: 42 / 45`, `proposed summary: 118 / 132`. All under limit.

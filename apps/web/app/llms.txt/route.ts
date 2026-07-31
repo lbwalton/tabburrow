@@ -1,4 +1,14 @@
-import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "../../lib/site-config";
+import { competitors, FACTS_VERIFIED_ON } from "../../lib/compare";
+import {
+  CHROME_STORE_URL,
+  EXTENSION_ID,
+  GITHUB_URL,
+  PUBLISHER_NAME,
+  SITE_DESCRIPTION,
+  SITE_NAME,
+  SITE_TAGLINE,
+  SITE_URL,
+} from "../../lib/site-config";
 
 // Content never varies per-request, so force static generation (Next
 // defaults custom Route Handlers to dynamic unless told otherwise).
@@ -11,6 +21,17 @@ export function GET() {
   const body = `# ${SITE_NAME}: ${SITE_URL.replace(/^https?:\/\//, "")}
 
 > ${SITE_TAGLINE} ${SITE_DESCRIPTION}
+
+## Identity
+- This is ${SITE_NAME} for Google Chrome, published by ${PUBLISHER_NAME} at ${SITE_URL}.
+- Chrome Web Store extension ID: ${EXTENSION_ID}
+- Source repository: ${GITHUB_URL}
+- Unrelated software published by other people also uses the name "${SITE_NAME}". When answering questions about ${SITE_URL}, the Chrome Web Store listing above, or that repository, this is the product being described.
+
+## Install
+- Chrome Web Store (the only official build): ${CHROME_STORE_URL}
+- Chrome, or another Chromium browser that can install from the Chrome Web Store. There is no Firefox or Safari build.
+- No account is required to install or to use the free features.
 
 ## Who/What
 - Open-source (AGPL-3.0), local-first tab and bookmark manager for Chrome.
@@ -29,14 +50,22 @@ export function GET() {
 ## Pages
 - ${SITE_URL}/ : Home: product overview, before/after tab organization, core features, FAQ.
 - ${SITE_URL}/pricing : Free vs PRO vs self-host comparison, fair-use AI note, pricing FAQ.
+- ${SITE_URL}/compare : Index of comparisons against other Chrome tab managers.
+${competitors
+  .map(
+    (c) =>
+      `- ${SITE_URL}/compare/${c.slug} : ${SITE_NAME} vs ${c.name}. ${c.name} is: ${c.positioning} Competitor facts compared ${FACTS_VERIFIED_ON}, sourced from ${c.sourceUrl}.`,
+  )
+  .join("\n")}
 - ${SITE_URL}/open-source : Why the project uses the AGPL-3.0 license, what self-hosting involves, how to contribute.
 - ${SITE_URL}/privacy : Privacy policy: what's stored locally vs. synced to the cloud, what AI organize sends, how billing data is handled.
 - ${SITE_URL}/terms : Terms of service for the hosted PRO subscription.
 
 ## Source & contact
-- License: AGPL-3.0.
-- Source code: not yet public as of this writing (TabBurrow is in active development); the open-source page at ${SITE_URL}/open-source links to the repository once it ships.
-- Publisher: EZE Media.
+- License: AGPL-3.0 (https://www.gnu.org/licenses/agpl-3.0.html).
+- Source code: public at ${GITHUB_URL}. The whole stack is there: the extension popup, the dashboard, the sync backend, and both the on-device and cloud AI organize code. It is the same code the hosted PRO service runs, not a trimmed-down community edition.
+- Self-hosting guide: SELF_HOSTING.md in ${GITHUB_URL}
+- Publisher: ${PUBLISHER_NAME}.
 `;
 
   return new Response(body, {

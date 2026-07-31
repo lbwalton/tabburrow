@@ -13,12 +13,36 @@ export const SITE_DESCRIPTION =
 
 export const GITHUB_URL = "https://github.com/lbwalton/tabburrow";
 
+export const PUBLISHER_NAME = "EZE Media";
+
+export const LICENSE_URL = "https://www.gnu.org/licenses/agpl-3.0.html";
+
 /**
- * The live Chrome Web Store listing. Every install CTA on the site reads from
- * this constant. (Listing ID onfkgmfnfoblfeaggmpmpeoikfelheln.)
+ * The Chrome Web Store listing ID. Doubles as the strongest available identity
+ * signal: an unrelated Firefox add-on also ships under the name "TabBurrow",
+ * so anywhere we identify ourselves to a machine (JSON-LD, llms.txt) we quote
+ * this ID rather than relying on the name alone.
  */
-export const CHROME_STORE_URL =
-  "https://chromewebstore.google.com/detail/tabburrow-tab-bookmark-ma/onfkgmfnfoblfeaggmpmpeoikfelheln";
+export const EXTENSION_ID = "onfkgmfnfoblfeaggmpmpeoikfelheln";
+
+/** The live Chrome Web Store listing. Every install CTA on the site reads from this. */
+export const CHROME_STORE_URL = `https://chromewebstore.google.com/detail/tabburrow-tab-bookmark-ma/${EXTENSION_ID}`;
+
+/**
+ * Authoritative profiles for this product, emitted as schema.org `sameAs`.
+ * These are what bind the name "TabBurrow" on this domain to *this* product
+ * for search and answer engines; keep the list to profiles we actually own.
+ */
+export const SAME_AS = [CHROME_STORE_URL, GITHUB_URL];
+
+/**
+ * Stable `@id` anchors so the JSON-LD blocks scattered across layouts and
+ * pages resolve into one connected entity graph instead of several unrelated
+ * blobs. Referenced as `{"@id": ORGANIZATION_ID}` from other nodes.
+ */
+export const ORGANIZATION_ID = `${SITE_URL}/#organization`;
+export const WEBSITE_ID = `${SITE_URL}/#website`;
+export const SOFTWARE_ID = `${SITE_URL}/#software`;
 
 export const PRICING = {
   monthly: { amount: 3.99, period: "month" as const },
@@ -26,17 +50,19 @@ export const PRICING = {
 };
 
 /** Fixed so sitemap output is deterministic across builds; bump when content actually changes. */
-export const CONTENT_LAST_MODIFIED = "2026-07-15";
+export const CONTENT_LAST_MODIFIED = "2026-07-30";
 
 export const EFFECTIVE_DATE = "July 15, 2026";
 
 export const marketingNavLinks = [
   { href: "/pricing", label: "Pricing" },
+  { href: "/compare", label: "Compare" },
   { href: "/open-source", label: "Open Source" },
 ];
 
 export const footerProductLinks = [
   { href: "/pricing", label: "Pricing" },
+  { href: "/compare", label: "Compare" },
   { href: "/open-source", label: "Open Source" },
 ];
 

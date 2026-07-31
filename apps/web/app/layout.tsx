@@ -3,7 +3,16 @@ import type { ReactNode } from "react";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { JsonLd } from "../components/JsonLd";
-import { SITE_URL, SITE_NAME, SITE_TAGLINE, SITE_DESCRIPTION } from "../lib/site-config";
+import {
+  ORGANIZATION_ID,
+  PUBLISHER_NAME,
+  SAME_AS,
+  SITE_URL,
+  SITE_NAME,
+  SITE_TAGLINE,
+  SITE_DESCRIPTION,
+  WEBSITE_ID,
+} from "../lib/site-config";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -43,22 +52,33 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <a href="#main-content" className="skip-link">
           Skip to content
         </a>
+        {/* `@id` + `sameAs` are load-bearing, not decoration: an unrelated
+            Firefox add-on ships under the same name, so these nodes are what
+            tell search and answer engines that "TabBurrow" on this domain is
+            the product behind our Chrome Web Store listing and our repo. */}
         <JsonLd
           data={{
             "@context": "https://schema.org",
             "@type": "Organization",
+            "@id": ORGANIZATION_ID,
             name: SITE_NAME,
             url: SITE_URL,
             logo: `${SITE_URL}/og-image.png`,
             description: SITE_DESCRIPTION,
+            parentOrganization: { "@type": "Organization", name: PUBLISHER_NAME },
+            sameAs: SAME_AS,
           }}
         />
         <JsonLd
           data={{
             "@context": "https://schema.org",
             "@type": "WebSite",
+            "@id": WEBSITE_ID,
             name: SITE_NAME,
             url: SITE_URL,
+            description: SITE_DESCRIPTION,
+            inLanguage: "en-US",
+            publisher: { "@id": ORGANIZATION_ID },
           }}
         />
         {children}
