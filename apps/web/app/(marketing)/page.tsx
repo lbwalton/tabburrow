@@ -8,10 +8,14 @@ import { homeFaq, toFaqPageJsonLd } from "../../lib/faq";
 import {
   CHROME_STORE_URL,
   GITHUB_URL,
+  LICENSE_URL,
+  ORGANIZATION_ID,
+  SAME_AS,
   SITE_DESCRIPTION,
   SITE_NAME,
   SITE_TAGLINE,
   SITE_URL,
+  SOFTWARE_ID,
 } from "../../lib/site-config";
 
 export const metadata: Metadata = {
@@ -44,22 +48,42 @@ const FEATURES = [
 export default function HomePage() {
   return (
     <>
+      {/* No `aggregateRating` here on purpose: there are no real store reviews
+          to source it from yet, and inventing one is a manual-action risk.
+          Add it once the listing has genuine ratings. */}
       <JsonLd
         data={{
           "@context": "https://schema.org",
           "@type": "SoftwareApplication",
+          "@id": SOFTWARE_ID,
           name: SITE_NAME,
           applicationCategory: "BrowserApplication",
           operatingSystem: "Chrome",
           description: SITE_DESCRIPTION,
           url: SITE_URL,
+          image: `${SITE_URL}/og-image.png`,
+          installUrl: CHROME_STORE_URL,
+          downloadUrl: CHROME_STORE_URL,
+          license: LICENSE_URL,
+          isAccessibleForFree: true,
+          sameAs: SAME_AS,
+          author: { "@id": ORGANIZATION_ID },
+          publisher: { "@id": ORGANIZATION_ID },
           offers: [
-            { "@type": "Offer", name: "Free", price: "0", priceCurrency: "USD" },
+            {
+              "@type": "Offer",
+              name: "Free",
+              price: "0",
+              priceCurrency: "USD",
+              availability: "https://schema.org/InStock",
+              url: CHROME_STORE_URL,
+            },
             {
               "@type": "Offer",
               name: "PRO Monthly",
               price: "3.99",
               priceCurrency: "USD",
+              availability: "https://schema.org/InStock",
               url: `${SITE_URL}/pricing`,
             },
             {
@@ -67,6 +91,7 @@ export default function HomePage() {
               name: "PRO Yearly",
               price: "29",
               priceCurrency: "USD",
+              availability: "https://schema.org/InStock",
               url: `${SITE_URL}/pricing`,
             },
           ],
