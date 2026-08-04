@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Card } from "@tabburrow/ui";
-import { EFFECTIVE_DATE } from "../../../lib/site-config";
+import { TERMS_EFFECTIVE_DATE } from "../../../lib/site-config";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
@@ -20,7 +20,7 @@ export default function TermsPage() {
           >
             Terms of Service
           </h1>
-          <p className="mt-2 text-sm text-[var(--ink-soft)]">Effective {EFFECTIVE_DATE}</p>
+          <p className="mt-2 text-sm text-[var(--ink-soft)]">Effective {TERMS_EFFECTIVE_DATE}</p>
 
           <div className="mt-8 flex flex-col gap-8 leading-relaxed">
             <div>
@@ -75,6 +75,26 @@ export default function TermsPage() {
                 with a soft fair-use cap of roughly 1,000 runs a month. We may
                 throttle or ask you to slow down if usage looks automated or
                 abusive rather than normal personal use.
+              </p>
+            </div>
+
+            <div>
+              <h2 className="text-xl font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+                Suspension &amp; termination
+              </h2>
+              <p className="mt-3">
+                We reserve the right to suspend, restrict, cancel, or terminate
+                any account or PRO subscription at our discretion, including
+                where we reasonably believe it&apos;s being used to abuse the
+                service. That covers attempts to bypass or inflate the cloud AI
+                fair-use limits, automated or scripted usage, and any activity
+                designed to run up API or token costs on our infrastructure. You
+                can also cancel your own subscription at any time (see
+                Subscriptions &amp; billing). If we cancel your PRO subscription
+                for a reason other than abuse or a breach of these terms,
+                we&apos;ll refund the unused portion of any period you&apos;ve
+                prepaid; if we cancel because of abuse or a breach, fees already
+                paid aren&apos;t refundable.
               </p>
             </div>
 

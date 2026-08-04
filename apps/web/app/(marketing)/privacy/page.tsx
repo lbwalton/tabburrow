@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Card } from "@tabburrow/ui";
-import { EFFECTIVE_DATE } from "../../../lib/site-config";
+import { PRIVACY_EFFECTIVE_DATE } from "../../../lib/site-config";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
@@ -20,7 +20,7 @@ export default function PrivacyPage() {
           >
             Privacy Policy
           </h1>
-          <p className="mt-2 text-sm text-[var(--ink-soft)]">Effective {EFFECTIVE_DATE}</p>
+          <p className="mt-2 text-sm text-[var(--ink-soft)]">Effective {PRIVACY_EFFECTIVE_DATE}</p>
 
           <div className="mt-8 flex flex-col gap-8 leading-relaxed">
             <div>
