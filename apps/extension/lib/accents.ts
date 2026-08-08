@@ -38,3 +38,15 @@ export function accentPalette(): AccentSwatch[] {
 export function isCssColorAccent(accent: string): boolean {
   return accent.startsWith("var(") || accent.startsWith("color-mix(") || accent.startsWith("#");
 }
+
+/**
+ * The CSS color to paint for a collection's accent. An unset accent (`null`)
+ * and an emoji/text accent (see `ACCENT_EMOJIS`) have no color of their own,
+ * so both resolve to the brand orange. This is for callers that only ever
+ * paint a color — callers that render the emoji glyph itself (FolderRow's
+ * `AccentDot`) still branch on `isCssColorAccent` first.
+ */
+export function accentColor(accent: string | null): string {
+  if (accent !== null && isCssColorAccent(accent)) return accent;
+  return "var(--accent)";
+}

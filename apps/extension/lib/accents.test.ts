@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ACCENT_EMOJIS, accentPalette, isCssColorAccent } from "./accents";
+import { ACCENT_EMOJIS, accentColor, accentPalette, isCssColorAccent } from "./accents";
 
 describe("accentPalette", () => {
   it("has exactly 8 swatches with unique ids", () => {
@@ -51,5 +51,34 @@ describe("isCssColorAccent", () => {
   it("treats an emoji/text accent as not a color accent", () => {
     expect(isCssColorAccent("\u{1F5C2}\u{FE0F}")).toBe(false);
     expect(isCssColorAccent("My Label")).toBe(false);
+  });
+});
+
+describe("accentColor", () => {
+  it("returns a token color accent unchanged", () => {
+    expect(accentColor("var(--accent-2)")).toBe("var(--accent-2)");
+  });
+
+  it("returns a color-mix() accent unchanged", () => {
+    const mix = "color-mix(in srgb, var(--accent) 65%, var(--muted) 35%)";
+    expect(accentColor(mix)).toBe(mix);
+  });
+
+  it("returns a legacy hex accent unchanged", () => {
+    expect(accentColor("#F97316")).toBe("#F97316");
+  });
+
+  it("falls back to the brand accent for an emoji accent", () => {
+    expect(accentColor("\u{1F5C2}\u{FE0F}")).toBe("var(--accent)");
+  });
+
+  it("falls back to the brand accent when the accent is unset", () => {
+    expect(accentColor(null)).toBe("var(--accent)");
+  });
+
+  it("never returns a bare color name or an empty string", () => {
+    for (const input of [null, "", "My Label", "\u{1F4DA}"]) {
+      expect(accentColor(input)).toBe("var(--accent)");
+    }
   });
 });
