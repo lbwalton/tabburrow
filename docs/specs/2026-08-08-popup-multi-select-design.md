@@ -209,8 +209,16 @@ keeps its confirm, unchanged.
 
 1. A confirm `Dialog`, following the Overwrite / Delete-folder precedent already in
    this file. Unlike the dashboard, the popup has no undo toast, so removing several
-   links on one click needs a beat. Copy notes the links are restorable from the
-   dashboard (`softDeleteLinks` is a soft delete).
+   links on one click needs a beat.
+
+   The copy says **"This can't be undone."** and deliberately does *not* offer a
+   restore. `softDeleteLinks` is a soft delete at the data layer, but no UI anywhere
+   exposes soft-deleted links: the dashboard's only recovery path is a 6-second undo
+   toast that fires exclusively for deletes initiated *in the dashboard*, and
+   `SettingsPane` uses `deletedAt` only to count live links. The two pre-existing
+   dialogs in this file (Overwrite, Delete-folder) both promise a dashboard undo that
+   does not exist for popup-initiated actions. That is a known, pre-existing bug left
+   out of this feature's scope; do not copy their wording.
 2. `softDeleteLinks(ids, db)`.
 3. `sendSyncNudge()`, matching every other write path in this file.
 4. Clear the selection and `flash`.
