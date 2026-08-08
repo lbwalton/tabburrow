@@ -267,14 +267,31 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
    * ↗ because one click there can open an entire folder. Hand-ticking 16
    * checkboxes is already deliberate, and the dashboard's `BulkBar` doesn't
    * confirm either.
+   *
+   * Routed through `run()` like every other handler in this file, even
+   * though it isn't a DB write: `run()`'s re-entrancy guard (`if (busy)
+   * return`) is what makes the bar's `disabled={busy}` true, so a
+   * double-click can't fire two overlapping `chrome.tabs.create` loops
+   * against the same `selectedLinks` snapshot. `run()` clearing `error`
+   * first also means a stale failure from a prior batch doesn't linger
+   * underneath a later batch's success notice.
+   *
+   * The selection clears wholesale even when some links failed to open,
+   * with no way to re-select just the failures for a retry: `openLinks`
+   * reports only `{opened, failed}` counts, not which urls failed, so there
+   * is nothing to reselect. (Mirrors this bar's own compactness — the
+   * dashboard's `BulkBar.openAll` never clears the selection on open at all,
+   * so this is a deliberate divergence from that precedent, not an oversight.)
    */
   async function handleOpenSelected() {
-    const result = await openLinks(selectedLinks.map((l) => l.url));
-    setSelection(emptySelection());
-    if (result.failed > 0) setError(openFailureMessage(result.failed));
-    if (result.opened > 0) {
-      flash(`Opened ${result.opened} ${result.opened === 1 ? "tab" : "tabs"}.`);
-    }
+    await run(async () => {
+      const result = await openLinks(selectedLinks.map((l) => l.url));
+      setSelection(emptySelection());
+      if (result.failed > 0) setError(openFailureMessage(result.failed));
+      if (result.opened > 0) {
+        flash(`Opened ${result.opened} ${result.opened === 1 ? "tab" : "tabs"}.`);
+      }
+    });
   }
 
   const allTabsCount = links === undefined ? "…" : count;
