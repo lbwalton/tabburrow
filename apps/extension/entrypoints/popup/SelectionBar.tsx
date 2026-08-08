@@ -89,7 +89,19 @@ export function SelectionBar({ count, accent, busy, onOpen, onDelete, onClear }:
       */}
       {count === 1 ? (
         <p className="flex items-center gap-1.5 text-[11px] text-[var(--text-2)]">
-          <Kbd className="min-w-0 px-1 py-0 text-[10px]">⇧</Kbd>
+          {/*
+            Inline style, not utility classes: `cx` is a plain string joiner
+            with no Tailwind-merge, so overrides land in the same layer at
+            the same specificity and later-in-source wins regardless of
+            which className came from the caller. `Kbd`'s own classes
+            (min-w-[1.5rem], px-1.5, py-0.5) are all declared AFTER a passed
+            className in its generated CSS, so three of these four utility
+            overrides (min-w-0, px-1, py-0) silently lost and only
+            text-[10px] ever took effect. A `style` prop always wins
+            regardless of source order, and `Kbd` already merges a passed
+            `style` after its own, so this composes correctly.
+          */}
+          <Kbd style={{ minWidth: 0, padding: "0 0.25rem", fontSize: "10px" }}>⇧</Kbd>
           click another to select a range
         </p>
       ) : null}

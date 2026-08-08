@@ -79,8 +79,23 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
    * momentarily beside the point, so they step back and let the selection bar
    * be the lit thing. They stay fully clickable — no `disabled`, no
    * pointer-events change — because appending tabs mid-selection is a
-   * perfectly reasonable thing to do. 60% is "quieter"; the ~40% that would
-   * read as disabled would be a lie.
+   * perfectly reasonable thing to do. 60% is "quieter"; the 50% that
+   * `Button`'s own `disabled:opacity-50` uses for actually-disabled would be
+   * a lie. That closeness has a real consequence, though: `disabled:opacity-50`
+   * outranks `opacity-60` in the cascade, so a dimmed button that goes busy
+   * only shifts 0.6 → 0.5, a change the eye can't resolve — while a selection
+   * is active, the busy feedback on these buttons is much weaker than the
+   * usual 1.0 → 0.5 dip. No data risk from that: `disabled:pointer-events-none`
+   * plus `run()`'s re-entrancy guard (`if (busy) return`) both still hold, and
+   * the completion notice still fires; it's a legibility gap, not a
+   * correctness one.
+   *
+   * Applied below via `transition-[opacity,color,background-color,border-color]`,
+   * not bare `transition-opacity`: `Button`'s base already sets
+   * `transition-colors duration-150`, and `cx` is a plain string joiner with
+   * no Tailwind-merge, so a bare `transition-opacity` class would win the
+   * `transition-property` cascade outright and silently kill the color
+   * transition the ghost variant's hover states rely on.
    */
   const actionsDimmed = selectedLinks.length > 0 ? "opacity-60" : "";
 
@@ -463,19 +478,19 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
 
       <div className="flex flex-col gap-2 border-t border-[var(--line)] pt-3">
         <div className="flex gap-2">
-          <Button variant="primary" size="sm" onClick={() => void handleAppend()} disabled={busy} className={`flex-1 transition-opacity ${actionsDimmed}`}>
+          <Button variant="primary" size="sm" onClick={() => void handleAppend()} disabled={busy} className={`flex-1 transition-[opacity,color,background-color,border-color] ${actionsDimmed}`}>
             Append tabs
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setOverwriteOpen(true)} disabled={busy} className={`flex-1 transition-opacity ${actionsDimmed}`}>
+          <Button variant="ghost" size="sm" onClick={() => setOverwriteOpen(true)} disabled={busy} className={`flex-1 transition-[opacity,color,background-color,border-color] ${actionsDimmed}`}>
             Overwrite
           </Button>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={handleOrganize} className={`flex-1 transition-opacity ${actionsDimmed}`}>
+          <Button variant="ghost" size="sm" onClick={handleOrganize} className={`flex-1 transition-[opacity,color,background-color,border-color] ${actionsDimmed}`}>
             Organize with AI
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setSendOpen(true)} className={`transition-opacity ${actionsDimmed}`}>
+          <Button variant="ghost" size="sm" onClick={() => setSendOpen(true)} className={`transition-[opacity,color,background-color,border-color] ${actionsDimmed}`}>
             Send
           </Button>
           <div className="relative">

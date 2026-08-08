@@ -47,8 +47,10 @@ function AccentDot({ accent }: { accent: string | null }) {
  * — a "+" that adds the current tab to this folder in place, an open-all
  * icon, and a trash that deletes the whole folder. The row body drills into
  * the folder; the three action buttons sit outside that button so the markup
- * stays valid (no nested buttons). Unlike the "+" and open-all, the trash
- * confirms first (see `handleDelete`) and owns its write directly —
+ * stays valid (no nested buttons). Unlike `LinkRow`'s trash, which deletes
+ * its one link immediately with no confirm at all, this folder's trash
+ * confirms first (see `handleDelete`) since a folder takes every one of its
+ * links down with it — and it owns its write directly —
  * `softDeleteCollection` + `sendSyncNudge()` — rather than routing through
  * `FoldersHome`, mirroring how this component already owns its own
  * `listLinks` query instead of having links prop-drilled in.
@@ -145,11 +147,17 @@ export function FolderRow({ collection, onOpen, onAddCurrent, canAddCurrent, onE
       </div>
 
       {/*
-        A sibling of the row `<div>` above, not nested inside it: that div's
-        `group` hover/opacity rules (`opacity-0` at rest, border/shadow on
-        hover) are scoped to its own descendants, and a native `<dialog>`
-        rendered there would inherit them and stay invisibly at opacity-0
-        once opened.
+        A sibling of the row `<div>` above, not nested inside it — though not
+        because it has to be. A `<dialog>` opened via `showModal()` paints in
+        the browser's top layer, which escapes ancestor opacity entirely, so
+        nesting it inside the `group` div's `opacity-0`-at-rest wrapper would
+        NOT leave it invisibly stuck at opacity-0 once opened. `OpenAllButton`
+        below is the working counter-example, right in this same file: its
+        confirm `<dialog>` renders inside that opacity-0 container and shows
+        up fine. So this placement is a readability choice (keeps the row
+        markup flat and the dialog out of the hover group's concerns), not a
+        correctness requirement — don't "fix" it, and don't go chasing a
+        nonexistent bug in `OpenAllButton` either.
       */}
       <Dialog
         open={deleteOpen}
