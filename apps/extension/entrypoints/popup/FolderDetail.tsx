@@ -35,10 +35,12 @@ export interface FolderDetailProps {
  * each LinkRow is handed its checked flag, the folder's resolved accent color
  * for the checked fill, and a toggle handler that turns a shift-click into a
  * range and a plain click into a single toggle. The selection is pruned
- * whenever `links` changes underneath it and cleared on Escape, except while
- * an open `[role="menu"]`, `[role="dialog"]`, or native `<dialog>` is on the
- * page — those are left to close on their own Escape handler first. Nothing
- * reads `selectedLinks` yet — a later task adds the action bar that acts on it.
+ * whenever `links` changes underneath it and cleared on Escape, except when a
+ * focused text field (the rename `Input`, AddLinkRow's URL/title fields) owns
+ * that Escape to revert its own edit instead, or an open `[role="menu"]`,
+ * `[role="dialog"]`, or native `<dialog>` is on the page and gets to close on
+ * its own Escape handler first. Nothing reads `selectedLinks` yet — a later
+ * task adds the action bar that acts on it.
  */
 export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   const db = getDB();
@@ -98,6 +100,13 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
+      // A focused text field owns Escape (revert/dismiss what you're typing);
+      // it should never also fire the list-level "clear selection" shortcut.
+      // Covers the rename Input here and both AddLinkRow fields, and keeps
+      // covering any field added later — which per-call-site stopPropagation
+      // would not.
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
       if (document.querySelector("dialog[open], [role='menu'], [role='dialog']")) return;
       setSelection(emptySelection());
     }
