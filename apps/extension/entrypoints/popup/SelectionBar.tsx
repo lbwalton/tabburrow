@@ -1,4 +1,4 @@
-import { Button } from "@tabburrow/ui";
+import { Button, Kbd } from "@tabburrow/ui";
 
 export interface SelectionBarProps {
   /** How many links are selected. Rendered in the count and in the Open label. */
@@ -37,7 +37,7 @@ export function SelectionBar({ count, accent, busy, onOpen, onDelete, onClear }:
     <div
       role="toolbar"
       aria-label="Selection actions"
-      className="bulk-bar flex items-center gap-2 rounded-[var(--radius-card)] border px-2 py-1.5"
+      className="bulk-bar flex flex-col gap-1.5 rounded-[var(--radius-card)] border px-2 py-1.5"
       // The two color values are dynamic (they mix in the folder's accent), so
       // they can't be Tailwind classes. The `border` utility stays in className
       // for its width; only the hue moves inline.
@@ -55,29 +55,44 @@ export function SelectionBar({ count, accent, busy, onOpen, onDelete, onClear }:
         backgroundColor: `color-mix(in srgb, ${accent} 8%, var(--surface))`,
       }}
     >
-      <span
-        className="shrink-0 text-xs font-medium text-[var(--text)]"
-        style={{ fontFamily: "var(--font-mono)" }}
-      >
-        {count} selected
-      </span>
-
-      <div className="flex flex-1 items-center justify-end gap-1.5">
-        <Button size="sm" variant="ghost" onClick={onOpen} disabled={busy}>
-          Open {count}
-        </Button>
-        <Button size="sm" variant="danger" onClick={onDelete} disabled={busy}>
-          Delete
-        </Button>
-        <button
-          type="button"
-          aria-label="Clear selection"
-          onClick={onClear}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-[var(--text-2)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+      <div className="flex items-center gap-2">
+        <span
+          className="shrink-0 text-xs font-medium text-[var(--text)]"
+          style={{ fontFamily: "var(--font-mono)" }}
         >
-          <span aria-hidden="true">×</span>
-        </button>
+          {count} selected
+        </span>
+
+        <div className="flex flex-1 items-center justify-end gap-1.5">
+          <Button size="sm" variant="ghost" onClick={onOpen} disabled={busy}>
+            Open {count}
+          </Button>
+          <Button size="sm" variant="danger" onClick={onDelete} disabled={busy}>
+            Delete
+          </Button>
+          <button
+            type="button"
+            aria-label="Clear selection"
+            onClick={onClear}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-[var(--text-2)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
       </div>
+
+      {/*
+        Shown only at exactly one selection: a range needs an anchor, so there's
+        nothing to teach at zero, and by two the user has evidently worked it
+        out. That self-limiting condition is why this needs no "don't show
+        again" preference to store, sync, or migrate.
+      */}
+      {count === 1 ? (
+        <p className="flex items-center gap-1.5 text-[11px] text-[var(--text-2)]">
+          <Kbd className="min-w-0 px-1 py-0 text-[10px]">⇧</Kbd>
+          click another to select a range
+        </p>
+      ) : null}
     </div>
   );
 }

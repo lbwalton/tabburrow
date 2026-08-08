@@ -417,3 +417,33 @@ test("folder actions step back while links are selected, but stay clickable", as
   await popup.getByRole("toolbar", { name: "Selection actions" }).getByRole("button", { name: "Clear selection" }).click();
   await expect(append).not.toHaveClass(/opacity-60/);
 });
+
+test("the shift-range hint appears at exactly one selection and is self-limiting", async ({
+  context,
+  extensionId,
+  cleanDashboard,
+}) => {
+  await seedFolder(cleanDashboard, "Coding", ["React Docs", "Dexie Tutorial", "WXT Storage"]);
+  await cleanDashboard.reload();
+
+  const popup = await openFolderDetail(context, extensionId, "Coding", 3);
+  const hint = popup.getByText("click another to select a range");
+
+  // Nothing selected: no bar, so no hint.
+  await expect(hint).toHaveCount(0);
+
+  // Exactly one: the hint is there, because now a range is possible.
+  await popup.getByRole("checkbox", { name: "Select React Docs" }).click();
+  await expect(hint).toBeVisible();
+
+  // Two: they've worked it out, so it gets out of the way.
+  await popup.getByRole("checkbox", { name: "Select WXT Storage" }).click();
+  await expect(hint).toHaveCount(0);
+
+  // Back to one: it returns. (No stored "already seen" flag — that's the design.)
+  await popup.getByRole("checkbox", { name: "Select WXT Storage" }).click();
+  await expect(hint).toBeVisible();
+
+  // And the bar still works with the hint present.
+  await expect(popup.getByRole("button", { name: "Open 1" })).toBeVisible();
+});
