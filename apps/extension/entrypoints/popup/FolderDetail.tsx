@@ -23,6 +23,15 @@ export interface FolderDetailProps {
 }
 
 /**
+ * Input types that own Escape because Escape means "revert what I'm typing".
+ * A positive list, not an exclusion list: an unrecognized type falls through
+ * to clearing the selection, which is the harmless failure. Excluding known
+ * non-text types instead would mean any future type silently disables the
+ * clear-selection shortcut — exactly the checkbox regression this replaces.
+ */
+const TEXT_ENTRY_TYPES = new Set(["text", "url", "search", "email", "password", "tel", "number"]);
+
+/**
  * Screen 2 of the popup hub: a folder's live links (LinkRow each) plus a manual
  * AddLinkRow, with a bottom action bar leading on Append tabs / Overwrite (the
  * two favorites) and a secondary row for Organize with AI (deep-links into the
@@ -36,11 +45,13 @@ export interface FolderDetailProps {
  * for the checked fill, and a toggle handler that turns a shift-click into a
  * range and a plain click into a single toggle. The selection is pruned
  * whenever `links` changes underneath it and cleared on Escape, except when a
- * focused text field (the rename `Input`, AddLinkRow's URL/title fields) owns
- * that Escape to revert its own edit instead, or an open `[role="menu"]`,
- * `[role="dialog"]`, or native `<dialog>` is on the page and gets to close on
- * its own Escape handler first. Nothing reads `selectedLinks` yet — a later
- * task adds the action bar that acts on it.
+ * focused text-entry field (the rename `Input`, AddLinkRow's URL/title
+ * fields — see `TEXT_ENTRY_TYPES`; a checkbox is an `HTMLInputElement` too but
+ * is deliberately not in that set) owns that Escape to revert its own edit
+ * instead, or an open `[role="menu"]`, `[role="dialog"]`, or native `<dialog>`
+ * is on the page and gets to close on its own Escape handler first. Nothing
+ * reads `selectedLinks` yet — a later task adds the action bar that acts on
+ * it.
  */
 export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   const db = getDB();
@@ -100,13 +111,21 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
-      // A focused text field owns Escape (revert/dismiss what you're typing);
-      // it should never also fire the list-level "clear selection" shortcut.
-      // Covers the rename Input here and both AddLinkRow fields, and keeps
-      // covering any field added later — which per-call-site stopPropagation
-      // would not.
+      // A focused text-entry field owns Escape (revert/dismiss what you're
+      // typing); it should never also fire the list-level "clear selection"
+      // shortcut. Covers the rename Input here and both AddLinkRow fields,
+      // and keeps covering any text field added later — which per-call-site
+      // stopPropagation would not. Checked against TEXT_ENTRY_TYPES rather
+      // than "is an HTMLInputElement", because a checkbox is an
+      // HTMLInputElement too: LinkRow's checkbox keeps focus after the click
+      // that ticks it (the row's key doesn't change, so React keeps the same
+      // DOM node mounted), and a bare instanceof check would make Escape
+      // silently do nothing right after ticking a box.
       const active = document.activeElement;
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+      const inTextEntry =
+        (active instanceof HTMLInputElement && TEXT_ENTRY_TYPES.has(active.type)) ||
+        active instanceof HTMLTextAreaElement;
+      if (inTextEntry) return;
       if (document.querySelector("dialog[open], [role='menu'], [role='dialog']")) return;
       setSelection(emptySelection());
     }
