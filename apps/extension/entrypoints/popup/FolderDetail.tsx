@@ -252,8 +252,10 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   /**
    * Confirmed, unlike the per-row hover delete: one link is cheap to lose,
    * several are not, and the popup has no undo toast the way the dashboard
-   * does. `softDeleteLinks` IS a soft delete, so the dialog copy points at
-   * the dashboard for recovery.
+   * does. `softDeleteLinks` IS a soft delete at the data layer, but the
+   * dialog copy doesn't promise a restore: no UI surface (popup or
+   * dashboard) exposes soft-deleted links for recovery, so the confirm is
+   * the only safety net here.
    */
   async function handleDeleteSelected() {
     setBulkDeleteOpen(false);
@@ -542,6 +544,16 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
         </p>
       </Dialog>
 
+      {/*
+        Unlike Overwrite and Delete-folder above, this copy does NOT offer a
+        dashboard restore path. `softDeleteLinks` is a soft delete at the data
+        layer, but nothing in the UI exposes soft-deleted links: the
+        dashboard's undo toast (`entrypoints/dashboard/App.tsx`) only fires
+        for deletes initiated in the dashboard itself, never for a
+        popup-initiated one, and `SettingsPane` only counts live links, it
+        doesn't list or restore deleted ones. Promising a restore here would
+        be false, so don't re-add it.
+      */}
       <Dialog
         open={bulkDeleteOpen}
         onClose={() => setBulkDeleteOpen(false)}
@@ -558,8 +570,8 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
         }
       >
         <p>
-          Remove {selectedLinks.length} {selectedLinks.length === 1 ? "link" : "links"} from {collection.name}? You can
-          restore {selectedLinks.length === 1 ? "it" : "them"} from the dashboard.
+          Remove {selectedLinks.length} {selectedLinks.length === 1 ? "link" : "links"} from {collection.name}? This
+          can&rsquo;t be undone.
         </p>
       </Dialog>
     </div>
