@@ -74,6 +74,16 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   const selectedLinks = (links ?? []).filter((l) => selection.selected.has(l.id));
   const checkColor = accentColor(collection.accent);
 
+  /**
+   * While links are selected, the folder-level actions below the bar are
+   * momentarily beside the point, so they step back and let the selection bar
+   * be the lit thing. They stay fully clickable — no `disabled`, no
+   * pointer-events change — because appending tabs mid-selection is a
+   * perfectly reasonable thing to do. 60% is "quieter"; the ~40% that would
+   * read as disabled would be a lie.
+   */
+  const actionsDimmed = selectedLinks.length > 0 ? "opacity-60" : "";
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -440,6 +450,7 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
       {selectedLinks.length > 0 ? (
         <SelectionBar
           count={selectedLinks.length}
+          accent={checkColor}
           busy={busy}
           onOpen={() => void handleOpenSelected()}
           onDelete={() => setBulkDeleteOpen(true)}
@@ -452,19 +463,19 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
 
       <div className="flex flex-col gap-2 border-t border-[var(--line)] pt-3">
         <div className="flex gap-2">
-          <Button variant="primary" size="sm" onClick={() => void handleAppend()} disabled={busy} className="flex-1">
+          <Button variant="primary" size="sm" onClick={() => void handleAppend()} disabled={busy} className={`flex-1 transition-opacity ${actionsDimmed}`}>
             Append tabs
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setOverwriteOpen(true)} disabled={busy} className="flex-1">
+          <Button variant="ghost" size="sm" onClick={() => setOverwriteOpen(true)} disabled={busy} className={`flex-1 transition-opacity ${actionsDimmed}`}>
             Overwrite
           </Button>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={handleOrganize} className="flex-1">
+          <Button variant="ghost" size="sm" onClick={handleOrganize} className={`flex-1 transition-opacity ${actionsDimmed}`}>
             Organize with AI
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setSendOpen(true)}>
+          <Button variant="ghost" size="sm" onClick={() => setSendOpen(true)} className={`transition-opacity ${actionsDimmed}`}>
             Send
           </Button>
           <div className="relative">

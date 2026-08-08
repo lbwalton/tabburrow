@@ -386,3 +386,34 @@ test("Escape clears the selection, but not when a field or picker owns the key",
   await expect(confirm).toBeHidden(); // dialog dismissed
   await expect(bar.getByText("2 selected")).toBeVisible(); // selection survived
 });
+
+test("folder actions step back while links are selected, but stay clickable", async ({
+  context,
+  extensionId,
+  cleanDashboard,
+}) => {
+  await seedFolder(cleanDashboard, "Coding", ["React Docs", "Dexie Tutorial"]);
+  await cleanDashboard.reload();
+
+  const popup = await openFolderDetail(context, extensionId, "Coding", 2);
+  const append = popup.getByRole("button", { name: "Append tabs" });
+
+  // Nothing selected: full strength. `toHaveClass` with a regex matches against
+  // the whole class string, so `not.toHaveClass(/opacity-60/)` is the right
+  // shape here — asserting an exact class list would break on any unrelated
+  // Tailwind change.
+  await expect(append).not.toHaveClass(/opacity-60/);
+
+  await popup.getByRole("checkbox", { name: "Select React Docs" }).click();
+  await expect(append).toHaveClass(/opacity-60/);
+
+  // Dimmed is NOT disabled — the button must still be usable.
+  await expect(append).toBeEnabled();
+
+  // The ⋯ trigger is deliberately excluded from the dim.
+  await expect(popup.getByRole("button", { name: "More folder actions" })).not.toHaveClass(/opacity-60/);
+
+  // Clearing restores it.
+  await popup.getByRole("toolbar", { name: "Selection actions" }).getByRole("button", { name: "Clear selection" }).click();
+  await expect(append).not.toHaveClass(/opacity-60/);
+});

@@ -3,6 +3,14 @@ import { Button } from "@tabburrow/ui";
 export interface SelectionBarProps {
   /** How many links are selected. Rendered in the count and in the Open label. */
   count: number;
+  /**
+   * Resolved CSS color for the folder's accent — the SAME value the row
+   * checkboxes fill with (`FolderDetail`'s `checkColor`). The bar borrows it at
+   * low saturation so it reads as belonging to the ticked boxes rather than to
+   * the button stack below it. Already resolved by `accentColor`, so emoji and
+   * unset accents arrive here as `var(--accent)`.
+   */
+  accent: string;
   /** Mirrors FolderDetail's `busy` so the bar can't fire a second write mid-flight. */
   busy?: boolean;
   onOpen: () => void;
@@ -24,13 +32,22 @@ export interface SelectionBarProps {
  * primary ~40px below, and two orange buttons that close together compete.
  * The bar's own bordered surface carries the emphasis instead.
  */
-export function SelectionBar({ count, busy, onOpen, onDelete, onClear }: SelectionBarProps) {
+export function SelectionBar({ count, accent, busy, onOpen, onDelete, onClear }: SelectionBarProps) {
   return (
     <div
       role="toolbar"
       aria-label="Selection actions"
-      className="bulk-bar flex items-center gap-2 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5"
-      style={{ fontFamily: "var(--font-body)" }}
+      className="bulk-bar flex items-center gap-2 rounded-[var(--radius-card)] border px-2 py-1.5"
+      // The two color values are dynamic (they mix in the folder's accent), so
+      // they can't be Tailwind classes. The `border` utility stays in className
+      // for its width; only the hue moves inline. 55%/8% are tuned by eye —
+      // enough that the bar is visibly the same hue as the checkboxes, far
+      // enough below them that it reads as a surface, not a control.
+      style={{
+        fontFamily: "var(--font-body)",
+        borderColor: `color-mix(in srgb, ${accent} 55%, var(--line))`,
+        backgroundColor: `color-mix(in srgb, ${accent} 8%, var(--surface))`,
+      }}
     >
       <span
         className="shrink-0 text-xs font-medium text-[var(--text)]"
