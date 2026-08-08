@@ -146,12 +146,17 @@ body, which is the dashboard's model, not this one. It stays a dashboard concern
   the key:
 
   ```ts
-  if (document.querySelector("dialog[open], [role='menu']")) return;
+  if (document.querySelector("dialog[open], [role='menu'], [role='dialog']")) return;
   ```
 
-  That one selector covers the folder `⋯` menu, every per-row `⋯` menu, the
-  Overwrite dialog, the Delete-folder dialog, and the new bulk-delete dialog. All of
-  them already render as `<dialog>` or `role="menu"`.
+  That selector covers the folder `⋯` menu and every per-row `⋯` menu
+  (`[role="menu"]`), the Overwrite / Delete-folder / bulk-delete confirms (native
+  `<dialog>`), and `AccentPicker`.
+
+  The third clause is the easy one to miss, and an earlier draft of this spec did:
+  `AccentPicker` is a `<div role="dialog">`, not a native `<dialog>`, and it is
+  reachable from this very view via `⋯` → "Change color". Without it, dismissing the
+  color picker with Escape also silently wipes the selection the user just built.
 
   Subtle and worth not "fixing" later: `LinkRow`'s own `Escape` listener is also on
   `document`, and both fire for the same keypress. The guard still holds, because
