@@ -51,7 +51,12 @@ const TEXT_ENTRY_TYPES = new Set(["text", "url", "search", "email", "password", 
  * fields — see `TEXT_ENTRY_TYPES`; a checkbox is an `HTMLInputElement` too but
  * is deliberately not in that set) owns that Escape to revert its own edit
  * instead, or an open `[role="menu"]`, `[role="dialog"]`, or native `<dialog>`
- * is on the page and gets to close on its own Escape handler first.
+ * is on the page and gets to close on its own Escape handler first. That
+ * yield-to-whoever-owns-the-key check is registered on the CAPTURE phase on
+ * purpose: it decides by reading the DOM, and React 18 flushes a keydown
+ * handler's setState synchronously, so on the bubble phase the rename Input
+ * and the accent picker have already unmounted and there is nothing left to
+ * yield to — see the comment on the effect itself.
  * `selectedLinks` feeds the inline `SelectionBar`, which renders once 1+
  * rows are ticked and offers open-selected plus a confirmed bulk delete
  * (see `handleDeleteSelected`) — unlike the per-row hover trash, which
@@ -108,11 +113,28 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   // (reachable right from here via ⋯ → Change color) — it's a plain <div>,
   // not a native <dialog> or a role="menu", so it needs its own clause.
   //
-  // `LinkRow`'s own Escape listener is also on `document` and fires for the
-  // same keypress — that's fine and intended: its menu-closing setState
-  // hasn't flushed to the DOM yet, so [role="menu"] is still queryable here
-  // and this handler correctly bails. One Escape closes the menu, a second
-  // clears the selection.
+  // CAPTURE PHASE, and it has to stay that way. Both guards below decide by
+  // *looking at the DOM* — what's focused, what's mounted — so they are only
+  // correct while the DOM still shows the state the user pressed Escape in.
+  // React 18 flushes a keydown handler's setState synchronously (keydown is a
+  // discrete event), so by the time the native event finishes bubbling up to
+  // `window` the other surface has already torn itself down: the rename Input
+  // has unmounted and activeElement is <body>, AccentPicker has unmounted and
+  // [role="dialog"] matches nothing. A bubble listener therefore reads an
+  // empty room and wipes a selection the user never asked to lose. Capture
+  // runs window → document → target, ahead of React's root-container
+  // listeners and so ahead of any unmount or blur, which is the only moment
+  // the guards can see the truth. Do not "simplify" this back to bubble; the
+  // guard bodies are fine, the timing was the bug.
+  //
+  // Both add and remove need the `true` — the capture flag is part of a
+  // listener's identity, so a bubble-phase removeEventListener silently
+  // fails to detach and leaks one live listener per mount.
+  //
+  // `LinkRow`'s own Escape listener is on `document` (bubble) and fires for
+  // the same keypress — that's fine and intended: this capture listener has
+  // already run and seen [role="menu"], so it bails and lets the row close
+  // its menu. One Escape closes the menu, a second clears the selection.
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
@@ -134,8 +156,8 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
       if (document.querySelector("dialog[open], [role='menu'], [role='dialog']")) return;
       setSelection(emptySelection());
     }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, []);
 
   useEffect(() => {
