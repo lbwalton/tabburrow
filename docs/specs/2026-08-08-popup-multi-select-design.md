@@ -224,15 +224,28 @@ The header's `↗` "Open all" keeps meaning *all* links, not the selection. Its
 
 ## Testing
 
-Stated plainly: **this change warrants no new unit tests.**
+This repo splits coverage deliberately, and `apps/extension/vitest.config.ts` says so
+in its own comment: *"Only pure `lib/` functions are unit tested here — no `chrome.*`
+mocking, no DOM/component rendering."* Component and `chrome.*` behavior is covered by
+the Playwright suite driving a real built extension. This feature follows that split:
 
-The reusable logic underneath (`nextSelection`, `pruneSelection`) is already covered
-by `selection.test.ts`, and this feature adds none of its own. What remains is view
-wiring plus `chrome.tabs` calls, and per `lib/restore.ts`'s docstring this package
-deliberately does no `chrome.*` mocking. A new test here would assert React
-plumbing, not behavior.
+- **Vitest:** one new pure function, `accentColor` in `lib/accents.ts`. The selection
+  reducer underneath (`nextSelection`, `pruneSelection`) is already covered by
+  `selection.test.ts` and gains nothing new.
+- **No vitest component tests.** There is no `@testing-library/react` in the package
+  and the config comment rules the category out. A test asserting React plumbing would
+  be a defect here, not coverage.
+- **Playwright:** the real coverage, appended to `e2e/specs/r10-folder-actions.spec.ts`,
+  which already covers this exact surface (Append, Overwrite, Add link, inline trash,
+  header `+`, rename) and runs local-only against Dexie with no sign-in. This mirrors
+  how the dashboard's bulk-select is covered in `t09-grid-dnd.spec.ts`. Four cases:
+  toggle and count, shift-range with a fixed anchor, `Open N` (background tabs, popup
+  survives, selection clears), and bulk delete with its confirm.
 
-Verification is manual, in the popup:
+The inline-trash test in that file is the one to watch: it shares the row markup the
+checkbox column changes, so it doubles as the regression guard.
+
+Manual smoke checks during implementation, ahead of the e2e run:
 
 1. Tick two checkboxes, confirm the bar appears with "2 selected".
 2. Shift-click a third further down, confirm the contiguous range fills in and the
