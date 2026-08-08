@@ -143,27 +143,84 @@ body, which is the dashboard's model, not this one. It stays a dashboard concern
   another surface cannot leave a dangling selected id. `pruneSelection` returns the
   same reference when nothing changed, so this does not cause an extra render.
 - An `Escape` handler that clears the selection, bailing when something else owns
-  the key:
+  the key. It has three load-bearing parts, and all three are required:
+
+  **1. A focused-text-entry bail, checked first.** A positive allowlist
+  (`TEXT_ENTRY_TYPES`: `text`, `url`, `search`, `email`, `password`, `tel`,
+  `number`), not a bare `instanceof HTMLInputElement`:
+
+  ```ts
+  const active = document.activeElement;
+  const inTextEntry =
+    (active instanceof HTMLInputElement && TEXT_ENTRY_TYPES.has(active.type)) ||
+    active instanceof HTMLTextAreaElement;
+  if (inTextEntry) return;
+  ```
+
+  The direction of this list matters. A checkbox *is* an `HTMLInputElement`, and
+  `LinkRow`'s checkbox keeps focus after the click that ticks it (the row's key
+  doesn't change, so React keeps the same DOM node mounted). A bare
+  `instanceof HTMLInputElement` check would therefore bail on every checkbox click,
+  disabling this feature's own clear-selection gesture immediately after the user
+  uses it. An allowlist avoids that because it only bails for the input *types*
+  that mean "I'm mid-edit, Escape should revert me" — the rename `Input` and both
+  `AddLinkRow` fields. It also fails in the harmless direction: a type nobody has
+  thought of yet falls through to *clearing the selection*, not to silently
+  disabling the shortcut. An exclusion list would fail the other way — any new
+  text-like input added later and forgotten in the list would silently break the
+  shortcut again, which is exactly the kind of defect this spec is trying to keep
+  out of the code a second time.
+
+  **2. A competing-surface bail:**
 
   ```ts
   if (document.querySelector("dialog[open], [role='menu'], [role='dialog']")) return;
   ```
 
   That selector covers the folder `⋯` menu and every per-row `⋯` menu
-  (`[role="menu"]`), the Overwrite / Delete-folder / bulk-delete confirms (native
-  `<dialog>`), and `AccentPicker`.
-
-  The third clause is the easy one to miss, and an earlier draft of this spec did:
+  (`[role="menu"]`), every native `<dialog>` on the page — the Overwrite /
+  Delete-folder / bulk-delete confirms this file renders directly, plus the ones
+  `SendMenu`, `OpenAllButton`, and `EditLinkPopover` render — and `AccentPicker`.
   `AccentPicker` is a `<div role="dialog">`, not a native `<dialog>`, and it is
-  reachable from this very view via `⋯` → "Change color". Without it, dismissing the
-  color picker with Escape also silently wipes the selection the user just built.
+  reachable from this very view via `⋯` → "Change color"; without its own clause,
+  dismissing the color picker with Escape would also silently wipe the selection
+  the user just built.
 
-  Subtle and worth not "fixing" later: `LinkRow`'s own `Escape` listener is also on
-  `document`, and both fire for the same keypress. The guard still holds, because
-  `LinkRow` closing its menu is a React state update that has not flushed to the DOM
-  by the time this handler runs, so the `[role="menu"]` node is still queryable. One
-  `Escape` closes the menu, a second clears the selection. That is the intended
-  behavior, and it depends on this ordering.
+  **3. The listener is registered on the capture phase**, not bubble:
+
+  ```ts
+  window.addEventListener("keydown", handleKeyDown, true);
+  // ...
+  return () => window.removeEventListener("keydown", handleKeyDown, true);
+  ```
+
+  Both the `add` and the `remove` need that trailing `true` — the capture flag is
+  part of a listener's identity, so a bubble-phase `removeEventListener` silently
+  fails to detach and leaks one live listener per mount.
+
+  This is not a stylistic choice; it is required for parts 1 and 2 to be correct
+  at all. Both guards decide by reading the DOM — what's focused, what's mounted —
+  and React 18 flushes a keydown handler's `setState` **synchronously**, because
+  `keydown` is a discrete event. That means by the time a *bubble*-phase listener
+  on `window` runs, any competing surface that reacted to the same Escape keypress
+  has already torn itself down: the rename `Input` has unmounted and
+  `activeElement` is back on `<body>`, `AccentPicker` has unmounted and
+  `[role="dialog"]` matches nothing. A bubble listener reads an empty room and
+  wipes a selection the user never asked to lose — this was tried and it does not
+  work. Capture runs `window → document → target`, ahead of React's
+  root-container listeners and therefore ahead of any unmount or blur triggered by
+  this same keypress, which is the only point at which the guards see the DOM the
+  user actually pressed Escape in. **Do not convert this back to bubble phase.**
+  The guard bodies (parts 1 and 2) are correct; bubble-phase timing is not.
+
+  Subtle and worth not "fixing" later: `LinkRow`'s own `Escape` listener is a
+  separate, bubble-phase listener on `document`, and both fire for the same
+  keypress. The two-step "first Escape closes the menu, second Escape clears the
+  selection" behavior holds because this capture-phase listener runs *first* and
+  still sees `[role="menu"]` mounted (nothing has flushed yet at capture time), so
+  it bails and lets `LinkRow`'s own bubble-phase listener close the menu on that
+  same keypress. Only the *following* Escape, with no menu left to see, clears the
+  selection.
 
 ### `LinkRow`
 
@@ -259,9 +316,20 @@ the Playwright suite driving a real built extension. This feature follows that s
 - **Playwright:** the real coverage, appended to `e2e/specs/r10-folder-actions.spec.ts`,
   which already covers this exact surface (Append, Overwrite, Add link, inline trash,
   header `+`, rename) and runs local-only against Dexie with no sign-in. This mirrors
-  how the dashboard's bulk-select is covered in `t09-grid-dnd.spec.ts`. Four cases:
+  how the dashboard's bulk-select is covered in `t09-grid-dnd.spec.ts`. Five cases:
   toggle and count, shift-range with a fixed anchor, `Open N` (background tabs, popup
-  survives, selection clears), and bulk delete with its confirm.
+  survives, selection clears), bulk delete with its confirm, and Escape's guard.
+
+  The Escape case is the one worth calling out by name, not folding into "toggle and
+  count": it alone covers six sub-cases, because the guard has three moving parts
+  (see the `FolderDetail` section above) and each competing surface exercises a
+  different one of them — checkbox-focused clear (the core flow, and the one a bare
+  `instanceof HTMLInputElement` check would break), rename cancel (text-entry bail),
+  the add-link field (text-entry bail, second input), the accent picker (the
+  `role="dialog"` div, not a native `<dialog>`), a per-row `⋯` menu (the
+  capture-vs-bubble ordering itself: this is the sub-case that fails if the listener
+  is ever moved back to bubble), and the native bulk-delete confirm dialog
+  (`dialog[open]`).
 
 The inline-trash test in that file is the one to watch: it shares the row markup the
 checkbox column changes, so it doubles as the regression guard.

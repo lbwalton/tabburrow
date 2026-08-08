@@ -108,10 +108,15 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   }, [links]);
 
   // Escape clears the selection, but only when nothing else owns the key.
-  // The one selector covers the folder ⋯ menu, every per-row ⋯ menu, all
-  // three <dialog>s in this file, and AccentPicker's `role="dialog"` panel
-  // (reachable right from here via ⋯ → Change color) — it's a plain <div>,
-  // not a native <dialog> or a role="menu", so it needs its own clause.
+  // The one selector covers the folder ⋯ menu, every per-row ⋯ menu, every
+  // native <dialog> on the page — including the ones this file renders
+  // directly (Overwrite, Delete-folder, bulk-delete confirm) and the ones
+  // SendMenu, OpenAllButton, and EditLinkPopover render — and AccentPicker's
+  // `role="dialog"` panel (reachable right from here via ⋯ → Change color)
+  // — it's a plain <div>, not a native <dialog> or a role="menu", so it
+  // needs its own clause. Deliberately phrased as "every dialog", not an
+  // exhaustive list: an exhaustive enumeration here is exactly what let
+  // AccentPicker slip through the first time this guard was written.
   //
   // CAPTURE PHASE, and it has to stay that way. Both guards below decide by
   // *looking at the DOM* — what's focused, what's mounted — so they are only

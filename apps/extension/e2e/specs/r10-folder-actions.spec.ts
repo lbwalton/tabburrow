@@ -357,6 +357,7 @@ test("Escape clears the selection, but not when a field or picker owns the key",
   await popup.getByRole("menuitem", { name: "Change color" }).click();
   await expect(popup.getByRole("dialog")).toBeVisible();
   await popup.keyboard.press("Escape");
+  await expect(popup.getByRole("dialog")).toHaveCount(0); // picker closed
   await expect(bar.getByText("1 selected")).toBeVisible();
 
   // 5. A per-row ⋯ menu takes the FIRST Escape and the selection takes the second.
