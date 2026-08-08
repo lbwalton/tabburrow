@@ -577,20 +577,23 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
         }
       >
         <p>
-          Delete {collection.name} and its {count} {count === 1 ? "link" : "links"}? You can restore it from the
-          dashboard.
+          Delete {collection.name} and its {count} {count === 1 ? "link" : "links"}? This can&rsquo;t be undone.
         </p>
       </Dialog>
 
       {/*
-        Unlike Overwrite and Delete-folder above, this copy does NOT offer a
-        dashboard restore path. `softDeleteLinks` is a soft delete at the data
-        layer, but nothing in the UI exposes soft-deleted links: the
-        dashboard's undo toast (`entrypoints/dashboard/App.tsx`) only fires
-        for deletes initiated in the dashboard itself, never for a
-        popup-initiated one, and `SettingsPane` only counts live links, it
-        doesn't list or restore deleted ones. Promising a restore here would
-        be false, so don't re-add it.
+        Unlike Overwrite above, this copy does NOT offer a dashboard restore
+        path — and neither does Delete-folder above it any more; that dialog's
+        "restore from the dashboard" line was removed for the same reason.
+        `softDeleteLinks` is a soft delete at the data layer, but nothing in
+        the UI exposes soft-deleted links: the dashboard's undo toast
+        (`entrypoints/dashboard/App.tsx`) only fires for deletes initiated in
+        the dashboard itself, never for a popup-initiated one, and
+        `SettingsPane` only counts live links, it doesn't list or restore
+        deleted ones. Promising a restore here would be false, so don't
+        re-add it. Overwrite's claim is left alone (knowingly out of scope):
+        it's a separate call path (`overwriteFolderWithTabs`), not this task's
+        concern.
       */}
       <Dialog
         open={bulkDeleteOpen}

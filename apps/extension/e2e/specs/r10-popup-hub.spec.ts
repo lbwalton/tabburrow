@@ -8,8 +8,9 @@ import { finalScreenshot } from "../test-utils";
  * R10 — Popup hub: the folders-home screen. All local-only (Dexie): no
  * sign-in and no Supabase stack required. Covers the redesigned home list
  * (every folder + its live count, hover-revealed row actions, drill-in /
- * back), and inline "+ New folder" creation (blur-to-confirm, stays home,
- * lands at the bottom).
+ * back), inline "+ New folder" creation (blur-to-confirm, stays home, lands
+ * at the bottom), and the row's inline delete trash (confirms, removes only
+ * the targeted folder, and sits last in the action group away from open-all).
  *
  * Lifted from the throwaway acceptance scripts e2e/capture-hub.ts and
  * e2e/verify-fixes.ts. Like every popup spec, "current tab" quirks don't
@@ -121,4 +122,71 @@ test('"+ New folder" confirms on blur (not Enter), stays on home, and lands at t
     .pop();
   expect(lastName?.startsWith("Zebra folder")).toBe(true);
   await finalScreenshot(popup, "r10-new-folder");
+});
+
+test("the inline trash on a folder row confirms, then deletes the folder", async ({
+  context,
+  extensionId,
+  cleanDashboard,
+}) => {
+  // Two folders so we can prove only the targeted one goes.
+  await seedFolders(cleanDashboard, [
+    { name: "Coding", linkTitles: ["React Docs", "Dexie Tutorial"] },
+    { name: "Recipes", linkTitles: ["Sourdough"] },
+  ]);
+  await cleanDashboard.reload();
+
+  const popup = await popupPage(context, extensionId);
+  const row = popup.locator("div.group", { hasText: "Coding" }).first();
+  await row.hover();
+  await row.getByRole("button", { name: "Delete Coding" }).click();
+
+  // Cancel leaves everything intact — a folder is not a one-click delete.
+  // Note: the row's accessible name ("Coding 2"), not a bare text match — every
+  // row also carries OpenAllButton's own hidden confirm `<dialog>` (native
+  // <dialog> content stays in the DOM, just closed) whose copy repeats the
+  // folder name and count, so `getByText("Coding")` alone is ambiguous.
+  const dialog = popup.getByRole("dialog", { name: 'Delete "Coding"?' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("2 links")).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(popup.getByRole("button", { name: "Coding 2", exact: true })).toBeVisible();
+
+  // Confirming removes only that folder.
+  await row.hover();
+  await row.getByRole("button", { name: "Delete Coding" }).click();
+  await popup.getByRole("dialog", { name: 'Delete "Coding"?' }).getByRole("button", { name: "Delete" }).click();
+
+  // Coding's row (and its own hidden dialogs) unmount entirely on delete, so
+  // a bare text match is safe here — there's nothing left for it to collide
+  // with.
+  await expect(popup.getByText("Coding")).toHaveCount(0, { timeout: 5000 });
+  await expect(popup.getByRole("button", { name: "Recipes 1", exact: true })).toBeVisible();
+});
+
+test("the folder row's trash sits last, away from open-all", async ({
+  context,
+  extensionId,
+  cleanDashboard,
+}) => {
+  await seedFolders(cleanDashboard, [{ name: "Coding", linkTitles: ["React Docs"] }]);
+  await cleanDashboard.reload();
+
+  const popup = await popupPage(context, extensionId);
+  const row = popup.locator("div.group", { hasText: "Coding" }).first();
+  await row.hover();
+
+  // Order is load-bearing: `↗` opens every tab in the folder and is the most-used
+  // control here, so the destructive action is kept at the far end. A refactor that
+  // reorders these should fail loudly rather than quietly re-create the hazard.
+  const labels = await row.getByRole("button").evaluateAll((els) =>
+    els.map((el) => el.getAttribute("aria-label") ?? "").filter(Boolean),
+  );
+  const addIndex = labels.findIndex((l) => l.startsWith("Add current tab"));
+  const openIndex = labels.findIndex((l) => l.startsWith("Open all"));
+  const trashIndex = labels.findIndex((l) => l.startsWith("Delete "));
+
+  expect(addIndex).toBeGreaterThanOrEqual(0);
+  expect(openIndex).toBeGreaterThan(addIndex);
+  expect(trashIndex).toBeGreaterThan(openIndex);
 });
