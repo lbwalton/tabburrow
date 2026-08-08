@@ -74,8 +74,16 @@ element on screen ignoring the token system.
 
 `appearance-none`, with:
 
-- Unchecked: `border-[var(--line)]`, transparent fill.
-- Checked: filled, with an inline SVG tick in `var(--bg-ground)`.
+- Unchecked: `border-[var(--line-hi)]`, transparent fill, hover to `var(--text-2)`.
+  `Input` uses the fainter `--line` at rest and normally a checkbox would match it,
+  but `--line` is 11% opacity: a clean hairline around a 200px field, nearly invisible
+  around a 16px box on the dark green ground. The whole point of this control is being
+  seen without being discovered, so it takes the 20% step.
+- Checked: filled, with an inline SVG tick in `var(--btn-fg)`. That token exists for a
+  foreground on a solid accent fill, was picked for WCAG AA contrast against the orange,
+  and is theme-stable. `var(--bg-ground)` would have been the intuitive choice and is
+  wrong: it flips to light kraft under `[data-theme="paper"]`, giving a pale tick on an
+  orange box.
 - Focus: the repo's standard `focus-visible:ring-2 focus-visible:ring-[var(--accent)]`.
 
 The checked fill uses **the collection's own accent** so selecting inside "Research"
