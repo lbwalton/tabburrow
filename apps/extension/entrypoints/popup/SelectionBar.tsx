@@ -40,9 +40,15 @@ export function SelectionBar({ count, accent, busy, onOpen, onDelete, onClear }:
       className="bulk-bar flex items-center gap-2 rounded-[var(--radius-card)] border px-2 py-1.5"
       // The two color values are dynamic (they mix in the folder's accent), so
       // they can't be Tailwind classes. The `border` utility stays in className
-      // for its width; only the hue moves inline. 55%/8% are tuned by eye —
-      // enough that the bar is visibly the same hue as the checkboxes, far
-      // enough below them that it reads as a surface, not a control.
+      // for its width; only the hue moves inline.
+      //
+      // 55%/8% were checked against the dark shell with three links selected:
+      // the border carries the relationship to the checkboxes, and the 8% wash
+      // is deliberately near-subliminal (it separates the bar from the ground
+      // without reading as a filled control). They are safe to re-tune — no
+      // test asserts these numbers, by design, since pinning a computed
+      // color-mix() string would break on tuning while proving nothing about
+      // whether it reads correctly.
       style={{
         fontFamily: "var(--font-body)",
         borderColor: `color-mix(in srgb, ${accent} 55%, var(--line))`,
