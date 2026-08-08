@@ -358,4 +358,30 @@ test("Escape clears the selection, but not when a field or picker owns the key",
   await expect(popup.getByRole("dialog")).toBeVisible();
   await popup.keyboard.press("Escape");
   await expect(bar.getByText("1 selected")).toBeVisible();
+
+  // 5. A per-row ⋯ menu takes the FIRST Escape and the selection takes the second.
+  //    LinkRow closes its own menu from a document-level (bubble) listener, so this
+  //    is the case that pins the phase ordering: the window listener has to see
+  //    [role="menu"] still mounted, which only holds on capture — by bubble time
+  //    LinkRow's setState has already flushed the menu out of the DOM.
+  await popup.getByRole("button", { name: "More actions for React Docs" }).click();
+  const rowMenu = popup.getByRole("menu", { name: "React Docs actions" });
+  await expect(rowMenu).toBeVisible();
+  await popup.keyboard.press("Escape");
+  await expect(rowMenu).toHaveCount(0); // menu closed
+  await expect(bar.getByText("1 selected")).toBeVisible(); // selection survived
+  await popup.keyboard.press("Escape");
+  await expect(bar).toHaveCount(0); // second Escape clears it
+
+  // 6. Backing out of the bulk-delete confirm must NOT wipe the selection — the user
+  //    called off a delete, losing what they'd picked would be its own bug. This is
+  //    the native <dialog> arm of the guard (`dialog[open]`), unlike case 4's div.
+  await popup.getByRole("checkbox", { name: "Select React Docs" }).click();
+  await popup.getByRole("checkbox", { name: "Select Dexie Tutorial" }).click();
+  await bar.getByRole("button", { name: "Delete" }).click();
+  const confirm = popup.getByRole("dialog", { name: "Delete 2 links?" });
+  await expect(confirm).toBeVisible();
+  await popup.keyboard.press("Escape");
+  await expect(confirm).toBeHidden(); // dialog dismissed
+  await expect(bar.getByText("2 selected")).toBeVisible(); // selection survived
 });
