@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { getDB, listLinks, renameCollection, setCollectionAccent, softDeleteCollection } from "@tabburrow/core";
+import { getDB, listLinks, renameCollection, setCollectionAccent, softDeleteCollection, softDeleteLinks } from "@tabburrow/core";
 import type { Collection } from "@tabburrow/core";
 import { Badge, Button, Dialog, Input } from "@tabburrow/ui";
 import { getAllTabs, getCurrentTab } from "../../lib/tabs";
@@ -52,8 +52,10 @@ const TEXT_ENTRY_TYPES = new Set(["text", "url", "search", "email", "password", 
  * is deliberately not in that set) owns that Escape to revert its own edit
  * instead, or an open `[role="menu"]`, `[role="dialog"]`, or native `<dialog>`
  * is on the page and gets to close on its own Escape handler first.
- * `selectedLinks` feeds the inline `SelectionBar` (open-selected only for
- * now; bulk delete is a later task) that renders once 1+ rows are ticked.
+ * `selectedLinks` feeds the inline `SelectionBar`, which renders once 1+
+ * rows are ticked and offers open-selected plus a confirmed bulk delete
+ * (see `handleDeleteSelected`) — unlike the per-row hover trash, which
+ * deletes immediately with no dialog.
  */
 export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   const db = getDB();
@@ -72,6 +74,7 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [overwriteOpen, setOverwriteOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
@@ -246,6 +249,23 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
     });
   }
 
+  /**
+   * Confirmed, unlike the per-row hover delete: one link is cheap to lose,
+   * several are not, and the popup has no undo toast the way the dashboard
+   * does. `softDeleteLinks` IS a soft delete, so the dialog copy points at
+   * the dashboard for recovery.
+   */
+  async function handleDeleteSelected() {
+    setBulkDeleteOpen(false);
+    const ids = selectedLinks.map((l) => l.id);
+    await run(async () => {
+      await softDeleteLinks(ids, db);
+      sendSyncNudge();
+      setSelection(emptySelection());
+      flash(`Deleted ${ids.length} ${ids.length === 1 ? "link" : "links"}.`);
+    });
+  }
+
   function handleOrganize() {
     chrome.tabs.create({ url: dashboardCollectionOrganizeUrl(collection.id) });
   }
@@ -393,6 +413,7 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
           count={selectedLinks.length}
           busy={busy}
           onOpen={() => void handleOpenSelected()}
+          onDelete={() => setBulkDeleteOpen(true)}
           onClear={() => setSelection(emptySelection())}
         />
       ) : null}
@@ -518,6 +539,27 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
         <p>
           Delete {collection.name} and its {count} {count === 1 ? "link" : "links"}? You can restore it from the
           dashboard.
+        </p>
+      </Dialog>
+
+      <Dialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        title={`Delete ${selectedLinks.length} ${selectedLinks.length === 1 ? "link" : "links"}?`}
+        footer={
+          <>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setBulkDeleteOpen(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="button" variant="danger" size="sm" onClick={() => void handleDeleteSelected()} disabled={busy}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p>
+          Remove {selectedLinks.length} {selectedLinks.length === 1 ? "link" : "links"} from {collection.name}? You can
+          restore {selectedLinks.length === 1 ? "it" : "them"} from the dashboard.
         </p>
       </Dialog>
     </div>

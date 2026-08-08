@@ -6,6 +6,7 @@ export interface SelectionBarProps {
   /** Mirrors FolderDetail's `busy` so the bar can't fire a second write mid-flight. */
   busy?: boolean;
   onOpen: () => void;
+  onDelete: () => void;
   onClear: () => void;
 }
 
@@ -23,7 +24,7 @@ export interface SelectionBarProps {
  * primary ~40px below, and two orange buttons that close together compete.
  * The bar's own bordered surface carries the emphasis instead.
  */
-export function SelectionBar({ count, busy, onOpen, onClear }: SelectionBarProps) {
+export function SelectionBar({ count, busy, onOpen, onDelete, onClear }: SelectionBarProps) {
   return (
     <div
       role="toolbar"
@@ -41,6 +42,9 @@ export function SelectionBar({ count, busy, onOpen, onClear }: SelectionBarProps
       <div className="flex flex-1 items-center justify-end gap-1.5">
         <Button size="sm" variant="ghost" onClick={onOpen} disabled={busy}>
           Open {count}
+        </Button>
+        <Button size="sm" variant="danger" onClick={onDelete} disabled={busy}>
+          Delete
         </Button>
         <button
           type="button"
