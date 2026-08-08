@@ -35,9 +35,10 @@ export interface FolderDetailProps {
  * each LinkRow is handed its checked flag, the folder's resolved accent color
  * for the checked fill, and a toggle handler that turns a shift-click into a
  * range and a plain click into a single toggle. The selection is pruned
- * whenever `links` changes underneath it and cleared on Escape (unless a menu
- * or dialog owns that keypress instead). Nothing reads `selectedLinks` yet —
- * a later task adds the action bar that acts on it.
+ * whenever `links` changes underneath it and cleared on Escape, except while
+ * an open `[role="menu"]`, `[role="dialog"]`, or native `<dialog>` is on the
+ * page — those are left to close on their own Escape handler first. Nothing
+ * reads `selectedLinks` yet — a later task adds the action bar that acts on it.
  */
 export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   const db = getDB();
@@ -84,8 +85,10 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   }, [links]);
 
   // Escape clears the selection, but only when nothing else owns the key.
-  // The one selector covers the folder ⋯ menu, every per-row ⋯ menu, and
-  // all three <dialog>s in this file.
+  // The one selector covers the folder ⋯ menu, every per-row ⋯ menu, all
+  // three <dialog>s in this file, and AccentPicker's `role="dialog"` panel
+  // (reachable right from here via ⋯ → Change color) — it's a plain <div>,
+  // not a native <dialog> or a role="menu", so it needs its own clause.
   //
   // `LinkRow`'s own Escape listener is also on `document` and fires for the
   // same keypress — that's fine and intended: its menu-closing setState
@@ -95,7 +98,7 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
-      if (document.querySelector("dialog[open], [role='menu']")) return;
+      if (document.querySelector("dialog[open], [role='menu'], [role='dialog']")) return;
       setSelection(emptySelection());
     }
     window.addEventListener("keydown", handleKeyDown);
