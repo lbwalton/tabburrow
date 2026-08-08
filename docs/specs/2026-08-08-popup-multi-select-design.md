@@ -154,12 +154,17 @@ body, which is the dashboard's model, not this one. It stays a dashboard concern
 
 ### `LinkRow`
 
-Gains two **required** props:
+Gains three **required** props:
 
 ```ts
 selected: boolean;
+checkColor: string;   // the already-resolved CSS color for the checked fill
 onToggle: (id: string, shiftKey: boolean) => void;
 ```
+
+`checkColor` arrives pre-resolved rather than as the raw `collection.accent`, so
+`accentColor` runs once per folder instead of once per row, and `LinkRow` never needs
+to know that an accent can be an emoji.
 
 Required, not optional: `LinkRow` has exactly one call site (`FolderDetail`), so
 optional props would only create dead branches. (Note: `SearchOverlay.tsx` defines
