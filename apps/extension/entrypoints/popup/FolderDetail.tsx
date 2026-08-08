@@ -9,6 +9,8 @@ import { addTabToFolder, appendTabsToFolder, overwriteFolderWithTabs } from "../
 import { friendlyCreateError } from "../../lib/collections";
 import { sendSyncNudge } from "../../lib/sync-nudge";
 import { dashboardCollectionOrganizeUrl } from "../../lib/dashboard";
+import { accentColor } from "../../lib/accents";
+import { emptySelection, nextSelection, pruneSelection } from "../../lib/selection";
 import { AccentPicker } from "../dashboard/AccentPicker";
 import { OpenAllButton } from "./OpenAllButton";
 import { LinkRow } from "./LinkRow";
@@ -28,12 +30,26 @@ export interface FolderDetailProps {
  * overflow with Rename, Change color, Delete folder, and Add current tab.
  * Owns its own data calls (mirroring RecentList / RestoreAllButton), so App
  * only passes the collection and the back handler.
+ *
+ * Also owns the checkbox multi-select state for the list (`lib/selection.ts`):
+ * each LinkRow is handed its checked flag, the folder's resolved accent color
+ * for the checked fill, and a toggle handler that turns a shift-click into a
+ * range and a plain click into a single toggle. The selection is pruned
+ * whenever `links` changes underneath it and cleared on Escape (unless a menu
+ * or dialog owns that keypress instead). Nothing reads `selectedLinks` yet —
+ * a later task adds the action bar that acts on it.
  */
 export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   const db = getDB();
   const links = useLiveQuery(() => listLinks(collection.id, db), [collection.id]);
   const count = links?.length ?? 0;
   const urls = (links ?? []).map((l) => l.url);
+  const [selection, setSelection] = useState(emptySelection());
+  // `listLinks` is position-ordered, so this IS the display order a
+  // shift-range measures against.
+  const order = (links ?? []).map((l) => l.id);
+  const selectedLinks = (links ?? []).filter((l) => selection.selected.has(l.id));
+  const checkColor = accentColor(collection.accent);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +71,35 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   // continues into this screen rather than dropping to <body>.
   useEffect(() => {
     backRef.current?.focus();
+  }, []);
+
+  // A link deleted from another surface (or by this folder's own bulk
+  // delete) shouldn't leave a dangling selected id. `pruneSelection`
+  // returns the SAME reference when nothing changed, so this doesn't cause
+  // an extra render on every unrelated links update.
+  useEffect(() => {
+    if (!links) return;
+    const validIds = links.map((l) => l.id);
+    setSelection((current) => pruneSelection(current, validIds));
+  }, [links]);
+
+  // Escape clears the selection, but only when nothing else owns the key.
+  // The one selector covers the folder ⋯ menu, every per-row ⋯ menu, and
+  // all three <dialog>s in this file.
+  //
+  // `LinkRow`'s own Escape listener is also on `document` and fires for the
+  // same keypress — that's fine and intended: its menu-closing setState
+  // hasn't flushed to the DOM yet, so [role="menu"] is still queryable here
+  // and this handler correctly bails. One Escape closes the menu, a second
+  // clears the selection.
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (document.querySelector("dialog[open], [role='menu']")) return;
+      setSelection(emptySelection());
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   useEffect(() => {
@@ -172,6 +217,14 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
     chrome.tabs.create({ url: dashboardCollectionOrganizeUrl(collection.id) });
   }
 
+  function handleToggle(id: string, shiftKey: boolean) {
+    setSelection((s) =>
+      shiftKey
+        ? nextSelection(s, { type: "range", id, order })
+        : nextSelection(s, { type: "toggle", id })
+    );
+  }
+
   const allTabsCount = links === undefined ? "…" : count;
 
   return (
@@ -252,7 +305,16 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
         ) : links.length === 0 ? (
           <p className="px-2 py-3 text-sm text-[var(--text-2)]">No links yet. Append tabs or add one below.</p>
         ) : (
-          links.map((link) => <LinkRow key={link.id} link={link} onError={setError} />)
+          links.map((link) => (
+            <LinkRow
+              key={link.id}
+              link={link}
+              selected={selection.selected.has(link.id)}
+              checkColor={checkColor}
+              onToggle={handleToggle}
+              onError={setError}
+            />
+          ))
         )}
         <AddLinkRow collectionId={collection.id} onError={setError} />
       </div>

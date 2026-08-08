@@ -9,17 +9,24 @@ import type { EditLinkPatch } from "../dashboard/EditLinkPopover";
 
 export interface LinkRowProps {
   link: Link;
+  /** Whether this row is part of the current multi-select. */
+  selected: boolean;
+  /** Resolved CSS color for the checked box (see `lib/accents.ts`'s `accentColor`). Passed in already-resolved so it's computed once per folder, not once per row. */
+  checkColor: string;
+  /** Checkbox click. `shiftKey` distinguishes a range from a plain toggle; `FolderDetail` decides what that means. */
+  onToggle: (id: string, shiftKey: boolean) => void;
   onError?: (message: string) => void;
 }
 
 /**
- * One saved link in the folder-detail list: favicon + title, with an overflow
- * (⋯) menu revealed on hover/focus offering Open, Edit, and Delete. Edit reuses
- * the dashboard's EditLinkPopover (title / note / tags → updateLink); Delete is
- * a soft delete (softDeleteLinks). The row body opens the link in a new active
- * tab. All writes nudge a sync cycle, matching App's save path.
+ * One saved link in the folder-detail list: a selection checkbox, favicon +
+ * title, and an overflow (⋯) menu revealed on hover/focus offering Open,
+ * Edit, and Delete. Edit reuses the dashboard's EditLinkPopover (title / note
+ * / tags → updateLink); Delete is a soft delete (softDeleteLinks). The row
+ * body opens the link in a new active tab. All writes nudge a sync cycle,
+ * matching App's save path.
  */
-export function LinkRow({ link, onError }: LinkRowProps) {
+export function LinkRow({ link, selected, checkColor, onToggle, onError }: LinkRowProps) {
   const db = getDB();
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -70,10 +77,44 @@ export function LinkRow({ link, onError }: LinkRowProps) {
 
   return (
     <div className="group relative flex items-center gap-2 rounded-[var(--radius-card)] pr-1 hover:bg-[var(--surface-hover)] focus-within:bg-[var(--surface-hover)]">
+      {/* Sibling of the row-body <button>, never inside it: nesting an input
+          in a button is invalid HTML with unpredictable click behavior.
+          `readOnly` is React's documented way to have a `checked` input with
+          no `onChange` — the click handler below is what actually drives
+          state, and it fires for Space on a focused box too.
+
+          A click natively flips the DOM `checked` before React hears about
+          it, so correctness depends on a re-render always following to
+          re-assert the controlled value. It always does: `nextSelection`
+          returns a fresh object every call, even when the resulting
+          selection is identical, so `setSelection` can never bail out. */}
+      <label className="relative flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center">
+        <input
+          type="checkbox"
+          checked={selected}
+          readOnly
+          aria-label={`Select ${link.title}`}
+          onClick={(e) => onToggle(link.id, e.shiftKey)}
+          className="peer h-4 w-4 shrink-0 cursor-pointer appearance-none rounded-[4px] border border-[var(--line-hi)] bg-transparent transition-colors hover:border-[var(--text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          style={selected ? { backgroundColor: checkColor, borderColor: checkColor } : undefined}
+        />
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--btn-fg)"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="pointer-events-none absolute h-3 w-3 opacity-0 peer-checked:opacity-100"
+        >
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+      </label>
       <button
         type="button"
         onClick={openLink}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-card)] px-2 py-1.5 text-left text-sm text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-card)] py-1.5 pl-0 pr-2 text-left text-sm text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
       >
         <img
           src={link.faviconUrl ?? faviconFor(link.url)}
