@@ -11,11 +11,13 @@ import { sendSyncNudge } from "../../lib/sync-nudge";
 import { dashboardCollectionOrganizeUrl } from "../../lib/dashboard";
 import { accentColor } from "../../lib/accents";
 import { emptySelection, nextSelection, pruneSelection } from "../../lib/selection";
+import { openFailureMessage, openLinks } from "../../lib/restore";
 import { AccentPicker } from "../dashboard/AccentPicker";
 import { OpenAllButton } from "./OpenAllButton";
 import { LinkRow } from "./LinkRow";
 import { AddLinkRow } from "./AddLinkRow";
 import { SendMenu } from "./SendMenu";
+import { SelectionBar } from "./SelectionBar";
 
 export interface FolderDetailProps {
   collection: Collection;
@@ -49,9 +51,9 @@ const TEXT_ENTRY_TYPES = new Set(["text", "url", "search", "email", "password", 
  * fields — see `TEXT_ENTRY_TYPES`; a checkbox is an `HTMLInputElement` too but
  * is deliberately not in that set) owns that Escape to revert its own edit
  * instead, or an open `[role="menu"]`, `[role="dialog"]`, or native `<dialog>`
- * is on the page and gets to close on its own Escape handler first. Nothing
- * reads `selectedLinks` yet — a later task adds the action bar that acts on
- * it.
+ * is on the page and gets to close on its own Escape handler first.
+ * `selectedLinks` feeds the inline `SelectionBar` (open-selected only for
+ * now; bulk delete is a later task) that renders once 1+ rows are ticked.
  */
 export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   const db = getDB();
@@ -256,6 +258,25 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
     );
   }
 
+  /**
+   * `openLinks` creates `active: false` background tabs, so unlike a single
+   * row-body click this does NOT dismiss the popup — the selection clears
+   * and the user stays where they are.
+   *
+   * No `needsRestoreConfirm` gate here, deliberately: that guards the header's
+   * ↗ because one click there can open an entire folder. Hand-ticking 16
+   * checkboxes is already deliberate, and the dashboard's `BulkBar` doesn't
+   * confirm either.
+   */
+  async function handleOpenSelected() {
+    const result = await openLinks(selectedLinks.map((l) => l.url));
+    setSelection(emptySelection());
+    if (result.failed > 0) setError(openFailureMessage(result.failed));
+    if (result.opened > 0) {
+      flash(`Opened ${result.opened} ${result.opened === 1 ? "tab" : "tabs"}.`);
+    }
+  }
+
   const allTabsCount = links === undefined ? "…" : count;
 
   return (
@@ -349,6 +370,15 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
         )}
         <AddLinkRow collectionId={collection.id} onError={setError} />
       </div>
+
+      {selectedLinks.length > 0 ? (
+        <SelectionBar
+          count={selectedLinks.length}
+          busy={busy}
+          onOpen={() => void handleOpenSelected()}
+          onClear={() => setSelection(emptySelection())}
+        />
+      ) : null}
 
       {notice ? <p className="text-xs text-[var(--accent-2)]">{notice}</p> : null}
       {error ? <p className="text-xs text-[var(--accent)]">{error}</p> : null}
