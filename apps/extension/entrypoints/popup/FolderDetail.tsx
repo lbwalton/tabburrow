@@ -11,6 +11,7 @@ import { sendSyncNudge } from "../../lib/sync-nudge";
 import { dashboardCollectionOrganizeUrl } from "../../lib/dashboard";
 import { accentColor } from "../../lib/accents";
 import { emptySelection, nextSelection, pruneSelection } from "../../lib/selection";
+import { ESCAPE_OWNER_SELECTOR, addEscapeListener, isTextEntryFocus } from "../../lib/escape-guard";
 import { openFailureMessage, openLinks } from "../../lib/restore";
 import { AccentPicker } from "../dashboard/AccentPicker";
 import { OpenAllButton } from "./OpenAllButton";
@@ -25,15 +26,6 @@ export interface FolderDetailProps {
 }
 
 /**
- * Input types that own Escape because Escape means "revert what I'm typing".
- * A positive list, not an exclusion list: an unrecognized type falls through
- * to clearing the selection, which is the harmless failure. Excluding known
- * non-text types instead would mean any future type silently disables the
- * clear-selection shortcut — exactly the checkbox regression this replaces.
- */
-const TEXT_ENTRY_TYPES = new Set(["text", "url", "search", "email", "password", "tel", "number"]);
-
-/**
  * Screen 2 of the popup hub: a folder's live links (LinkRow each) plus a manual
  * AddLinkRow, with a bottom action bar leading on Append tabs / Overwrite (the
  * two favorites) and a secondary row for Organize with AI (deep-links into the
@@ -46,17 +38,15 @@ const TEXT_ENTRY_TYPES = new Set(["text", "url", "search", "email", "password", 
  * each LinkRow is handed its checked flag, the folder's resolved accent color
  * for the checked fill, and a toggle handler that turns a shift-click into a
  * range and a plain click into a single toggle. The selection is pruned
- * whenever `links` changes underneath it and cleared on Escape, except when a
- * focused text-entry field (the rename `Input`, AddLinkRow's URL/title
- * fields — see `TEXT_ENTRY_TYPES`; a checkbox is an `HTMLInputElement` too but
- * is deliberately not in that set) owns that Escape to revert its own edit
- * instead, or an open `[role="menu"]`, `[role="dialog"]`, or native `<dialog>`
- * is on the page and gets to close on its own Escape handler first. That
- * yield-to-whoever-owns-the-key check is registered on the CAPTURE phase on
- * purpose: it decides by reading the DOM, and React 18 flushes a keydown
- * handler's setState synchronously, so on the bubble phase the rename Input
- * and the accent picker have already unmounted and there is nothing left to
- * yield to — see the comment on the effect itself.
+ * whenever `links` changes underneath it and cleared on Escape, except when
+ * something else on the page owns that keypress — a focused text-entry field
+ * (the rename `Input`, AddLinkRow's URL/title fields) reverting its own edit,
+ * or an open menu/dialog closing itself first.
+ *
+ * Those rules live in `lib/escape-guard.ts`, shared with the dashboard's
+ * `LinkGrid`. Read that module before touching this: the capture phase, the
+ * allowlist of text-entry input types, and the `role="dialog"` clause were each
+ * shipped wrong at least once, and every failure was silent.
  * `selectedLinks` feeds the inline `SelectionBar`, which renders once 1+
  * rows are ticked and offers open-selected plus a confirmed bulk delete
  * (see `handleDeleteSelected`) — unlike the per-row hover trash, which
@@ -132,63 +122,31 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
     setSelection((current) => pruneSelection(current, validIds));
   }, [links]);
 
-  // Escape clears the selection, but only when nothing else owns the key.
-  // The one selector covers the folder ⋯ menu, every per-row ⋯ menu, every
-  // native <dialog> on the page — including the ones this file renders
-  // directly (Overwrite, Delete-folder, bulk-delete confirm) and the ones
-  // SendMenu, OpenAllButton, and EditLinkPopover render — and AccentPicker's
-  // `role="dialog"` panel (reachable right from here via ⋯ → Change color)
-  // — it's a plain <div>, not a native <dialog> or a role="menu", so it
-  // needs its own clause. Deliberately phrased as "every dialog", not an
-  // exhaustive list: an exhaustive enumeration here is exactly what let
-  // AccentPicker slip through the first time this guard was written.
+  // Escape clears the selection, unless another surface owns the keypress.
   //
-  // CAPTURE PHASE, and it has to stay that way. Both guards below decide by
-  // *looking at the DOM* — what's focused, what's mounted — so they are only
-  // correct while the DOM still shows the state the user pressed Escape in.
-  // React 18 flushes a keydown handler's setState synchronously (keydown is a
-  // discrete event), so by the time the native event finishes bubbling up to
-  // `window` the other surface has already torn itself down: the rename Input
-  // has unmounted and activeElement is <body>, AccentPicker has unmounted and
-  // [role="dialog"] matches nothing. A bubble listener therefore reads an
-  // empty room and wipes a selection the user never asked to lose. Capture
-  // runs window → document → target, ahead of React's root-container
-  // listeners and so ahead of any unmount or blur, which is the only moment
-  // the guards can see the truth. Do not "simplify" this back to bubble; the
-  // guard bodies are fine, the timing was the bug.
+  // Every rule here lives in `lib/escape-guard.ts`, shared with the dashboard's
+  // `LinkGrid`, which needs exactly the same behavior. Read that module before
+  // changing anything: it documents why the listener must be on the capture
+  // phase, why the text-entry check is a positive allowlist rather than an
+  // `instanceof HTMLInputElement`, and why the selector needs a `role="dialog"`
+  // clause. Each of those was shipped wrong at least once, and every failure
+  // was silent.
   //
-  // Both add and remove need the `true` — the capture flag is part of a
-  // listener's identity, so a bubble-phase removeEventListener silently
-  // fails to detach and leaks one live listener per mount.
-  //
-  // `LinkRow`'s own Escape listener is on `document` (bubble) and fires for
-  // the same keypress — that's fine and intended: this capture listener has
-  // already run and seen [role="menu"], so it bails and lets the row close
-  // its menu. One Escape closes the menu, a second clears the selection.
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      // A focused text-entry field owns Escape (revert/dismiss what you're
-      // typing); it should never also fire the list-level "clear selection"
-      // shortcut. Covers the rename Input here and both AddLinkRow fields,
-      // and keeps covering any text field added later — which per-call-site
-      // stopPropagation would not. Checked against TEXT_ENTRY_TYPES rather
-      // than "is an HTMLInputElement", because a checkbox is an
-      // HTMLInputElement too: LinkRow's checkbox keeps focus after the click
-      // that ticks it (the row's key doesn't change, so React keeps the same
-      // DOM node mounted), and a bare instanceof check would make Escape
-      // silently do nothing right after ticking a box.
-      const active = document.activeElement;
-      const inTextEntry =
-        (active instanceof HTMLInputElement && TEXT_ENTRY_TYPES.has(active.type)) ||
-        active instanceof HTMLTextAreaElement;
-      if (inTextEntry) return;
-      if (document.querySelector("dialog[open], [role='menu'], [role='dialog']")) return;
-      setSelection(emptySelection());
-    }
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, []);
+  // `LinkRow`'s own Escape listener is on `document` (bubble) and fires for the
+  // same keypress — that's fine and intended: this capture listener has already
+  // run and seen [role="menu"], so it bails and lets the row close its menu.
+  // One Escape closes the menu, a second clears the selection.
+  useEffect(
+    () =>
+      addEscapeListener((event) => {
+        if (event.key !== "Escape") return;
+        const active = document.activeElement as HTMLInputElement | null;
+        if (isTextEntryFocus(active?.tagName, active?.type)) return;
+        if (document.querySelector(ESCAPE_OWNER_SELECTOR)) return;
+        setSelection(emptySelection());
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (renaming) {

@@ -4,30 +4,11 @@ import type { Collection, Link } from "@tabburrow/core";
 import type { SortMode } from "../../lib/links";
 import { sortLinksForView } from "../../lib/links";
 import { emptySelection, nextSelection, pruneSelection } from "../../lib/selection";
+import { ESCAPE_OWNER_SELECTOR, addEscapeListener, isTextEntryFocus } from "../../lib/escape-guard";
 import type { ClickIntent, KeyIntent } from "../../lib/click-intent";
 import { openFailureMessage, openLinks } from "../../lib/restore";
 import { LinkCard } from "./LinkCard";
 import { BulkBar } from "./BulkBar";
-
-/**
- * Input types that own Escape themselves, because there Escape means "revert
- * what I'm typing" rather than "clear the selection".
- *
- * A positive list, not an exclusion list, and the direction is load-bearing: a
- * checkbox is also an `HTMLInputElement`, so a bare `instanceof` check would
- * bail on any focused input and silently disable clear-selection. An
- * unrecognized type falling through to clearing is the harmless failure.
- */
-const TEXT_ENTRY_TYPES = new Set(["text", "url", "search", "email", "password", "tel", "number"]);
-
-/**
- * Everything on the dashboard that owns Escape before the grid does. Covers
- * `RestoreAllButton`'s `role="menu"`, `AccentPicker`'s `role="dialog"` (a plain
- * `<div>`, not a native dialog — the clause that is easiest to forget), and
- * every native `<dialog>` on the page, including `EditLinkPopover`'s and
- * `SearchOverlay`'s.
- */
-const ESCAPE_OWNER_SELECTOR = "dialog[open], [role='menu'], [role='dialog']";
 
 export interface LinkGridProps {
   collectionId: string;
@@ -78,36 +59,27 @@ export function LinkGrid({ collectionId, links, order, sortMode, collections, on
     setSelection((current) => pruneSelection(current, validIds));
   }, [links]);
 
-  // Escape clears the selection, but only when nothing else owns the keypress.
+  // Escape clears the selection, unless another surface owns the keypress —
+  // `AccentPicker` (a <div role="dialog">), `RestoreAllButton`'s role="menu",
+  // the rail's inline rename field, or any open native <dialog>.
   //
-  // Registered on the CAPTURE phase, and that is the whole trick. React 18
-  // flushes a discrete update synchronously, so by the time a BUBBLE-phase
-  // listener on `window` runs, the surface that owned the key has already
-  // unmounted: `AccentPicker` is gone from the DOM and a cancelled rename
-  // <Input> has already blurred, so neither guard below can see them and the
-  // selection gets wiped anyway. Capture runs before React's root-container
-  // listeners, so the DOM is still intact when we inspect it.
-  //
-  // Do not "simplify" this back to bubble. The identical bug shipped three
-  // times in the popup's copy of this guard before the phase was identified,
-  // and a happy-dom repro confidently proved the opposite of what Chrome does.
-  // The `true` must be on BOTH add and remove, or the cleanup silently fails
-  // to detach and leaks a listener per mount.
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      const active = document.activeElement as HTMLInputElement | null;
-      const tag = active?.tagName;
-      if (tag === "TEXTAREA") return;
-      // `active.type` is "text" for an <input> with no type attribute, so the
-      // rail's inline rename field is covered without special-casing.
-      if (tag === "INPUT" && TEXT_ENTRY_TYPES.has(active?.type ?? "")) return;
-      if (document.querySelector(ESCAPE_OWNER_SELECTOR)) return;
-      setSelection(emptySelection());
-    }
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, []);
+  // Every rule lives in `lib/escape-guard.ts`, shared with the popup's
+  // `FolderDetail`. Read that module before changing anything here: it records
+  // why the listener must be on the capture phase, why the text-entry check is
+  // a positive allowlist rather than an `instanceof HTMLInputElement`, and why
+  // the selector needs a `role="dialog"` clause. Each was shipped wrong at
+  // least once, and every failure was silent.
+  useEffect(
+    () =>
+      addEscapeListener((event) => {
+        if (event.key !== "Escape") return;
+        const active = document.activeElement as HTMLInputElement | null;
+        if (isTextEntryFocus(active?.tagName, active?.type)) return;
+        if (document.querySelector(ESCAPE_OWNER_SELECTOR)) return;
+        setSelection(emptySelection());
+      }),
+    [],
+  );
 
   const byId = useMemo(() => new Map(links.map((l) => [l.id, l])), [links]);
   // Not wrapped in useMemo: `links`/`order` are already the cheapest
