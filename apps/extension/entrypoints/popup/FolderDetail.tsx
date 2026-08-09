@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { getDB, listLinks, renameCollection, setCollectionAccent, softDeleteCollection } from "@tabburrow/core";
+import { getDB, listLinks, renameCollection, setCollectionAccent, softDeleteCollection, softDeleteLinks } from "@tabburrow/core";
 import type { Collection } from "@tabburrow/core";
 import { Badge, Button, Dialog, Input } from "@tabburrow/ui";
 import { getAllTabs, getCurrentTab } from "../../lib/tabs";
@@ -9,16 +9,29 @@ import { addTabToFolder, appendTabsToFolder, overwriteFolderWithTabs } from "../
 import { friendlyCreateError } from "../../lib/collections";
 import { sendSyncNudge } from "../../lib/sync-nudge";
 import { dashboardCollectionOrganizeUrl } from "../../lib/dashboard";
+import { accentColor } from "../../lib/accents";
+import { emptySelection, nextSelection, pruneSelection } from "../../lib/selection";
+import { openFailureMessage, openLinks } from "../../lib/restore";
 import { AccentPicker } from "../dashboard/AccentPicker";
 import { OpenAllButton } from "./OpenAllButton";
 import { LinkRow } from "./LinkRow";
 import { AddLinkRow } from "./AddLinkRow";
 import { SendMenu } from "./SendMenu";
+import { SelectionBar } from "./SelectionBar";
 
 export interface FolderDetailProps {
   collection: Collection;
   onBack: () => void;
 }
+
+/**
+ * Input types that own Escape because Escape means "revert what I'm typing".
+ * A positive list, not an exclusion list: an unrecognized type falls through
+ * to clearing the selection, which is the harmless failure. Excluding known
+ * non-text types instead would mean any future type silently disables the
+ * clear-selection shortcut — exactly the checkbox regression this replaces.
+ */
+const TEXT_ENTRY_TYPES = new Set(["text", "url", "search", "email", "password", "tel", "number"]);
 
 /**
  * Screen 2 of the popup hub: a folder's live links (LinkRow each) plus a manual
@@ -28,18 +41,70 @@ export interface FolderDetailProps {
  * overflow with Rename, Change color, Delete folder, and Add current tab.
  * Owns its own data calls (mirroring RecentList / RestoreAllButton), so App
  * only passes the collection and the back handler.
+ *
+ * Also owns the checkbox multi-select state for the list (`lib/selection.ts`):
+ * each LinkRow is handed its checked flag, the folder's resolved accent color
+ * for the checked fill, and a toggle handler that turns a shift-click into a
+ * range and a plain click into a single toggle. The selection is pruned
+ * whenever `links` changes underneath it and cleared on Escape, except when a
+ * focused text-entry field (the rename `Input`, AddLinkRow's URL/title
+ * fields — see `TEXT_ENTRY_TYPES`; a checkbox is an `HTMLInputElement` too but
+ * is deliberately not in that set) owns that Escape to revert its own edit
+ * instead, or an open `[role="menu"]`, `[role="dialog"]`, or native `<dialog>`
+ * is on the page and gets to close on its own Escape handler first. That
+ * yield-to-whoever-owns-the-key check is registered on the CAPTURE phase on
+ * purpose: it decides by reading the DOM, and React 18 flushes a keydown
+ * handler's setState synchronously, so on the bubble phase the rename Input
+ * and the accent picker have already unmounted and there is nothing left to
+ * yield to — see the comment on the effect itself.
+ * `selectedLinks` feeds the inline `SelectionBar`, which renders once 1+
+ * rows are ticked and offers open-selected plus a confirmed bulk delete
+ * (see `handleDeleteSelected`) — unlike the per-row hover trash, which
+ * deletes immediately with no dialog.
  */
 export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   const db = getDB();
   const links = useLiveQuery(() => listLinks(collection.id, db), [collection.id]);
   const count = links?.length ?? 0;
   const urls = (links ?? []).map((l) => l.url);
+  const [selection, setSelection] = useState(emptySelection());
+  // `listLinks` is position-ordered, so this IS the display order a
+  // shift-range measures against.
+  const order = (links ?? []).map((l) => l.id);
+  const selectedLinks = (links ?? []).filter((l) => selection.selected.has(l.id));
+  const checkColor = accentColor(collection.accent);
+
+  /**
+   * While links are selected, the folder-level actions below the bar are
+   * momentarily beside the point, so they step back and let the selection bar
+   * be the lit thing. They stay fully clickable — no `disabled`, no
+   * pointer-events change — because appending tabs mid-selection is a
+   * perfectly reasonable thing to do. 60% is "quieter"; the 50% that
+   * `Button`'s own `disabled:opacity-50` uses for actually-disabled would be
+   * a lie. That closeness has a real consequence, though: `disabled:opacity-50`
+   * outranks `opacity-60` in the cascade, so a dimmed button that goes busy
+   * only shifts 0.6 → 0.5, a change the eye can't resolve — while a selection
+   * is active, the busy feedback on these buttons is much weaker than the
+   * usual 1.0 → 0.5 dip. No data risk from that: `disabled:pointer-events-none`
+   * plus `run()`'s re-entrancy guard (`if (busy) return`) both still hold, and
+   * the completion notice still fires; it's a legibility gap, not a
+   * correctness one.
+   *
+   * Applied below via `transition-[opacity,color,background-color,border-color]`,
+   * not bare `transition-opacity`: `Button`'s base already sets
+   * `transition-colors duration-150`, and `cx` is a plain string joiner with
+   * no Tailwind-merge, so a bare `transition-opacity` class would win the
+   * `transition-property` cascade outright and silently kill the color
+   * transition the ghost variant's hover states rely on.
+   */
+  const actionsDimmed = selectedLinks.length > 0 ? "opacity-60" : "";
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [overwriteOpen, setOverwriteOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
@@ -55,6 +120,74 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
   // continues into this screen rather than dropping to <body>.
   useEffect(() => {
     backRef.current?.focus();
+  }, []);
+
+  // A link deleted from another surface (or by this folder's own bulk
+  // delete) shouldn't leave a dangling selected id. `pruneSelection`
+  // returns the SAME reference when nothing changed, so this doesn't cause
+  // an extra render on every unrelated links update.
+  useEffect(() => {
+    if (!links) return;
+    const validIds = links.map((l) => l.id);
+    setSelection((current) => pruneSelection(current, validIds));
+  }, [links]);
+
+  // Escape clears the selection, but only when nothing else owns the key.
+  // The one selector covers the folder ⋯ menu, every per-row ⋯ menu, every
+  // native <dialog> on the page — including the ones this file renders
+  // directly (Overwrite, Delete-folder, bulk-delete confirm) and the ones
+  // SendMenu, OpenAllButton, and EditLinkPopover render — and AccentPicker's
+  // `role="dialog"` panel (reachable right from here via ⋯ → Change color)
+  // — it's a plain <div>, not a native <dialog> or a role="menu", so it
+  // needs its own clause. Deliberately phrased as "every dialog", not an
+  // exhaustive list: an exhaustive enumeration here is exactly what let
+  // AccentPicker slip through the first time this guard was written.
+  //
+  // CAPTURE PHASE, and it has to stay that way. Both guards below decide by
+  // *looking at the DOM* — what's focused, what's mounted — so they are only
+  // correct while the DOM still shows the state the user pressed Escape in.
+  // React 18 flushes a keydown handler's setState synchronously (keydown is a
+  // discrete event), so by the time the native event finishes bubbling up to
+  // `window` the other surface has already torn itself down: the rename Input
+  // has unmounted and activeElement is <body>, AccentPicker has unmounted and
+  // [role="dialog"] matches nothing. A bubble listener therefore reads an
+  // empty room and wipes a selection the user never asked to lose. Capture
+  // runs window → document → target, ahead of React's root-container
+  // listeners and so ahead of any unmount or blur, which is the only moment
+  // the guards can see the truth. Do not "simplify" this back to bubble; the
+  // guard bodies are fine, the timing was the bug.
+  //
+  // Both add and remove need the `true` — the capture flag is part of a
+  // listener's identity, so a bubble-phase removeEventListener silently
+  // fails to detach and leaks one live listener per mount.
+  //
+  // `LinkRow`'s own Escape listener is on `document` (bubble) and fires for
+  // the same keypress — that's fine and intended: this capture listener has
+  // already run and seen [role="menu"], so it bails and lets the row close
+  // its menu. One Escape closes the menu, a second clears the selection.
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      // A focused text-entry field owns Escape (revert/dismiss what you're
+      // typing); it should never also fire the list-level "clear selection"
+      // shortcut. Covers the rename Input here and both AddLinkRow fields,
+      // and keeps covering any text field added later — which per-call-site
+      // stopPropagation would not. Checked against TEXT_ENTRY_TYPES rather
+      // than "is an HTMLInputElement", because a checkbox is an
+      // HTMLInputElement too: LinkRow's checkbox keeps focus after the click
+      // that ticks it (the row's key doesn't change, so React keeps the same
+      // DOM node mounted), and a bare instanceof check would make Escape
+      // silently do nothing right after ticking a box.
+      const active = document.activeElement;
+      const inTextEntry =
+        (active instanceof HTMLInputElement && TEXT_ENTRY_TYPES.has(active.type)) ||
+        active instanceof HTMLTextAreaElement;
+      if (inTextEntry) return;
+      if (document.querySelector("dialog[open], [role='menu'], [role='dialog']")) return;
+      setSelection(emptySelection());
+    }
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, []);
 
   useEffect(() => {
@@ -168,8 +301,71 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
     });
   }
 
+  /**
+   * Confirmed, unlike the per-row hover delete: one link is cheap to lose,
+   * several are not, and the popup has no undo toast the way the dashboard
+   * does. `softDeleteLinks` IS a soft delete at the data layer, but the
+   * dialog copy doesn't promise a restore: no UI surface (popup or
+   * dashboard) exposes soft-deleted links for recovery, so the confirm is
+   * the only safety net here.
+   */
+  async function handleDeleteSelected() {
+    setBulkDeleteOpen(false);
+    const ids = selectedLinks.map((l) => l.id);
+    await run(async () => {
+      await softDeleteLinks(ids, db);
+      sendSyncNudge();
+      setSelection(emptySelection());
+      flash(`Deleted ${ids.length} ${ids.length === 1 ? "link" : "links"}.`);
+    });
+  }
+
   function handleOrganize() {
     chrome.tabs.create({ url: dashboardCollectionOrganizeUrl(collection.id) });
+  }
+
+  function handleToggle(id: string, shiftKey: boolean) {
+    setSelection((s) =>
+      shiftKey
+        ? nextSelection(s, { type: "range", id, order })
+        : nextSelection(s, { type: "toggle", id })
+    );
+  }
+
+  /**
+   * `openLinks` creates `active: false` background tabs, so unlike a single
+   * row-body click this does NOT dismiss the popup — the selection clears
+   * and the user stays where they are.
+   *
+   * No `needsRestoreConfirm` gate here, deliberately: that guards the header's
+   * ↗ because one click there can open an entire folder. Hand-ticking 16
+   * checkboxes is already deliberate, and the dashboard's `BulkBar` doesn't
+   * confirm either.
+   *
+   * Routed through `run()` like every other handler in this file, even
+   * though it isn't a DB write: `run()`'s re-entrancy guard (`if (busy)
+   * return`) is what makes the bar's `disabled={busy}` true, so a
+   * double-click can't fire two overlapping `chrome.tabs.create` loops
+   * against the same `selectedLinks` snapshot. `run()` clearing `error`
+   * first also means a stale failure from a prior batch doesn't linger
+   * underneath a later batch's success notice.
+   *
+   * The selection clears wholesale even when some links failed to open,
+   * with no way to re-select just the failures for a retry: `openLinks`
+   * reports only `{opened, failed}` counts, not which urls failed, so there
+   * is nothing to reselect. (Mirrors this bar's own compactness — the
+   * dashboard's `BulkBar.openAll` never clears the selection on open at all,
+   * so this is a deliberate divergence from that precedent, not an oversight.)
+   */
+  async function handleOpenSelected() {
+    await run(async () => {
+      const result = await openLinks(selectedLinks.map((l) => l.url));
+      setSelection(emptySelection());
+      if (result.failed > 0) setError(openFailureMessage(result.failed));
+      if (result.opened > 0) {
+        flash(`Opened ${result.opened} ${result.opened === 1 ? "tab" : "tabs"}.`);
+      }
+    });
   }
 
   const allTabsCount = links === undefined ? "…" : count;
@@ -252,29 +448,49 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
         ) : links.length === 0 ? (
           <p className="px-2 py-3 text-sm text-[var(--text-2)]">No links yet. Append tabs or add one below.</p>
         ) : (
-          links.map((link) => <LinkRow key={link.id} link={link} onError={setError} />)
+          links.map((link) => (
+            <LinkRow
+              key={link.id}
+              link={link}
+              selected={selection.selected.has(link.id)}
+              checkColor={checkColor}
+              onToggle={handleToggle}
+              onError={setError}
+            />
+          ))
         )}
         <AddLinkRow collectionId={collection.id} onError={setError} />
       </div>
+
+      {selectedLinks.length > 0 ? (
+        <SelectionBar
+          count={selectedLinks.length}
+          accent={checkColor}
+          busy={busy}
+          onOpen={() => void handleOpenSelected()}
+          onDelete={() => setBulkDeleteOpen(true)}
+          onClear={() => setSelection(emptySelection())}
+        />
+      ) : null}
 
       {notice ? <p className="text-xs text-[var(--accent-2)]">{notice}</p> : null}
       {error ? <p className="text-xs text-[var(--accent)]">{error}</p> : null}
 
       <div className="flex flex-col gap-2 border-t border-[var(--line)] pt-3">
         <div className="flex gap-2">
-          <Button variant="primary" size="sm" onClick={() => void handleAppend()} disabled={busy} className="flex-1">
+          <Button variant="primary" size="sm" onClick={() => void handleAppend()} disabled={busy} className={`flex-1 transition-[opacity,color,background-color,border-color] ${actionsDimmed}`}>
             Append tabs
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setOverwriteOpen(true)} disabled={busy} className="flex-1">
+          <Button variant="ghost" size="sm" onClick={() => setOverwriteOpen(true)} disabled={busy} className={`flex-1 transition-[opacity,color,background-color,border-color] ${actionsDimmed}`}>
             Overwrite
           </Button>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={handleOrganize} className="flex-1">
+          <Button variant="ghost" size="sm" onClick={handleOrganize} className={`flex-1 transition-[opacity,color,background-color,border-color] ${actionsDimmed}`}>
             Organize with AI
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setSendOpen(true)}>
+          <Button variant="ghost" size="sm" onClick={() => setSendOpen(true)} className={`transition-[opacity,color,background-color,border-color] ${actionsDimmed}`}>
             Send
           </Button>
           <div className="relative">
@@ -356,7 +572,7 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
       >
         <p>
           Replace the {count} {count === 1 ? "link" : "links"} in {collection.name} with the tabs in this window? The
-          current links are removed (you can undo from the dashboard).
+          current {count === 1 ? "link is" : "links are"} removed and this can&rsquo;t be undone.
         </p>
       </Dialog>
 
@@ -376,8 +592,42 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
         }
       >
         <p>
-          Delete {collection.name} and its {count} {count === 1 ? "link" : "links"}? You can restore it from the
-          dashboard.
+          Delete {collection.name} and its {count} {count === 1 ? "link" : "links"}? This can&rsquo;t be undone.
+        </p>
+      </Dialog>
+
+      {/*
+        Unlike Overwrite above, this copy does NOT offer a dashboard restore
+        path — and neither does Delete-folder above it any more; that dialog's
+        "restore from the dashboard" line was removed for the same reason.
+        `softDeleteLinks` is a soft delete at the data layer, but nothing in
+        the UI exposes soft-deleted links: the dashboard's undo toast
+        (`entrypoints/dashboard/App.tsx`) only fires for deletes initiated in
+        the dashboard itself, never for a popup-initiated one, and
+        `SettingsPane` only counts live links, it doesn't list or restore
+        deleted ones. Promising a restore here would be false, so don't
+        re-add it. Overwrite's claim is left alone (knowingly out of scope):
+        it's a separate call path (`overwriteFolderWithTabs`), not this task's
+        concern.
+      */}
+      <Dialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        title={`Delete ${selectedLinks.length} ${selectedLinks.length === 1 ? "link" : "links"}?`}
+        footer={
+          <>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setBulkDeleteOpen(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="button" variant="danger" size="sm" onClick={() => void handleDeleteSelected()} disabled={busy}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p>
+          Remove {selectedLinks.length} {selectedLinks.length === 1 ? "link" : "links"} from {collection.name}? This
+          can&rsquo;t be undone.
         </p>
       </Dialog>
     </div>

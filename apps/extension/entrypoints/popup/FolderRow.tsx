@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { getDB, listLinks } from "@tabburrow/core";
+import { getDB, listLinks, softDeleteCollection } from "@tabburrow/core";
 import type { Collection } from "@tabburrow/core";
-import { Badge } from "@tabburrow/ui";
+import { Badge, Button, Dialog } from "@tabburrow/ui";
 import { isCssColorAccent } from "../../lib/accents";
+import { sendSyncNudge } from "../../lib/sync-nudge";
 import { OpenAllButton } from "./OpenAllButton";
 
 export interface FolderRowProps {
@@ -43,9 +44,16 @@ function AccentDot({ accent }: { accent: string | null }) {
 /**
  * One folder in the home list: accent dot, name, live link count (Geist Mono
  * muted Badge, same as RecentList), and — revealed on hover and keyboard focus
- * — a "+" that adds the current tab to this folder in place and an open-all
- * icon. The row body drills into the folder; the two action buttons sit
- * outside that button so the markup stays valid (no nested buttons).
+ * — a "+" that adds the current tab to this folder in place, an open-all
+ * icon, and a trash that deletes the whole folder. The row body drills into
+ * the folder; the three action buttons sit outside that button so the markup
+ * stays valid (no nested buttons). Unlike `LinkRow`'s trash, which deletes
+ * its one link immediately with no confirm at all, this folder's trash
+ * confirms first (see `handleDelete`) since a folder takes every one of its
+ * links down with it — and it owns its write directly —
+ * `softDeleteCollection` + `sendSyncNudge()` — rather than routing through
+ * `FoldersHome`, mirroring how this component already owns its own
+ * `listLinks` query instead of having links prop-drilled in.
  */
 export function FolderRow({ collection, onOpen, onAddCurrent, canAddCurrent, onError }: FolderRowProps) {
   const db = getDB();
@@ -53,6 +61,8 @@ export function FolderRow({ collection, onOpen, onAddCurrent, canAddCurrent, onE
   const count = links?.length ?? 0;
   const [added, setAdded] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function handleAddCurrent() {
     if (adding || !canAddCurrent) return;
@@ -68,33 +78,106 @@ export function FolderRow({ collection, onOpen, onAddCurrent, canAddCurrent, onE
     }
   }
 
-  return (
-    <div className="group flex items-center gap-1 rounded-[var(--radius-card)] border border-transparent pr-1 transition-all duration-150 hover:border-[var(--line-hi)] hover:bg-[var(--surface-hover)] hover:shadow-[0_2px_10px_rgba(0,0,0,0.28)] focus-within:border-[var(--line-hi)] focus-within:bg-[var(--surface-hover)]">
-      <button
-        type="button"
-        onClick={() => onOpen(collection.id)}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-card)] px-2 py-1.5 text-left text-sm text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-      >
-        <AccentDot accent={collection.accent} />
-        <span className="min-w-0 flex-1 truncate">{collection.name}</span>
-        <Badge variant="muted">{count}</Badge>
-      </button>
+  /**
+   * Confirmed, unlike `LinkRow`'s one-click trash: one link is cheap to lose,
+   * a folder takes all of its links with it. Still fewer clicks than the old
+   * path (⋯ → Delete folder → confirm), which is the point.
+   */
+  async function handleDelete() {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteOpen(false);
+    try {
+      await softDeleteCollection(collection.id, db);
+      sendSyncNudge();
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Could not delete the folder.");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+  return (
+    <>
+      <div className="group flex items-center gap-1 rounded-[var(--radius-card)] border border-transparent pr-1 transition-all duration-150 hover:border-[var(--line-hi)] hover:bg-[var(--surface-hover)] hover:shadow-[0_2px_10px_rgba(0,0,0,0.28)] focus-within:border-[var(--line-hi)] focus-within:bg-[var(--surface-hover)]">
         <button
           type="button"
-          aria-label={`Add current tab to ${collection.name}`}
-          title={added ? "Added" : "Add current tab"}
-          onClick={() => void handleAddCurrent()}
-          disabled={!canAddCurrent || adding}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-[var(--text-2)] hover:bg-[var(--surface)] hover:text-[var(--text)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-40"
+          onClick={() => onOpen(collection.id)}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-card)] px-2 py-1.5 text-left text-sm text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
         >
-          <span aria-hidden="true">{added ? "✓" : "+"}</span>
+          <AccentDot accent={collection.accent} />
+          <span className="min-w-0 flex-1 truncate">{collection.name}</span>
+          <Badge variant="muted">{count}</Badge>
         </button>
-        <span className="focus-within:opacity-100">
-          <OpenAllButton urls={(links ?? []).map((l) => l.url)} collectionName={collection.name} onError={onError} compact />
-        </span>
+
+        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <button
+            type="button"
+            aria-label={`Add current tab to ${collection.name}`}
+            title={added ? "Added" : "Add current tab"}
+            onClick={() => void handleAddCurrent()}
+            disabled={!canAddCurrent || adding}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-[var(--text-2)] hover:bg-[var(--surface)] hover:text-[var(--text)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-40"
+          >
+            <span aria-hidden="true">{added ? "✓" : "+"}</span>
+          </button>
+          <span className="focus-within:opacity-100">
+            <OpenAllButton urls={(links ?? []).map((l) => l.url)} collectionName={collection.name} onError={onError} compact />
+          </span>
+          {/*
+            Last, not first — `LinkRow` puts its trash first, but `↗` (open every
+            tab in this folder) is the most-used control on this row, and a
+            folder-deleting trash sitting right beside it invites exactly the
+            mis-click that costs the most. Distance from the hot control is worth
+            the local inconsistency.
+          */}
+          <button
+            type="button"
+            aria-label={`Delete ${collection.name}`}
+            title="Delete folder"
+            onClick={() => setDeleteOpen(true)}
+            disabled={deleting}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-[var(--text-2)] hover:bg-[var(--surface)] hover:text-[var(--accent)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-40"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m1 0-.7 12.1a1 1 0 0 1-1 .9H7.7a1 1 0 0 1-1-.9L6 7" />
+            </svg>
+          </button>
+        </div>
       </div>
-    </div>
+
+      {/*
+        A sibling of the row `<div>` above, not nested inside it — though not
+        because it has to be. A `<dialog>` opened via `showModal()` paints in
+        the browser's top layer, which escapes ancestor opacity entirely, so
+        nesting it inside the `group` div's `opacity-0`-at-rest wrapper would
+        NOT leave it invisibly stuck at opacity-0 once opened. `OpenAllButton`
+        below is the working counter-example, right in this same file: its
+        confirm `<dialog>` renders inside that opacity-0 container and shows
+        up fine. So this placement is a readability choice (keeps the row
+        markup flat and the dialog out of the hover group's concerns), not a
+        correctness requirement — don't "fix" it, and don't go chasing a
+        nonexistent bug in `OpenAllButton` either.
+      */}
+      <Dialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        title={`Delete "${collection.name}"?`}
+        footer={
+          <>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button type="button" variant="danger" size="sm" onClick={() => void handleDelete()} disabled={deleting}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p>
+          Delete {collection.name} and its {count} {count === 1 ? "link" : "links"}? This can&rsquo;t be undone.
+        </p>
+      </Dialog>
+    </>
   );
 }
