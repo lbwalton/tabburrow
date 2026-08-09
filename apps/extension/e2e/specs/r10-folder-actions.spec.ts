@@ -207,21 +207,34 @@ test("ticking two link checkboxes reveals the selection bar with the live count"
 
   const popup = await openFolderDetail(context, extensionId, "Coding", 3);
   const bar = popup.getByRole("toolbar", { name: "Selection actions" });
+  const firstBox = popup.getByRole("checkbox", { name: "Select React Docs" });
 
-  // Nothing selected: no bar at all.
+  // Nothing selected: no bar at all, and the box is an empty outline.
   await expect(bar).toHaveCount(0);
+  await expect(firstBox).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 
-  await popup.getByRole("checkbox", { name: "Select React Docs" }).click();
+  await firstBox.click();
   await expect(bar).toBeVisible();
   await expect(bar.getByText("1 selected")).toBeVisible();
+
+  // The box actually FILLS, not just reports checked. `toBeChecked` alone
+  // passes on a checkbox rendered with no visible fill at all — the styling is
+  // an `appearance-none` + inline-style job, so it can break independently of
+  // the checked state. Asserted as "not transparent" rather than a pinned
+  // rgb(): the fill is the folder's accent, which is configurable per folder,
+  // so pinning brand orange would fail on any folder with a different accent.
+  // Playwright retries this, which also rides out the `transition-colors`.
+  await expect(firstBox).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 
   await popup.getByRole("checkbox", { name: "Select WXT Storage" }).click();
   await expect(bar.getByText("2 selected")).toBeVisible();
   await expect(popup.getByRole("button", { name: "Open 2" })).toBeVisible();
 
-  // Unticking the first drops the count without clearing the rest.
-  await popup.getByRole("checkbox", { name: "Select React Docs" }).click();
+  // Unticking the first drops the count without clearing the rest, and the
+  // fill clears with it (proving the style tracks state in both directions).
+  await firstBox.click();
   await expect(bar.getByText("1 selected")).toBeVisible();
+  await expect(firstBox).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 
   // × clears everything and the bar goes away.
   await bar.getByRole("button", { name: "Clear selection" }).click();

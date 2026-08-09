@@ -572,7 +572,7 @@ export function FolderDetail({ collection, onBack }: FolderDetailProps) {
       >
         <p>
           Replace the {count} {count === 1 ? "link" : "links"} in {collection.name} with the tabs in this window? The
-          current links are removed (you can undo from the dashboard).
+          current {count === 1 ? "link is" : "links are"} removed and this can&rsquo;t be undone.
         </p>
       </Dialog>
 
