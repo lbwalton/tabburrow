@@ -195,3 +195,49 @@ Note: the hosted cloud (Pro) AI path is not deployed in this build, so on a
 machine WITHOUT Nano the AI features simply have no engine and degrade
 gracefully; they light up once Nano is available (or a cloud endpoint is
 deployed and configured).
+
+## 10. Escape in the real toolbar popup
+
+Same root cause as §1: a real popup is a different browsing context from a
+`chrome-extension://…/popup.html` tab. Escape is one of the places they diverge
+most sharply. Chromium dismisses a popup via a **close request** (the same
+signal as an Android back gesture), which a tab has no equivalent of — so the
+popup Escape tests in `r10-folder-actions.spec.ts` pass identically whether this
+behavior is correct or broken. **A green suite says nothing here.**
+
+As of 2026-08-09 this is a **known bug**, tracked as item 1 in
+`docs/ROADMAP.md` with a design in
+`docs/specs/2026-08-09-popup-close-request-design.md`. Escape currently closes
+the whole popup in every case below. The checklist is written as the intended
+behavior so it doubles as the acceptance test for that work.
+
+**Check** (real Chrome window, extension loaded unpacked, click the toolbar
+icon — not a `chrome-extension://` tab):
+
+1. Open a folder, tick two links, press Escape. Selection clears, popup stays
+   open. Press Escape again — popup closes.
+2. Tick two links, click the folder title to rename, press Escape. Rename
+   cancels, selection survives, popup stays open.
+3. Tick two links, ⋯ → Change color, press Escape. Picker closes, selection
+   survives, popup stays open.
+4. Open ⋯, press Escape. Menu closes, popup stays open.
+5. Open any confirm dialog (Overwrite / Delete folder / bulk Delete), press
+   Escape. Dialog closes, popup stays open.
+6. With nothing open, press Escape. Popup closes — this platform behavior must
+   be preserved, not broken by the fix.
+
+On Firefox, 1-5 will keep closing the popup and that is expected: Mozilla
+declined to let extensions intercept the popup-dismissing Escape
+(bugzilla 1443758, WONTFIX).
+
+## 11. Popup layout at real popup dimensions
+
+Also a §1 consequence, and it shipped a visible bug once. The e2e harness runs a
+1400x900 viewport; a real popup is ~360 wide and only as tall as its content
+(~500px, capped at 600). Anything positioned relative to the viewport — popovers
+especially — can be correct in the harness and clipped in the popup.
+
+**Check:** open a folder with 5+ links, tick two so the selection bar appears
+(this pushes the ⋯ lower, the worst case), then ⋯ → Change color. The picker
+must be fully visible: all 8 colour swatches AND the emoji row below them. It
+should flip above the trigger rather than run off the bottom.
