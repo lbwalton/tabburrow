@@ -318,3 +318,38 @@ test("Escape clears the grid selection, but not when a rail picker or rename own
   await dashboard.keyboard.press("Escape");
   await expect(bar).toHaveCount(0);
 });
+
+test("a selected card is visually distinguishable from a merely focused one", async ({
+  cleanDashboard,
+  extensionId,
+}) => {
+  const dashboard = cleanDashboard;
+  await seedTwoCollectionsWithLinks(dashboard);
+  await dashboard.reload();
+  await dashboard.goto(`chrome-extension://${extensionId}/dashboard.html#/c/${COLLECTION_A}`);
+
+  const grid = dashboard.getByRole("listbox", { name: "Links" });
+  const first = grid.getByRole("option").first();
+  const second = grid.getByRole("option").nth(1);
+  const bg = (l: typeof first) => l.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+  // Select ONE card, then park the pointer off the grid. Comparing the selected
+  // card against an unselected SIBLING in the same render is what isolates the
+  // selection styling: comparing the same card before/after Escape instead
+  // would pass on hover alone, since the pointer rests on the card you just
+  // clicked. (It did — this test was rewritten after it failed to catch a
+  // reverted fix.)
+  await first.click({ modifiers: [process.platform === "darwin" ? "Meta" : "Control"] });
+  await dashboard.mouse.move(0, 0);
+  await expect(dashboard.getByRole("toolbar", { name: "Bulk actions" })).toContainText("1 selected");
+  expect(await bg(first)).not.toBe(await bg(second));
+
+  // After Escape the card keeps keyboard focus, and `focus-visible:ring-2
+  // ring-[var(--accent)]` paints the same 2px accent ring the selected state
+  // uses — so the two states must be told apart by something else, or Escape
+  // looks like it failed to clear the last card.
+  await dashboard.keyboard.press("Escape");
+  await expect(dashboard.getByRole("toolbar", { name: "Bulk actions" })).toHaveCount(0);
+  await expect(first).toHaveAttribute("aria-selected", "false");
+  expect(await bg(first)).toBe(await bg(second));
+});

@@ -21,9 +21,42 @@ export function AccentPicker({ anchorRef, value, onChoose, onClose }: AccentPick
   const popRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
+  /**
+   * Flips above the trigger when there isn't room below, and clamps to the
+   * viewport on every edge.
+   *
+   * The naive version — always `rect.bottom + 6` — is fine on the dashboard,
+   * where the rail sits in a ~900px-tall window and there is always room. It
+   * breaks in the extension popup: that window is only as tall as its content
+   * (roughly 500px, and taller content just makes the trigger lower, not the
+   * window bigger), and the ⋯ that opens this picker lives near the bottom. The
+   * picker rendered past the popup's edge and was simply clipped — no scroll,
+   * no visual cue, the emoji row just wasn't there.
+   *
+   * Measuring works because the popover is already in the DOM when this runs:
+   * it renders with `visibility: hidden` until `pos` is set (see the style
+   * below), so it has real dimensions but has not painted anywhere wrong yet.
+   */
   useLayoutEffect(() => {
     const rect = anchorRef.current?.getBoundingClientRect();
-    if (rect) setPos({ top: rect.bottom + 6, left: Math.max(8, rect.right - 208) });
+    if (!rect) return;
+    const MARGIN = 8;
+    const GAP = 6;
+    const height = popRef.current?.offsetHeight ?? 0;
+    const width = popRef.current?.offsetWidth ?? 208;
+
+    const below = rect.bottom + GAP;
+    const above = rect.top - GAP - height;
+    // Prefer below (the conventional direction); flip only when it would
+    // overflow AND flipping actually helps.
+    const fitsBelow = below + height <= window.innerHeight - MARGIN;
+    const top = fitsBelow ? below : Math.max(MARGIN, above);
+
+    const left = Math.min(
+      Math.max(MARGIN, rect.right - width),
+      Math.max(MARGIN, window.innerWidth - width - MARGIN),
+    );
+    setPos({ top, left });
   }, [anchorRef]);
 
   useEffect(() => {
