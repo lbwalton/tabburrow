@@ -21,3 +21,6 @@ apps/extension/e2e/report/
 /docs/launch/
 /docs/plans/
 /CLAUDE.md
+
+# Agent worktrees + local agent state (see .claude/worktrees/)
+.claude/
