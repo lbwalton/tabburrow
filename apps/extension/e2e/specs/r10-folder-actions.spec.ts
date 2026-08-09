@@ -460,3 +460,36 @@ test("the shift-range hint appears at exactly one selection and is self-limiting
   // And the bar still works with the hint present.
   await expect(popup.getByRole("button", { name: "Open 1" })).toBeVisible();
 });
+
+test("the accent picker stays inside the popup, flipping above the trigger when needed", async ({
+  context,
+  extensionId,
+  cleanDashboard,
+}) => {
+  await seedFolder(cleanDashboard, "Coding", ["React Docs", "Dexie Tutorial", "WXT Storage", "Vercel", "Stripe"]);
+  await cleanDashboard.reload();
+
+  const popup = await openFolderDetail(context, extensionId, "Coding", 5);
+  // A real browser-action popup is ~360 wide and only as tall as its content;
+  // the default 1400x900 test viewport hides this class of bug entirely, which
+  // is exactly how the original clipping shipped.
+  await popup.setViewportSize({ width: 360, height: 500 });
+
+  // Selecting pushes the ⋯ trigger lower — the worst case for a popover that
+  // only ever opens downward.
+  await popup.getByRole("checkbox", { name: "Select React Docs" }).click();
+  await popup.getByRole("checkbox", { name: "Select Dexie Tutorial" }).click();
+
+  await popup.getByRole("button", { name: "More folder actions" }).click();
+  await popup.getByRole("menuitem", { name: "Change color" }).click();
+  const picker = popup.getByRole("dialog", { name: "Choose accent" });
+  await expect(picker).toBeVisible();
+
+  const box = (await picker.boundingBox())!;
+  const viewport = await popup.evaluate(() => window.innerHeight);
+  // Fully on-screen, top and bottom. Before the flip logic the emoji row sat
+  // ~73px below the popup's edge and was silently clipped — no scrollbar, no
+  // cue, the swatches just weren't all there.
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport);
+});

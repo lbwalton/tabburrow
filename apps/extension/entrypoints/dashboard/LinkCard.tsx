@@ -142,9 +142,25 @@ export function LinkCard({ link, selected, dragDisabled, onCardIntent, onKeyInte
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.5 : 1,
+        // A selected card gets BOTH an accent ring and an accent wash.
+        //
+        // The ring alone was ambiguous: `focus-visible:ring-2
+        // ring-[var(--accent)]` in the className paints a 2px accent ring too,
+        // so after Escape cleared the selection the last card clicked still
+        // *looked* selected — it was merely focused, and the two states were
+        // visually identical. (Verified: `aria-selected` was correctly false on
+        // every card; only the focus ring remained.) The wash is something only
+        // selection ever does, so the two are now tellable apart at a glance.
+        //
+        // Inline rather than a class because the value is a `color-mix()` over
+        // a token; `hover:bg-*` was dropped from the className since an inline
+        // background would always beat it, which would have made hover dead on
+        // selected cards while quietly still applying to unselected ones.
         boxShadow: selected ? "0 0 0 2px var(--accent) inset" : undefined,
+        backgroundColor: selected ? "color-mix(in srgb, var(--accent) 12%, var(--surface))" : undefined,
       }}
-      className="group relative flex cursor-pointer flex-col gap-2 text-left transition-[background-color,transform] duration-150 hover:bg-[var(--surface-hover)] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+      className="group relative flex cursor-pointer flex-col gap-2 text-left transition-[background-color,transform] duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] data-[unselected]:hover:bg-[var(--surface-hover)]"
+      data-unselected={selected ? undefined : ""}
     >
       <div className="flex items-start gap-2 pr-11">
         <Favicon url={link.url} faviconUrl={link.faviconUrl} />
