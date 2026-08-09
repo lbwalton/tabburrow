@@ -260,3 +260,61 @@ test("sort by name/date works; switching back to manual restores drag order", as
 
   await finalScreenshot(dashboard, "t09-sort-and-tags");
 });
+
+test("Escape clears the grid selection, but not when a rail picker or rename owns the key", async ({
+  cleanDashboard,
+  extensionId,
+}) => {
+  const dashboard = cleanDashboard;
+  await seedTwoCollectionsWithLinks(dashboard);
+  await dashboard.reload();
+  await dashboard.goto(`chrome-extension://${extensionId}/dashboard.html#/c/${COLLECTION_A}`);
+
+  const grid = dashboard.getByRole("listbox", { name: "Links" });
+  const bar = dashboard.getByRole("toolbar", { name: "Bulk actions" });
+  const rail = dashboard.getByRole("navigation", { name: "Collections" });
+  const rowA = rail.locator("li", { hasText: "Collection A" }).first();
+
+  async function selectThree() {
+    await grid.getByRole("option").first().click({ modifiers: [process.platform === "darwin" ? "Meta" : "Control"] });
+    await grid.getByRole("option").last().click({ modifiers: ["Shift"] });
+    await expect(bar).toContainText("3 selected");
+  }
+
+  // 1. Baseline — with nothing else owning the key, Escape still clears. This
+  //    is what a too-broad guard would break.
+  await selectThree();
+  await dashboard.keyboard.press("Escape");
+  await expect(bar).toHaveCount(0);
+
+  // 2. The accent picker is a <div role="dialog">, NOT a native <dialog> —
+  //    exactly the case a `dialog[open]`-only guard misses. Before this fix,
+  //    dismissing it also silently wiped the selection.
+  await selectThree();
+  await rowA.hover();
+  await rowA.getByRole("button", { name: "Choose accent" }).click();
+  const picker = dashboard.getByRole("dialog", { name: "Choose accent" });
+  await expect(picker).toBeVisible();
+  await dashboard.keyboard.press("Escape");
+  await expect(picker).toHaveCount(0);
+  await expect(bar).toContainText("3 selected");
+
+  // 3. Cancelling an inline rename must not wipe it either. The rail's <Input>
+  //    has no explicit type, so it resolves to "text" and the text-entry bail
+  //    covers it.
+  await rowA.hover();
+  await rowA.getByRole("button", { name: "Rename collection" }).click();
+  // Scoped to the rail, not to `rowA`: while renaming, the row swaps its name
+  // <button> for an <Input>, so the collection name becomes an input VALUE and
+  // a `hasText: "Collection A"` row locator stops matching mid-test. Same
+  // approach t08-rail.spec.ts uses.
+  const renameField = rail.locator("input");
+  await expect(renameField).toBeVisible();
+  await renameField.press("Escape");
+  await expect(renameField).toHaveCount(0);
+  await expect(bar).toContainText("3 selected");
+
+  // 4. And it still clears once nothing else owns the key.
+  await dashboard.keyboard.press("Escape");
+  await expect(bar).toHaveCount(0);
+});
