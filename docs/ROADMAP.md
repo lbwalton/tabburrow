@@ -6,29 +6,11 @@ a session can pick up the top item without reconstructing context.
 
 Product and launch planning is not here; it lives in the gitignored `docs/launch/`.
 
-Last reviewed: 2026-08-09.
+Last reviewed: 2026-08-12.
 
 ---
 
-## 1. Escape dismisses the whole popup instead of the open layer
-
-**Status:** specified, ready to implement.
-**Detail:** [`docs/specs/2026-08-09-popup-close-request-design.md`](specs/2026-08-09-popup-close-request-design.md)
-
-In the real browser-action popup, Escape closes the entire popup, so a user trying to
-dismiss the colour picker, cancel a rename, or clear a selection loses the popup instead.
-Confirmed by hand across four cases.
-
-`preventDefault()` cannot fix it — Chromium dismisses the popup via a *close request*,
-which is a different mechanism. The fix is `CloseWatcher` (Chromium 120+; Firefox
-[declined](https://bugzilla.mozilla.org/show_bug.cgi?id=1443758) and cannot be fixed).
-
-Deferred because a first attempt failed on a teardown race, and because **the e2e harness
-cannot verify it**: it loads `popup.html` in a tab, which has no close request, so the
-tests pass identically whether it works or not. Needs a human in a real popup between
-iterations. The spec records the race, the design, and the acceptance criteria.
-
-## 2. Dashboard selection is invisible
+## 1. Dashboard selection is invisible
 
 **Status:** deferred by design decision, not yet specced.
 **Context:** [`docs/specs/2026-08-08-popup-multi-select-design.md`](specs/2026-08-08-popup-multi-select-design.md), "Scope"
@@ -67,3 +49,22 @@ the wrong reason and were caught only by doing this.
 **Non-Chrome DOM repros are not evidence about Chrome.** A `happy-dom` repro once
 "proved" a bubble-phase Escape guard was safe. It was not, in Chrome, and the resulting
 bug survived three fix rounds and three code reviews before Playwright found it.
+
+---
+
+## Closed / not achievable
+
+Kept here so the finding isn't lost and the item isn't re-opened.
+
+**Escape dismissing the open popup layer instead of the whole popup — CANNOT be done in
+the popup.** Built and hand-tested 2026-08-12 in a real Chromium 120+ toolbar popup: a
+browser-action popup is closed on Escape by Chrome at the widget level, *before* the page
+can intercept it. An armed `CloseWatcher` never receives the request, and even a native
+modal `<dialog>` can't hold the popup open (its Escape closes the whole popup, not just the
+dialog). `preventDefault()` was already a dead end. Same class as Firefox's
+[WONTFIX](https://bugzilla.mozilla.org/show_bug.cgi?id=1443758), now confirmed for Chromium.
+Full evidence, and the corollary that the old "native dialogs handle themselves" assumption
+was also false, live in the Verdict of
+[`docs/specs/2026-08-09-popup-close-request-design.md`](specs/2026-08-09-popup-close-request-design.md).
+Getting layer-dismissal-on-Escape would require a different surface (dashboard tab or side
+panel) — a product decision, not an in-popup fix.
