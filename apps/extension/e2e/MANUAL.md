@@ -196,39 +196,28 @@ machine WITHOUT Nano the AI features simply have no engine and degrade
 gracefully; they light up once Nano is available (or a cloud endpoint is
 deployed and configured).
 
-## 10. Escape in the real toolbar popup
+## 10. Escape in the real toolbar popup — closed, not a bug
 
-Same root cause as §1: a real popup is a different browsing context from a
-`chrome-extension://…/popup.html` tab. Escape is one of the places they diverge
-most sharply. Chromium dismisses a popup via a **close request** (the same
-signal as an Android back gesture), which a tab has no equivalent of — so the
-popup Escape tests in `r10-folder-actions.spec.ts` pass identically whether this
-behavior is correct or broken. **A green suite says nothing here.**
+Not a check anymore; kept so a future tester who notices it doesn't re-file it.
+In a real toolbar popup, Escape closes the **whole popup**, always, and that
+**cannot be changed from inside the page.**
 
-As of 2026-08-09 this is a **known bug**, tracked as item 1 in
-`docs/ROADMAP.md` with a design in
-`docs/specs/2026-08-09-popup-close-request-design.md`. Escape currently closes
-the whole popup in every case below. The checklist is written as the intended
-behavior so it doubles as the acceptance test for that work.
+Confirmed empirically 2026-08-12 (built the full `CloseWatcher` design, loaded
+unpacked, tested by hand): Chrome dismisses a browser-action popup at the widget
+level *before* the document sees the Escape, so it never enters the close-request
+("close watcher") stack. An armed `CloseWatcher` never fires, and even a native
+modal `<dialog>` can't hold the popup open — a dialog's Escape closes the whole
+popup too. `preventDefault()` was already a dead end. Firefox is the same by
+explicit decision ([bugzilla 1443758](https://bugzilla.mozilla.org/show_bug.cgi?id=1443758),
+WONTFIX). Full evidence and corollaries:
+`docs/specs/2026-08-09-popup-close-request-design.md` (Verdict) and the
+"Closed / not achievable" section of `docs/ROADMAP.md`.
 
-**Check** (real Chrome window, extension loaded unpacked, click the toolbar
-icon — not a `chrome-extension://` tab):
-
-1. Open a folder, tick two links, press Escape. Selection clears, popup stays
-   open. Press Escape again — popup closes.
-2. Tick two links, click the folder title to rename, press Escape. Rename
-   cancels, selection survives, popup stays open.
-3. Tick two links, ⋯ → Change color, press Escape. Picker closes, selection
-   survives, popup stays open.
-4. Open ⋯, press Escape. Menu closes, popup stays open.
-5. Open any confirm dialog (Overwrite / Delete folder / bulk Delete), press
-   Escape. Dialog closes, popup stays open.
-6. With nothing open, press Escape. Popup closes — this platform behavior must
-   be preserved, not broken by the fix.
-
-On Firefox, 1-5 will keep closing the popup and that is expected: Mozilla
-declined to let extensions intercept the popup-dismissing Escape
-(bugzilla 1443758, WONTFIX).
+Why the suite can't see any of this: `e2e/fixtures.ts` loads `popup.html` in a
+tab, which never closes on Escape. The popup Escape assertions in
+`r10-folder-actions.spec.ts` therefore exercise the shared `lib/escape-guard.ts`
+logic (also the dashboard's mechanism, which *does* work) but say nothing about
+real-popup dismissal.
 
 ## 11. Popup layout at real popup dimensions
 

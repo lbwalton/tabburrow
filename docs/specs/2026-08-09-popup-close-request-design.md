@@ -1,8 +1,46 @@
 # Popup close requests: Escape should dismiss the open layer, not the whole popup
 
 Date: 2026-08-09
-Status: **specified, not implemented.** A first attempt was written and backed out; see
-"Failed first attempt" before starting.
+Status: **CLOSED — not achievable. Do not re-attempt.** See the Verdict below. The rest of
+this document is preserved as the record of what was tried and why it can't work.
+
+## Verdict (2026-08-12): the popup's Escape cannot be intercepted in-page
+
+The recommended design below was built in full (a single `CloseWatcher`, a capture-phase
+gate, and an Escape "replay") and tested by hand in a real toolbar popup on Chromium 120+
+(`window.CloseWatcher` present). It does not work, and the reason is a platform wall, not a
+wiring bug:
+
+- **The watcher armed correctly but never fired.** Console logging confirmed
+  `supportsCloseRequests() === true`, the layer registered, and a `CloseWatcher` was
+  constructed and armed while links were selected. Pressing Escape still closed the whole
+  popup, and `onclose` never ran. If `onclose` had fired, the popup would have stayed open
+  regardless of what our handler did — so the close request never reached the watcher.
+- **A native modal `<dialog>` can't hold the popup open either (decisive).** With a
+  `showModal()` confirm dialog open, Escape closes the *entire popup*, not just the dialog.
+  A modal `<dialog>` is the browser's own canonical close-request participant; if *it*
+  can't intercept the popup's Escape, nothing in the document can — `CloseWatcher` included.
+
+**Conclusion.** A browser-action popup is dismissed on Escape by Chrome at the
+browser/widget level; that Escape never enters the document's close-request ("close
+watcher") stack. `preventDefault()` was already ruled out (see below), and `CloseWatcher`
+is now ruled out by direct test. This is the same class of limitation as Firefox's
+[WONTFIX](https://bugzilla.mozilla.org/show_bug.cgi?id=1443758), now confirmed for Chromium.
+
+Two corollaries worth recording:
+
+- **Acceptance criterion #5 was also based on a false premise.** "Native dialogs handle
+  themselves, popup stays" is wrong — an open confirm dialog closes the popup too. Nothing
+  below the browser chrome survives Escape here.
+- **The reference PR that inspired this** (clipboard-history-io/extension #126) shipped with
+  an explicit "never actually tested in a real popup" note, so it was never evidence. Our
+  own confidence about `CloseWatcher` was inherited optimism; this test falsifies it.
+
+**If Escape-to-dismiss-a-layer is ever wanted**, it needs a different surface — the
+dashboard tab (where Escape already works via `lib/escape-guard.ts`) or a side panel (which
+doesn't close on Escape). That is a product decision, not an in-popup fix.
+
+---
 
 ## Problem
 
