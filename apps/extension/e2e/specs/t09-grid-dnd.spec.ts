@@ -392,4 +392,16 @@ test("the grid teaches multi-select: checkbox reveals on hover, persists, and se
   // 5. Shift-click a further box extends the range through the existing path.
   await boxThree.click({ modifiers: ["Shift"] });
   await expect(bar).toContainText("3 selected");
+
+  // 6. Clear, then select exactly one -> the Shift-range hint appears; at two it is gone.
+  await bar.getByRole("button", { name: "Clear selection" }).click();
+  await expect(bar).toHaveCount(0);
+  await cardOne.hover();
+  await boxOne.click();
+  await expect(bar).toContainText("1 selected");
+  await expect(bar).toContainText("click another to select a range");
+  const boxTwo = grid.getByRole("checkbox", { name: "Select Link Two" });
+  await boxTwo.click();
+  await expect(bar).toContainText("2 selected");
+  await expect(bar).not.toContainText("click another to select a range");
 });

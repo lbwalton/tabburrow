@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Collection, Link } from "@tabburrow/core";
 import { getDB, moveLinkToEnd, softDeleteLinks } from "@tabburrow/core";
-import { Button } from "@tabburrow/ui";
+import { Button, Kbd } from "@tabburrow/ui";
 import { openFailureMessage, openLinks } from "../../lib/restore";
 
 export interface BulkBarProps {
@@ -81,46 +81,56 @@ export function BulkBar({ selectedLinks, currentCollectionId, collections, onCle
       // The left-[280px] centers the bar within the content pane right of
       // the rail; if the rail ever becomes resizable, both widths need to
       // move to a shared token.
-      className="bulk-bar fixed bottom-4 left-[280px] right-0 z-40 mx-auto flex w-fit items-center gap-3 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 shadow-lg"
+      className="bulk-bar fixed bottom-4 left-[280px] right-0 z-40 mx-auto flex w-fit flex-col gap-1.5 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 shadow-lg"
       style={{ fontFamily: "var(--font-body)" }}
     >
-      <span className="text-sm font-medium text-[var(--text)]" style={{ fontFamily: "var(--font-mono)" }}>
-        {selectedLinks.length} selected
-      </span>
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-medium text-[var(--text)]" style={{ fontFamily: "var(--font-mono)" }}>
+          {selectedLinks.length} selected
+        </span>
 
-      <Button size="sm" variant="ghost" onClick={() => void openAll()} disabled={busy}>
-        Open all
-      </Button>
+        <Button size="sm" variant="ghost" onClick={() => void openAll()} disabled={busy}>
+          Open all
+        </Button>
 
-      <select
-        aria-label="Move to collection"
-        value=""
-        disabled={busy || targets.length === 0}
-        onChange={(e) => void moveTo(e.target.value)}
-        className="h-8 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface)] px-2 text-sm text-[var(--text)] hover:border-[var(--line-hi)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-50"
-      >
-        <option value="" disabled>
-          Move to…
-        </option>
-        {targets.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
+        <select
+          aria-label="Move to collection"
+          value=""
+          disabled={busy || targets.length === 0}
+          onChange={(e) => void moveTo(e.target.value)}
+          className="h-8 rounded-[var(--radius-card)] border border-[var(--line)] bg-[var(--surface)] px-2 text-sm text-[var(--text)] hover:border-[var(--line-hi)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-50"
+        >
+          <option value="" disabled>
+            Move to…
           </option>
-        ))}
-      </select>
+          {targets.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
 
-      <Button size="sm" variant="danger" onClick={() => void deleteSelected()} disabled={busy}>
-        Delete
-      </Button>
+        <Button size="sm" variant="danger" onClick={() => void deleteSelected()} disabled={busy}>
+          Delete
+        </Button>
 
-      <button
-        type="button"
-        aria-label="Clear selection"
-        onClick={onClear}
-        className="rounded-[4px] px-1 leading-none text-[var(--text-2)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-      >
-        ×
-      </button>
+        <button
+          type="button"
+          aria-label="Clear selection"
+          onClick={onClear}
+          className="rounded-[4px] px-1 leading-none text-[var(--text-2)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* Same copy + key-cap as the popup's SelectionBar; self-limiting at exactly one selection. */}
+      {selectedLinks.length === 1 ? (
+        <p className="flex items-center gap-1.5 text-[11px] text-[var(--text-2)]">
+          <Kbd style={{ minWidth: 0, padding: "0 0.25rem", fontSize: "10px" }}>⇧</Kbd>
+          click another to select a range
+        </p>
+      ) : null}
     </div>
   );
 }
