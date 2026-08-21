@@ -15,6 +15,8 @@ import { EditLinkPopover } from "./EditLinkPopover";
 export interface LinkCardProps {
   link: Link;
   selected: boolean;
+  /** True while ANY card in the grid is selected, so every checkbox stays visible and the set stays legible. */
+  selectionActive: boolean;
   /** True while the grid is view-sorted (name/date) — dragging is fully disabled in that mode. */
   dragDisabled: boolean;
   /** A click resolved to an intent via `clickIntent` (open/toggle/range) — `LinkGrid` performs the effect (open the tab, or update selection using its own `order`, which this card doesn't have). */
@@ -34,7 +36,7 @@ function Favicon({ url, faviconUrl }: { url: string; faviconUrl: string | null }
         width={16}
         height={16}
         aria-hidden="true"
-        className="mt-0.5 shrink-0 text-[var(--text-2)]"
+        className="h-4 w-4 text-[var(--text-2)]"
       >
         <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
         <path
@@ -52,7 +54,7 @@ function Favicon({ url, faviconUrl }: { url: string; faviconUrl: string | null }
       alt=""
       width={16}
       height={16}
-      className="mt-0.5 shrink-0 rounded-[3px]"
+      className="h-4 w-4 rounded-[3px]"
       onError={() => setFailed(true)}
     />
   );
@@ -87,7 +89,7 @@ function Favicon({ url, faviconUrl }: { url: string; faviconUrl: string | null }
  * the tab or updates selection (a shift-range needs the grid's current
  * `order`, which this card doesn't have).
  */
-export function LinkCard({ link, selected, dragDisabled, onCardIntent, onKeyIntent, onError }: LinkCardProps) {
+export function LinkCard({ link, selected, selectionActive, dragDisabled, onCardIntent, onKeyIntent, onError }: LinkCardProps) {
   const db = getDB();
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: link.id,
@@ -128,6 +130,16 @@ export function LinkCard({ link, selected, dragDisabled, onCardIntent, onKeyInte
     setEditOpen(false);
   }
 
+  // Favicon at rest; checkbox on hover/focus-within; and on every card once a
+  // selection exists (the persist rule). Split by state so no element ever holds
+  // both opacity-0 and opacity-100 (this file joins classNames as plain strings).
+  const faviconCls = selectionActive
+    ? "opacity-0"
+    : "opacity-100 group-hover:opacity-0 group-focus-within:opacity-0";
+  const boxCls = selectionActive
+    ? "opacity-100"
+    : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100";
+
   return (
     <Card
       ref={setNodeRef}
@@ -163,7 +175,39 @@ export function LinkCard({ link, selected, dragDisabled, onCardIntent, onKeyInte
       data-unselected={selected ? undefined : ""}
     >
       <div className="flex items-start gap-2 pr-11">
-        <Favicon url={link.url} faviconUrl={link.faviconUrl} />
+        <span className="relative mt-0.5 h-4 w-4 shrink-0">
+          <span className={`absolute inset-0 transition-opacity duration-100 ${faviconCls}`}>
+            <Favicon url={link.url} faviconUrl={link.faviconUrl} />
+          </span>
+          {/* readOnly + onClick-drives-state is the same controlled-checkbox pattern LinkRow documents. */}
+          <label className={`absolute inset-0 flex cursor-pointer items-center justify-center transition-opacity duration-100 ${boxCls}`}>
+            <input
+              type="checkbox"
+              checked={selected}
+              readOnly
+              aria-label={`Select ${link.title}`}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onCardIntent(link.id, e.shiftKey ? "range" : "toggle");
+              }}
+              className="peer h-4 w-4 cursor-pointer appearance-none rounded-[4px] border border-[var(--line-hi)] bg-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              style={selected ? { backgroundColor: "var(--accent)", borderColor: "var(--accent)" } : undefined}
+            />
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--btn-fg)"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="pointer-events-none absolute h-3 w-3 opacity-0 peer-checked:opacity-100"
+            >
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          </label>
+        </span>
         <div className="min-w-0 flex-1">
           <h3 className="line-clamp-2 text-sm font-medium leading-snug text-[var(--text)] group-hover:underline">
             {link.title}
