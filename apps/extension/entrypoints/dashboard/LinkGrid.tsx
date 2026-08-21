@@ -140,6 +140,7 @@ export function LinkGrid({ collectionId, links, order, sortMode, collections, on
               key={link.id}
               link={link}
               selected={selection.selected.has(link.id)}
+              selectionActive={selectedLinks.length > 0}
               dragDisabled={dragDisabled}
               onCardIntent={handleCardIntent}
               onKeyIntent={handleCardKeyIntent}

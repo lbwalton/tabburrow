@@ -353,3 +353,55 @@ test("a selected card is visually distinguishable from a merely focused one", as
   await expect(first).toHaveAttribute("aria-selected", "false");
   expect(await bg(first)).toBe(await bg(second));
 });
+
+test("the grid teaches multi-select: checkbox reveals on hover, persists, and selects", async ({
+  cleanDashboard,
+  extensionId,
+}) => {
+  const dashboard = cleanDashboard;
+  await seedTwoCollectionsWithLinks(dashboard);
+  await dashboard.reload();
+  await dashboard.goto(`chrome-extension://${extensionId}/dashboard.html#/c/${COLLECTION_A}`);
+
+  const grid = dashboard.getByRole("listbox", { name: "Links" });
+  const bar = dashboard.getByRole("toolbar", { name: "Bulk actions" });
+  const cardOne = grid.getByRole("option").filter({ hasText: "Link One" });
+  const boxOne = grid.getByRole("checkbox", { name: "Select Link One" });
+  const boxThree = grid.getByRole("checkbox", { name: "Select Link Three" });
+  // The <label> wrapper is what fades; opacity:0 is "visible" to Playwright, so
+  // assert computed opacity, never toBeVisible().
+  const slotOne = boxOne.locator("xpath=ancestor::label[1]");
+  const slotThree = boxThree.locator("xpath=ancestor::label[1]");
+
+  // 1. Hidden at rest.
+  await expect(slotOne).toHaveCSS("opacity", "0");
+
+  // 2. Revealed on hover.
+  await cardOne.hover();
+  await expect(slotOne).toHaveCSS("opacity", "1");
+
+  // 3. Clicking the box selects the card (bar appears) without opening a tab.
+  const pagesBefore = dashboard.context().pages().length;
+  await boxOne.click();
+  await expect(bar).toContainText("1 selected");
+  expect(dashboard.context().pages().length).toBe(pagesBefore);
+
+  // 4. Persist: every box is now visible, even the un-hovered ones.
+  await expect(slotThree).toHaveCSS("opacity", "1");
+
+  // 5. Shift-click a further box extends the range through the existing path.
+  await boxThree.click({ modifiers: ["Shift"] });
+  await expect(bar).toContainText("3 selected");
+
+  // 6. Clear, then select exactly one -> the Shift-range hint appears; at two it is gone.
+  await bar.getByRole("button", { name: "Clear selection" }).click();
+  await expect(bar).toHaveCount(0);
+  await cardOne.hover();
+  await boxOne.click();
+  await expect(bar).toContainText("1 selected");
+  await expect(bar).toContainText("click another to select a range");
+  const boxTwo = grid.getByRole("checkbox", { name: "Select Link Two" });
+  await boxTwo.click();
+  await expect(bar).toContainText("2 selected");
+  await expect(bar).not.toContainText("click another to select a range");
+});
