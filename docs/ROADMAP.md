@@ -6,22 +6,18 @@ a session can pick up the top item without reconstructing context.
 
 Product and launch planning is not here; it lives in the gitignored `docs/launch/`.
 
-Last reviewed: 2026-08-12.
+Last reviewed: 2026-08-22.
 
 ---
 
-## 1. Dashboard selection is invisible
+## Open items
 
-**Status:** deferred by design decision, not yet specced.
-**Context:** [`docs/specs/2026-08-08-popup-multi-select-design.md`](specs/2026-08-08-popup-multi-select-design.md), "Scope"
-
-The popup teaches multi-select visibly: permanent checkboxes, plus a hint at exactly one
-selection showing that shift-click extends a range. The dashboard still has none of that
-— its selection is cmd/ctrl-click and shift-click only, with nothing on screen saying so.
-
-This was scoped out when the popup work was designed, and named there as an accepted
-cost. Worth revisiting now that the popup has a proven pattern to copy: `lib/selection.ts`
-is already shared, so this is a presentation change rather than a behavioral one.
+**None right now.** The dashboard multi-select item that stood here shipped on 2026-08-22
+(PR #15): hover/persist selection checkboxes on the cards, plus the popup's shift-range
+hint in the bulk bar, per
+[`docs/specs/2026-08-20-dashboard-selection-visibility-design.md`](specs/2026-08-20-dashboard-selection-visibility-design.md).
+With the backlog empty, a fresh session should ask LB for the next piece of work rather
+than pick from this list.
 
 ---
 
