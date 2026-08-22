@@ -12,12 +12,20 @@ Last reviewed: 2026-08-22.
 
 ## Open items
 
-**None right now.** The dashboard multi-select item that stood here shipped on 2026-08-22
-(PR #15): hover/persist selection checkboxes on the cards, plus the popup's shift-range
-hint in the bulk bar, per
-[`docs/specs/2026-08-20-dashboard-selection-visibility-design.md`](specs/2026-08-20-dashboard-selection-visibility-design.md).
-With the backlog empty, a fresh session should ask LB for the next piece of work rather
-than pick from this list.
+### 1. Cross-folder search → select → open-all ("show me Meta across every client")
+
+**Status:** captured, not yet specced. Tracked in [#17](https://github.com/lbwalton/tabburrow/issues/17).
+
+Folders are per-client, but sometimes the axis is the topic, not the client: the goal is to
+open every "Meta Business Manager" link across all clients at once. The cross-folder search
+already exists (`lib/search.ts`'s `searchAll` ranks links from every folder by title, url,
+and tags, and both the popup and dashboard call it), but activating a result only opens one
+tab. The work is to make the search results a **selectable set** using the shared
+`lib/selection.ts` pattern, plus an **open-all** action via `lib/restore.ts`'s `openLinks`,
+so search + select + one click opens the whole topic. No AI is needed for v1; an optional
+semantic layer (so "meta" also surfaces a link titled "Facebook Ads Manager") is a possible
+v2. Issue [#17](https://github.com/lbwalton/tabburrow/issues/17) has the building blocks, the
+`MAX_SEARCH_RESULTS` cap question, and the popup-vs-dashboard surface decision.
 
 ---
 
