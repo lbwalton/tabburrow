@@ -405,3 +405,44 @@ test("the grid teaches multi-select: checkbox reveals on hover, persists, and se
   await expect(bar).toContainText("2 selected");
   await expect(bar).not.toContainText("click another to select a range");
 });
+
+test("shift-click builds multiple disjoint ranges (Finder-style) and keeps them all", async ({
+  cleanDashboard,
+  extensionId,
+}) => {
+  const dashboard = cleanDashboard;
+  await seedCollectionsAndLinks(
+    dashboard,
+    [{ id: COLLECTION_A, name: "Collection A", position: seedPosition(0) }],
+    ["One", "Two", "Three", "Four", "Five", "Six"].map((t, i) => ({
+      id: `d${i}`,
+      collectionId: COLLECTION_A,
+      url: `https://example.com/${t.toLowerCase()}`,
+      title: `Link ${t}`,
+      position: seedPosition(i),
+    })),
+  );
+  await dashboard.reload();
+  await dashboard.goto(`chrome-extension://${extensionId}/dashboard.html#/c/${COLLECTION_A}`);
+
+  const grid = dashboard.getByRole("listbox", { name: "Links" });
+  const bar = dashboard.getByRole("toolbar", { name: "Bulk actions" });
+  const box = (name: string) => grid.getByRole("checkbox", { name: `Select Link ${name}` });
+
+  // Range 1: One..Three.
+  await grid.getByRole("option").filter({ hasText: "Link One" }).hover();
+  await box("One").click();
+  await box("Three").click({ modifiers: ["Shift"] });
+  await expect(bar).toContainText("3 selected");
+
+  // Skip the gap, start a second range Five..Six — the first range must survive.
+  await box("Five").click();
+  await box("Six").click({ modifiers: ["Shift"] });
+  await expect(bar).toContainText("5 selected");
+
+  // Both ranges held; the skipped item (Four) is not selected.
+  await expect(box("One")).toBeChecked();
+  await expect(box("Three")).toBeChecked();
+  await expect(box("Four")).not.toBeChecked();
+  await expect(box("Six")).toBeChecked();
+});
