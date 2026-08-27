@@ -73,7 +73,7 @@ export function SelectionBar({ count, accent, busy, onOpen, onDelete, onClear }:
           <button
             type="button"
             aria-label="Clear selection"
-            title="Clear selection (Esc)"
+            title="Clear selection"
             onClick={onClear}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] text-[var(--text-2)] transition-[transform,background-color,color] duration-150 hover:bg-[var(--surface-hover)] hover:text-[var(--text)] motion-safe:hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           >
