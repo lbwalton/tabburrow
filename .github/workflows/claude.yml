@@ -1,8 +1,9 @@
 name: Claude Code
 
 # Responds when someone writes "@claude" in an issue, a PR, or a review comment.
-# Requires: the Claude GitHub App installed on this repo + an ANTHROPIC_API_KEY
-# repo secret. The `/install-github-app` command in Claude Code sets both up.
+# Auth: the Claude GitHub App (installed on this repo) + a CLAUDE_CODE_OAUTH_TOKEN
+# repo secret from `claude setup-token`, so runs bill to the Claude subscription
+# rather than API credits.
 on:
   issue_comment:
     types: [created]
@@ -31,4 +32,4 @@ jobs:
       - name: Run Claude Code
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
