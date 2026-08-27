@@ -493,3 +493,40 @@ test("the accent picker stays inside the popup, flipping above the trigger when 
   expect(box.y).toBeGreaterThanOrEqual(0);
   expect(box.y + box.height).toBeLessThanOrEqual(viewport);
 });
+
+test("the edit-link popover stays inside the popup, flipping above the trigger when needed", async ({
+  context,
+  extensionId,
+  cleanDashboard,
+}) => {
+  await seedFolder(cleanDashboard, "Coding", [
+    "React Docs",
+    "Dexie Tutorial",
+    "WXT Storage",
+    "Vercel",
+    "Stripe",
+    "Playwright",
+  ]);
+  await cleanDashboard.reload();
+
+  const popup = await openFolderDetail(context, extensionId, "Coding", 6);
+  // A real popup is ~360 wide and only as tall as its content; the default
+  // 1400x900 viewport hides this class of clipping entirely (issue #19).
+  await popup.setViewportSize({ width: 360, height: 500 });
+
+  // The LAST row's ⋯ sits near the bottom of the list — the worst case for a
+  // popover that only ever opened downward.
+  const row = popup.getByRole("button", { name: "More actions for Playwright" });
+  await row.click(); // auto-scrolls it into view
+  await popup.getByRole("menuitem", { name: "Edit" }).click();
+
+  const editor = popup.getByRole("dialog", { name: "Edit link" });
+  await expect(editor).toBeVisible();
+
+  const box = (await editor.boundingBox())!;
+  const viewport = await popup.evaluate(() => window.innerHeight);
+  // Fully on-screen, top and bottom — before the flip/clamp the form ran off
+  // the popup's bottom edge, clipped with no scroll and no cue.
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport);
+});
