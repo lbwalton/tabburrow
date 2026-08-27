@@ -1,27 +1,35 @@
 /**
- * Pure multi-select state for the link grid: cmd/ctrl-click or Space
- * (toggle), shift-click (range from a fixed anchor within the current sort
- * order), Escape/collection-change (clear). No DOM/React import — the grid
- * wires DOM events to `SelectionEvent` and calls `nextSelection`.
+ * Pure multi-select state for the link grid: cmd/ctrl-click or Space (toggle),
+ * shift-click (range), Escape/collection-change (clear). No DOM/React import —
+ * the grid wires DOM events to `SelectionEvent` and calls `nextSelection`.
  *
- * As of T10, a PLAIN click (or Enter) no longer selects — it opens the link
- * instead. That resolution happens one layer up, in `lib/click-intent.ts`'s
- * `clickIntent`/`keyIntent` (which `LinkCard` calls on the raw DOM event
- * before anything reaches here): this module never sees a "plain click"
- * event at all anymore, only `toggle`/`range`/`clear`. The old `"click"`
- * event variant (replace-selection-with-just-this-id) was removed along
- * with its only call site in `LinkGrid` — see selection.test.ts for the
- * corresponding removed/updated tests.
+ * Shift-click ranges are Finder / file-explorer style: a range is UNIONED onto
+ * the selection as it stood at the last toggle (`committed`), so multiple
+ * disjoint ranges accumulate (select 1-3, then 8-10, and keep both), while
+ * repeatedly shift-clicking from the same anchor grows/shrinks only the CURRENT
+ * range and leaves earlier ones intact.
+ *
+ * As of T10 a PLAIN click (or Enter) no longer selects — it opens the link
+ * instead (see `lib/click-intent.ts`), so `nextSelection` only ever receives
+ * `toggle`/`range`/`clear`.
  */
 
 export interface SelectionState {
   selected: Set<string>;
-  /** The id a shift-click range is measured from. Stays fixed across repeated shift-clicks (doesn't jump to the new end) so a range can grow and shrink from the same origin. */
+  /** The id a shift-click range is measured from. Fixed across repeated shift-clicks so a range grows/shrinks from the same origin. */
   anchorId: string | null;
+  /**
+   * The selection as it stood at the last `toggle` — the base a shift-click
+   * `range` is unioned onto. This is what makes ranges ADDITIVE (disjoint
+   * ranges survive) while a repeated shift-click from the same anchor still
+   * only grows/shrinks the current range: each re-range starts from `committed`,
+   * not from the previous range's result.
+   */
+  committed: Set<string>;
 }
 
 export function emptySelection(): SelectionState {
-  return { selected: new Set(), anchorId: null };
+  return { selected: new Set(), anchorId: null, committed: new Set() };
 }
 
 export type SelectionEvent =
@@ -30,22 +38,18 @@ export type SelectionEvent =
   | { type: "clear" };
 
 /**
- * The single decision function behind the grid's selection: given the
- * current state and a toggle/range/clear event, what should the selection
- * become?
+ * The single decision function behind the grid's selection.
  *
- * - `toggle` (cmd/ctrl-click, or Space on the focused card): adds/removes
- *   `id` from the selection without touching the rest. The toggled id
- *   becomes the anchor, unless the toggle just emptied the selection
- *   entirely — then there's nothing sensible to range from, so the anchor
- *   clears too.
- * - `range` (shift-click): selects the contiguous slice of `order` between
- *   the current anchor and `id` (inclusive), REPLACING the prior selection.
- *   The anchor itself does not move, so a later shift-click still ranges
- *   from the original starting point. Falls back to selecting just `id`
- *   (and anchoring there) when there's no anchor yet, or the anchor/id
- *   aren't in `order` (a stale anchor from a since-removed row).
- * - `clear`: empties both.
+ * - `toggle` (cmd/ctrl-click, or Space): adds/removes `id` without touching the
+ *   rest, then COMMITS the result as the new base future ranges add onto, and
+ *   anchors at `id`. Toggling off the last id clears everything.
+ * - `range` (shift-click): unions the contiguous slice of `order` between the
+ *   anchor and `id` onto `committed`. The anchor and committed base don't move,
+ *   so a later shift-click re-ranges from the same origin (grow/shrink the
+ *   current range) without disturbing earlier ranges. With no usable anchor
+ *   (none yet, or a since-removed row) it just adds `id` to the current
+ *   selection and anchors there.
+ * - `clear`: empties everything.
  */
 export function nextSelection(state: SelectionState, event: SelectionEvent): SelectionState {
   switch (event.type) {
@@ -59,33 +63,40 @@ export function nextSelection(state: SelectionState, event: SelectionEvent): Sel
       } else {
         selected.add(event.id);
       }
-      return { selected, anchorId: selected.size > 0 ? event.id : null };
+      if (selected.size === 0) return emptySelection();
+      return { selected, anchorId: event.id, committed: new Set(selected) };
     }
 
     case "range": {
       const anchorIndex = state.anchorId !== null ? event.order.indexOf(state.anchorId) : -1;
       const clickIndex = event.order.indexOf(event.id);
       if (anchorIndex === -1 || clickIndex === -1) {
-        return { selected: new Set([event.id]), anchorId: event.id };
+        // No usable anchor: add just this id to the current selection (don't
+        // wipe it) and anchor here. Dropping ids of since-removed rows is
+        // pruneSelection's job, not this fallback's.
+        const selected = new Set([...state.selected, event.id]);
+        return { selected, anchorId: event.id, committed: new Set(selected) };
       }
       const [start, end] = anchorIndex <= clickIndex ? [anchorIndex, clickIndex] : [clickIndex, anchorIndex];
-      return { selected: new Set(event.order.slice(start, end + 1)), anchorId: state.anchorId };
+      const selected = new Set([...state.committed, ...event.order.slice(start, end + 1)]);
+      return { selected, anchorId: state.anchorId, committed: state.committed };
     }
   }
 }
 
 /**
- * Drops any selected/anchor ids no longer present in `validIds` — a link
- * moved to another collection, bulk-deleted, or a stale collection switch.
- * Returns the SAME reference when nothing actually changed, so a caller's
- * `setState(fn)` can bail out without a re-render (mirrors `nextLocalOrder`
- * in `reorder.ts`).
+ * Drops any selected / anchor / committed ids no longer present in `validIds`
+ * (a link moved to another collection, bulk-deleted, or a stale collection
+ * switch). Returns the SAME reference when nothing changed, so a caller's
+ * `setState(fn)` can bail out without a re-render.
  */
 export function pruneSelection(state: SelectionState, validIds: string[]): SelectionState {
-  if (state.selected.size === 0 && state.anchorId === null) return state;
   const validSet = new Set(validIds);
   const selected = new Set([...state.selected].filter((id) => validSet.has(id)));
+  const committed = new Set([...state.committed].filter((id) => validSet.has(id)));
   const anchorId = state.anchorId !== null && validSet.has(state.anchorId) ? state.anchorId : null;
-  if (selected.size === state.selected.size && anchorId === state.anchorId) return state;
-  return { selected, anchorId };
+  if (selected.size === state.selected.size && committed.size === state.committed.size && anchorId === state.anchorId) {
+    return state;
+  }
+  return { selected, anchorId, committed };
 }
