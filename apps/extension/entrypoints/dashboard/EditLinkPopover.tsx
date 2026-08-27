@@ -35,13 +35,35 @@ export function EditLinkPopover({ anchorRef, title, note, tags, onSave, onClose 
   const [draftTags, setDraftTags] = useState(tags.join(", "));
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
+  // Position the popover so it stays fully inside the window, using the same
+  // viewport-aware flip/clamp AccentPicker uses. This matters in the extension
+  // POPUP, which is only as tall as its content (~500px): the naive "always
+  // rect.bottom + 6" opened a lower row's editor straight off the bottom edge,
+  // clipped with no scroll and no cue (issue #19). Measuring needs real
+  // dimensions, so show the modal FIRST; it stays visibility:hidden until `pos`
+  // is set (see the style below), so there is no flash at 0,0.
   useLayoutEffect(() => {
+    const dialog = dialogRef.current;
     const rect = anchorRef.current?.getBoundingClientRect();
-    if (rect) setPos({ top: rect.bottom + 6, left: Math.max(8, rect.right - 288) });
+    if (!dialog || !rect) return;
+    if (!dialog.open) dialog.showModal();
+    const MARGIN = 8;
+    const GAP = 6;
+    const height = dialog.offsetHeight;
+    const width = dialog.offsetWidth || 288;
+    const below = rect.bottom + GAP;
+    const above = rect.top - GAP - height;
+    // Prefer opening downward; flip up only when down would overflow and up fits better.
+    const fitsBelow = below + height <= window.innerHeight - MARGIN;
+    const top = fitsBelow ? below : Math.max(MARGIN, above);
+    const left = Math.min(
+      Math.max(MARGIN, rect.right - width),
+      Math.max(MARGIN, window.innerWidth - width - MARGIN),
+    );
+    setPos({ top, left });
   }, [anchorRef]);
 
   useEffect(() => {
-    dialogRef.current?.showModal();
     titleInputRef.current?.focus();
     titleInputRef.current?.select();
   }, []);
