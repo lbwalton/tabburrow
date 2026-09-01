@@ -242,6 +242,32 @@ describe("addLink", () => {
     expect(link.url).toBe("not a valid url");
   });
 
+  it("fills in a missing scheme on a bare domain, so the stored URL is absolute", async () => {
+    const c = await createCollection("C", undefined, db);
+    const link = await addLink(c.id, { url: "nike.com" }, db);
+    expect(link.url).toBe("https://nike.com");
+    expect(link.title).toBe("nike.com");
+  });
+
+  it("leaves an already-absolute URL untouched (no scheme rewriting, no trailing slash added)", async () => {
+    const c = await createCollection("C", undefined, db);
+    const link = await addLink(c.id, { url: "https://a.com" }, db);
+    expect(link.url).toBe("https://a.com");
+  });
+
+  it("dedupes a bare-domain entry against an existing normalized link with the same host", async () => {
+    const c = await createCollection("C", undefined, db);
+    const first = await addLink(c.id, { url: "nike.com" }, db);
+    await db.pendingOps.clear();
+
+    const second = await addLink(c.id, { url: "nike.com", title: "Nike" }, db);
+
+    expect(second.id).toBe(first.id);
+    const listed = await listLinks(c.id, db);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]!.title).toBe("Nike");
+  });
+
   it("dedupes against a live link with the same URL: updates title in place, no duplicate, returns the existing id", async () => {
     const c = await createCollection("C", undefined, db);
     const first = await addLink(c.id, { url: "https://a.com", title: "Old title" }, db);

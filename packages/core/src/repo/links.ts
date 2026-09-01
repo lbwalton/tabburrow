@@ -155,12 +155,16 @@ export async function overwriteTabs(
 }
 
 /**
- * Appends a single manually-entered link to the end of `collectionId`. When
- * `title` is missing or empty it defaults to the URL's hostname (`new URL(url)
- * .hostname`), falling back to the raw `url` string if the URL fails to parse
- * (never throws). Dedupes by URL against the collection's non-tombstoned links
- * exactly like `saveTabs`: a matching live link has its `title` updated in
- * place (op enqueued) and is returned instead of a duplicate being inserted.
+ * Appends a single manually-entered link to the end of `collectionId`. The
+ * URL is normalized first (see `normalizeUrl`), so a bare domain like
+ * "nike.com" is stored as "https://nike.com" instead of a schemeless string
+ * that `chrome.tabs.create` would resolve relative to the extension's own
+ * origin. When `title` is missing or empty it defaults to the normalized
+ * URL's hostname (`new URL(url).hostname`), falling back to the raw `url`
+ * string if the URL still fails to parse (never throws). Dedupes by URL
+ * against the collection's non-tombstoned links exactly like `saveTabs`: a
+ * matching live link has its `title` updated in place (op enqueued) and is
+ * returned instead of a duplicate being inserted.
  *
  * Returns the resulting Link (updated live match, or the newly created row).
  */
@@ -171,10 +175,11 @@ export async function addLink(
 ): Promise<Link> {
   return db.transaction("rw", db.links, db.pendingOps, async () => {
     const now = Date.now();
-    const title = input.title || hostnameOf(input.url);
+    const url = normalizeUrl(input.url);
+    const title = input.title || hostnameOf(url);
 
     const existing = await db.links.where("collectionId").equals(collectionId).toArray();
-    const match = existing.find((l) => l.deletedAt === null && l.url === input.url);
+    const match = existing.find((l) => l.deletedAt === null && l.url === url);
     if (match) {
       const patch: Partial<Link> = { title, updatedAt: now };
       await db.links.update(match.id, patch);
@@ -185,7 +190,7 @@ export async function addLink(
     const link: Link = {
       id: crypto.randomUUID(),
       collectionId,
-      url: input.url,
+      url,
       title,
       faviconUrl: null,
       note: null,
@@ -199,6 +204,31 @@ export async function addLink(
     await enqueueOp(db, "links", link.id);
     return link;
   });
+}
+
+/**
+ * Fills in a missing scheme on a manually-typed URL. A string that already
+ * parses as an absolute URL (e.g. "https://nike.com", "mailto:a@b.com") is
+ * returned untouched. A bare domain like "nike.com" fails to parse on its
+ * own (no scheme), so it's retried as "https://nike.com"; if that parses, the
+ * "https://"-prefixed form is returned. Anything that still fails to parse
+ * (e.g. free text) is returned unchanged, same as before this normalization
+ * existed — `hostnameOf` falls back to the raw string for those.
+ */
+function normalizeUrl(url: string): string {
+  try {
+    new URL(url);
+    return url;
+  } catch {
+    // not an absolute URL as-is — fall through and try adding a scheme
+  }
+  const withScheme = `https://${url}`;
+  try {
+    new URL(withScheme);
+    return withScheme;
+  } catch {
+    return url;
+  }
 }
 
 /** The URL's hostname, or the raw string if it can't be parsed as a URL. */
