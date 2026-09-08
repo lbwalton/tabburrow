@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
 import { test, expect, closeExtensionContext, launchExtensionContext, popupPage, signInWithEmailOtp } from "../fixtures";
+import { SKIP_REASON, supabaseUnavailable } from "../supabase-stack";
 import { loadRootEnv } from "../env";
 import {
   deleteAdminUser,
@@ -101,6 +102,11 @@ async function cleanupStrayUser(email: string): Promise<void> {
     await deleteAdminUser(SUPABASE_URL, SERVICE_ROLE_KEY!, existing.id);
   }
 }
+
+// Needs the LOCAL Supabase stack. `globalSetup` starts it when it can; when it
+// can't, skip with the reason instead of failing deep inside a spec with a
+// symptom that looks like a product bug (see e2e/supabase-stack.ts).
+test.skip(supabaseUnavailable(), SKIP_REASON);
 
 test("PRO round-trip: an edit on device A appears on device B via Sync now; a delete never resurrects", async ({
   testServer,
