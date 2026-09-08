@@ -9,6 +9,7 @@ import {
   getSharedCollection,
   isCssColorAccent,
   resolveFaviconSrc,
+  safeLinkHref,
   type SharedLink,
 } from "../../../lib/share";
 import { CHROME_STORE_URL, SITE_NAME, SITE_URL } from "../../../lib/site-config";
@@ -96,6 +97,9 @@ export default async function SharePage({ params }: PageProps) {
   const { collection, links } = shared;
   const pageUrl = `${SITE_URL}/s/${slug}`;
   const accentIsColor = collection.accent !== null && isCssColorAccent(collection.accent);
+  const openableUrls = links
+    .map((link) => safeLinkHref(link.url))
+    .filter((href): href is string => href !== null);
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
@@ -125,7 +129,11 @@ export default async function SharePage({ params }: PageProps) {
           <p className="text-sm text-[var(--ink-soft)]" style={{ fontFamily: "var(--font-mono)" }}>
             {links.length} link{links.length === 1 ? "" : "s"}, shared with {SITE_NAME}
           </p>
-          {links.length > 0 ? <OpenAllButton urls={links.map((link) => link.url)} /> : null}
+          {/* Filtered here rather than inside the button, so the button stays
+              dumb and its "(N)" count can't promise tabs it won't open. Same
+              scheme allowlist the rows use: window.open on a `javascript:` URL
+              is the same stored-XSS hazard as an href. */}
+          {openableUrls.length > 0 ? <OpenAllButton urls={openableUrls} /> : null}
         </header>
 
         {links.length === 0 ? (
@@ -140,14 +148,15 @@ export default async function SharePage({ params }: PageProps) {
               // to capture one itself; see resolveFaviconSrc's docstring.
               const favicon = resolveFaviconSrc(link);
               const host = faviconHost(link.url);
-              return (
-                <li key={`${link.url}-${index}`}>
-                  <a
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer nofollow"
-                    className="flex items-start gap-3 rounded-[6px] py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
-                  >
+              // A shared collection's URLs are arbitrary user input, so a
+              // non-http(s) one (`javascript:` above all) is rendered as inert
+              // text instead of an href — see safeLinkHref. The row keeps its
+              // exact layout either way; only the wrapper element changes.
+              const href = safeLinkHref(link.url);
+              const rowClassName =
+                "flex items-start gap-3 rounded-[6px] py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]";
+              const row = (
+                <>
                     {favicon ? (
                       // eslint-disable-next-line @next/next/no-img-element -- arbitrary external hosts (per-link favicon + Google s2), not a fixed set next/image's remotePatterns could allowlist.
                       <img
@@ -182,7 +191,17 @@ export default async function SharePage({ params }: PageProps) {
                         </span>
                       ) : null}
                     </span>
-                  </a>
+                </>
+              );
+              return (
+                <li key={`${link.url}-${index}`}>
+                  {href ? (
+                    <a href={href} target="_blank" rel="noopener noreferrer nofollow" className={rowClassName}>
+                      {row}
+                    </a>
+                  ) : (
+                    <div className={rowClassName}>{row}</div>
+                  )}
                 </li>
               );
             })}
