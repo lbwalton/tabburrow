@@ -1,5 +1,5 @@
 import type { BurrowDB, Collection, Link, SessionSnapshot } from "@tabburrow/core";
-import { createCollection, getDB, importData, saveTabs } from "@tabburrow/core";
+import { createCollection, getDB, importData, isStorableLinkUrl, saveTabs } from "@tabburrow/core";
 import { isHttpUrl } from "./tabs";
 
 // --- Shared plan shape --------------------------------------------------
@@ -29,13 +29,18 @@ export interface ImportPlan {
 export interface ImportCounts {
   collections: number;
   links: number;
+  /** Links the importer refused (unsupported/unsafe URL scheme). Optional: only the TabBurrow-export path reports it. */
+  skipped?: number;
 }
 
-/** "Imported 3 collections, 12 links from Chrome bookmarks." (singular-aware) — the Settings pane's post-import toast text. */
+/** "Imported 3 collections, 12 links from Chrome bookmarks." (singular-aware) — the Settings pane's post-import toast text. Appends a skipped-link note when the importer dropped any, so a silently shorter import is never mistaken for a complete one. */
 export function formatImportResult(sourceLabel: string, result: ImportCounts): string {
   const c = result.collections === 1 ? "collection" : "collections";
   const l = result.links === 1 ? "link" : "links";
-  return `Imported ${result.collections} ${c}, ${result.links} ${l} from ${sourceLabel}.`;
+  const base = `Imported ${result.collections} ${c}, ${result.links} ${l} from ${sourceLabel}.`;
+  if (!result.skipped) return base;
+  const s = result.skipped === 1 ? "link" : "links";
+  return `${base} Skipped ${result.skipped} ${s} with an unsupported address.`;
 }
 
 async function applyImportPlan(plan: ImportPlan, db: BurrowDB): Promise<ImportCounts> {
@@ -205,6 +210,8 @@ export interface BurrowImportPayload {
   collections: Collection[];
   links: Link[];
   sessions: SessionSnapshot[];
+  /** How many links were dropped for having an unsupported/unsafe URL scheme. Surfaced in the import toast so the drop is never silent. */
+  skippedLinks: number;
 }
 
 /** Pure parsing core: validates + version-checks a TabBurrow export JSON string, returning the payload `@tabburrow/core`'s `importData` expects. Throws (with a user-facing message) on invalid JSON, an unsupported version, or a missing collections/links/sessions array. */
@@ -225,15 +232,26 @@ export function parseBurrowJson(json: string): BurrowImportPayload {
   if (!Array.isArray(obj.collections) || !Array.isArray(obj.links) || !Array.isArray(obj.sessions)) {
     throw new Error("That doesn't look like a TabBurrow export (missing collections/links/sessions).");
   }
+  // An export file is untrusted input: it's hand-editable, and it's the one
+  // import path that reaches `importData`'s bulkPut with whole Link rows,
+  // bypassing `addLink`'s own scheme check. Drop links whose URL isn't
+  // storable (a `javascript:`/`data:` row here would land in a collection the
+  // user might later share publicly) rather than failing the whole import for
+  // one bad row — the count is reported so the drop isn't silent. The
+  // bookmarks and Toby importers already filter equivalently via `isHttpUrl`.
+  const rawLinks = obj.links as Link[];
+  const links = rawLinks.filter((link) => isStorableLinkUrl(link?.url ?? ""));
+
   return {
     collections: obj.collections as Collection[],
-    links: obj.links as Link[],
+    links,
     sessions: obj.sessions as SessionSnapshot[],
+    skippedLinks: rawLinks.length - links.length,
   };
 }
 
 export async function importBurrowJson(json: string, db: BurrowDB = getDB()): Promise<ImportCounts> {
   const payload = parseBurrowJson(json);
   const result = await importData(payload, db);
-  return { collections: result.collections, links: result.links };
+  return { collections: result.collections, links: result.links, skipped: payload.skippedLinks };
 }

@@ -150,20 +150,63 @@ describe("parseTobyJson", () => {
 });
 
 describe("parseBurrowJson", () => {
+  // The link carries a real `url` because parseBurrowJson now filters on it —
+  // an export row without one is dropped as unopenable, which would make a
+  // url-less fixture silently test the reject path instead of the happy one.
   const validExport = JSON.stringify({
     version: 1,
     exportedAt: 123,
     collections: [{ id: "c1" }],
-    links: [{ id: "l1" }],
+    links: [{ id: "l1", url: "https://example.com" }],
     sessions: [{ id: "s1" }],
   });
 
   it("returns collections/links/sessions from a valid version-1 export", () => {
     expect(parseBurrowJson(validExport)).toEqual({
       collections: [{ id: "c1" }],
-      links: [{ id: "l1" }],
+      links: [{ id: "l1", url: "https://example.com" }],
       sessions: [{ id: "s1" }],
+      skippedLinks: 0,
     });
+  });
+
+  // An export file is hand-editable, and this is the one import path that
+  // reaches importData's bulkPut with whole Link rows, bypassing addLink's own
+  // scheme check. A `javascript:` row landing here would sit in a collection
+  // the user might later share publicly.
+  it("drops links with an unsafe or unopenable URL, keeping the rest, and counts what it dropped", () => {
+    const hostile = JSON.stringify({
+      version: 1,
+      exportedAt: 123,
+      collections: [{ id: "c1" }],
+      links: [
+        { id: "ok", url: "https://example.com" },
+        { id: "xss", url: "javascript:alert(document.cookie)" },
+        { id: "data", url: "data:text/html,<script>alert(1)</script>" },
+        { id: "nourl" },
+        { id: "bare", url: "nike.com" },
+      ],
+      sessions: [],
+    });
+
+    const payload = parseBurrowJson(hostile);
+
+    expect(payload.links.map((l) => l.id)).toEqual(["ok", "bare"]);
+    expect(payload.skippedLinks).toBe(3);
+  });
+
+  it("does not reject the whole import for one bad row", () => {
+    const oneBad = JSON.stringify({
+      version: 1,
+      exportedAt: 123,
+      collections: [{ id: "c1" }],
+      links: [{ id: "xss", url: "javascript:alert(1)" }],
+      sessions: [],
+    });
+    // Throwing here would make a single hostile row cost the user every other
+    // link in the file.
+    expect(() => parseBurrowJson(oneBad)).not.toThrow();
+    expect(parseBurrowJson(oneBad).links).toEqual([]);
   });
 
   it("throws a clear error on invalid JSON", () => {
@@ -195,6 +238,26 @@ describe("formatImportResult", () => {
   it("uses singular phrasing for exactly one of each", () => {
     expect(formatImportResult("Toby JSON", { collections: 1, links: 1 })).toBe(
       "Imported 1 collection, 1 link from Toby JSON.",
+    );
+  });
+
+  it("says nothing about skipped links when none were skipped", () => {
+    // Both an absent and a zero count must stay quiet — otherwise every
+    // ordinary import grows a confusing "Skipped 0 links" tail.
+    expect(formatImportResult("Toby JSON", { collections: 1, links: 2, skipped: 0 })).toBe(
+      "Imported 1 collection, 2 links from Toby JSON.",
+    );
+  });
+
+  it("reports skipped links so a silently shorter import isn't mistaken for a complete one", () => {
+    expect(formatImportResult("TabBurrow export", { collections: 1, links: 2, skipped: 3 })).toBe(
+      "Imported 1 collection, 2 links from TabBurrow export. Skipped 3 links with an unsupported address.",
+    );
+  });
+
+  it("uses singular phrasing for a single skipped link", () => {
+    expect(formatImportResult("TabBurrow export", { collections: 1, links: 2, skipped: 1 })).toBe(
+      "Imported 1 collection, 2 links from TabBurrow export. Skipped 1 link with an unsupported address.",
     );
   });
 });

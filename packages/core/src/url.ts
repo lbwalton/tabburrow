@@ -72,3 +72,43 @@ export function normalizeUrl(raw: string): string {
     return trimmed;
   }
 }
+
+/**
+ * The schemes a link may be STORED with. Deliberately the same set the tab
+ * capture flows already accept (`apps/extension/lib/tabs.ts`'s
+ * `isSaveableUrl`, which now delegates here so the two can't drift): ordinary
+ * pages, plus `file:` for a local report or saved HTML export.
+ */
+const STORABLE_PROTOCOLS = new Set(["http:", "https:", "file:"]);
+
+/**
+ * Whether `rawUrl` may be saved as a link at all.
+ *
+ * This is the INPUT half of the scheme defence; the public share page has its
+ * own `safeLinkHref` gate on the render side (`apps/web/lib/share.ts`). Both
+ * exist on purpose: this one stops a hostile URL from being stored, that one
+ * protects against the rows already stored before this check existed and
+ * against anything sync delivers.
+ *
+ * It allowlists the PARSED protocol rather than blocklisting known-bad
+ * prefixes. `javascript:` is only the obvious hazard — `data:`, `vbscript:`
+ * and `blob:` are no better — and a raw-string prefix check is defeated by
+ * `java\nscript:`, which the URL parser normalizes straight back into a
+ * javascript: URL.
+ *
+ * Input is normalized first, so a bare "nike.com" is judged as
+ * "https://nike.com" and accepted. Anything that still isn't an absolute URL
+ * (free text like "read this later") is rejected too: it could never be
+ * opened, so storing it only ever produces a dead row.
+ */
+export function isStorableLinkUrl(rawUrl: string): boolean {
+  try {
+    return STORABLE_PROTOCOLS.has(new URL(normalizeUrl(rawUrl)).protocol);
+  } catch {
+    return false;
+  }
+}
+
+/** User-facing reason a link was refused, shared by `addLink` and the popup's add-link form so both say the same thing. */
+export const UNSUPPORTED_LINK_URL_MESSAGE =
+  "That doesn't look like a web address. Links must start with http, https, or file.";

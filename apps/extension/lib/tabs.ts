@@ -1,4 +1,6 @@
 import type { TabInfo } from "@tabburrow/core";
+import { isStorableLinkUrl } from "@tabburrow/core";
+
 
 /** True for ordinary http(s) pages; false for chrome://, extension pages, file://, about:blank, etc. */
 export function isHttpUrl(url: string | undefined): url is string {
@@ -26,12 +28,10 @@ export function isHttpUrl(url: string | undefined): url is string {
  */
 export function isSaveableUrl(url: string | undefined): url is string {
   if (!url) return false;
-  try {
-    const protocol = new URL(url).protocol;
-    return protocol === "http:" || protocol === "https:" || protocol === "file:";
-  } catch {
-    return false;
-  }
+  // Delegates to core's storable-link allowlist rather than repeating the
+  // protocol set: "a tab worth capturing" and "a URL a link may hold" are the
+  // same question, and two copies of the list would eventually disagree.
+  return isStorableLinkUrl(url);
 }
 
 /**
