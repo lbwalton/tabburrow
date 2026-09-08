@@ -145,7 +145,11 @@ test("PRO round-trip: an edit on device A appears on device B via Sync now; a de
     await httpPage.bringToFront();
     const popupA = await popupPage(a.context, a.extensionId);
     await httpPage.bringToFront();
-    await popupA.getByRole("button", { name: "Save this tab" }).click();
+    // "Save", not "Save this tab": the popup redesign replaced the old
+    // single-purpose button with the SaveSplitButton, and this spec kept
+    // driving the removed label — which is why it failed long before it got
+    // anywhere near testing sync. Same control t07's cold-save path clicks.
+    await popupA.getByRole("button", { name: "Save", exact: true }).click();
     await popupA.getByPlaceholder("Collection name").fill("Sync Test Collection");
     await popupA.getByRole("button", { name: "Create" }).click();
     await expect(popupA.getByText(/Saved 1 tab to Sync Test Collection/)).toBeVisible();
@@ -199,8 +203,11 @@ test("PRO round-trip: an edit on device A appears on device B via Sync now; a de
     const popupA2 = await popupPage(a.context, a.extensionId);
     await httpPage2.bringToFront();
     // Warm save: "Sync Test Collection" is the remembered target from the
-    // cold save above, so one click saves straight into it.
-    await popupA2.getByRole("button", { name: "Save this tab" }).click();
+    // cold save above, so one click saves straight into it. Note "Save this
+    // tab" still exists in the redesigned popup — but as a MENU ITEM inside
+    // the split button's dropdown, not a top-level button, so the old
+    // `getByRole("button", ...)` could never match it again.
+    await popupA2.getByRole("button", { name: "Save", exact: true }).click();
     await expect(popupA2.getByText(/Saved 1 tab to Sync Test Collection/)).toBeVisible();
     await popupA2.close();
 
