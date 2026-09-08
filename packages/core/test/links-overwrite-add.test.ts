@@ -242,6 +242,43 @@ describe("addLink", () => {
     expect(link.url).toBe("not a valid url");
   });
 
+  // Issue #24: a manually-typed bare domain was stored verbatim, and a
+  // schemeless string is a RELATIVE reference — chrome.tabs.create resolved
+  // it against the extension's origin and opened chrome-extension://<id>/nike.com.
+  // normalizeUrl's own edge cases are covered in url.test.ts; these pin the
+  // three things addLink itself is responsible for.
+  it("stores a manually-typed bare domain with a scheme, so the saved URL is absolute", async () => {
+    const c = await createCollection("C", undefined, db);
+    const link = await addLink(c.id, { url: "nike.com" }, db);
+
+    expect(link.url).toBe("https://nike.com");
+    const listed = await listLinks(c.id, db);
+    expect(listed[0]!.url).toBe("https://nike.com");
+  });
+
+  it("derives the fallback title from the NORMALIZED url, so a bare domain titles itself by host", async () => {
+    const c = await createCollection("C", undefined, db);
+    const link = await addLink(c.id, { url: "nike.com/shoes" }, db);
+    // Not "nike.com/shoes", and not the full "https://nike.com/shoes".
+    expect(link.title).toBe("nike.com");
+  });
+
+  it("dedupes a bare-domain re-entry against the normalized link a previous add created", async () => {
+    const c = await createCollection("C", undefined, db);
+    const first = await addLink(c.id, { url: "https://nike.com", title: "Old title" }, db);
+    await db.pendingOps.clear();
+
+    // Same site, typed the short way — must update in place, not insert a
+    // second row that only differs by the scheme the user didn't type.
+    const second = await addLink(c.id, { url: "nike.com", title: "New title" }, db);
+
+    expect(second.id).toBe(first.id);
+    const listed = await listLinks(c.id, db);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]!.title).toBe("New title");
+    expect(await opsFor("links", first.id)).toHaveLength(1);
+  });
+
   it("dedupes against a live link with the same URL: updates title in place, no duplicate, returns the existing id", async () => {
     const c = await createCollection("C", undefined, db);
     const first = await addLink(c.id, { url: "https://a.com", title: "Old title" }, db);

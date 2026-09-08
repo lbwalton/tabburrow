@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import type { Collection } from "@tabburrow/core";
-import { createCollection, getDB } from "@tabburrow/core";
+import { createCollection, getDB, normalizeUrl } from "@tabburrow/core";
 import { Input } from "@tabburrow/ui";
 import { faviconFor } from "../../lib/tabs";
 import { friendlyCreateError, sortByRecentlyUpdated } from "../../lib/collections";
@@ -9,6 +9,7 @@ import { formatHost } from "../../lib/links";
 import { emptyStateFor, searchAll } from "../../lib/search";
 import type { SearchResults } from "../../lib/search";
 import { nextHighlight, resolveHighlight } from "../../lib/searchNav";
+import { openFailureMessage } from "../../lib/restore";
 import { SaveSplitButton } from "./SaveSplitButton";
 import { FolderRow } from "./FolderRow";
 import { ProBanner } from "./ProBanner";
@@ -149,7 +150,14 @@ export function FoldersHome(props: FoldersHomeProps) {
       return;
     }
     const l = shownLinks[target.index];
-    if (l) chrome.tabs.create({ url: l.url, active: true });
+    // Foreground open (see LinkRow's `openLink` for why this doesn't route
+    // through `openLinks`), with the same `normalizeUrl` repair for links
+    // saved schemeless before `addLink` started normalizing (issue #24).
+    if (l) {
+      chrome.tabs.create({ url: normalizeUrl(l.url), active: true }).catch(() => {
+        onError(openFailureMessage(1));
+      });
+    }
   }
 
   function closeSearch() {

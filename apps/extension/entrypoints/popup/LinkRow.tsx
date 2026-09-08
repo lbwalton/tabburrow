@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { getDB, softDeleteLinks, updateLink } from "@tabburrow/core";
+import { getDB, normalizeUrl, softDeleteLinks, updateLink } from "@tabburrow/core";
 import type { Link } from "@tabburrow/core";
 import { faviconFor } from "../../lib/tabs";
+import { openFailureMessage } from "../../lib/restore";
 import { sendSyncNudge } from "../../lib/sync-nudge";
 import { EditLinkPopover } from "../dashboard/EditLinkPopover";
 import type { EditLinkPatch } from "../dashboard/EditLinkPopover";
@@ -51,8 +52,15 @@ export function LinkRow({ link, selected, checkColor, onToggle, onError }: LinkR
     };
   }, [menuOpen]);
 
+  // Opens in the FOREGROUND (`active: true`), which is why this doesn't go
+  // through `lib/restore.ts`'s `openLinks` — that helper is the background-tab
+  // policy every bulk/dashboard open follows. It still borrows the same
+  // `normalizeUrl` pass, so a link saved schemeless before that fix ("nike.com")
+  // opens the site instead of `chrome-extension://<id>/nike.com` (issue #24).
   function openLink() {
-    chrome.tabs.create({ url: link.url, active: true });
+    chrome.tabs.create({ url: normalizeUrl(link.url), active: true }).catch(() => {
+      onError?.(openFailureMessage(1));
+    });
   }
 
   async function handleDelete() {

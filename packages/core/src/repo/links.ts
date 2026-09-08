@@ -2,6 +2,7 @@ import type { BurrowDB } from "../db";
 import { getDB } from "../db";
 import type { Link, TabInfo } from "../types";
 import { positionBetween } from "../fractional-index";
+import { normalizeUrl } from "../url";
 import { enqueueOp } from "./op-queue";
 import { maxPosition, sortByPosition } from "./util";
 
@@ -155,12 +156,24 @@ export async function overwriteTabs(
 }
 
 /**
- * Appends a single manually-entered link to the end of `collectionId`. When
- * `title` is missing or empty it defaults to the URL's hostname (`new URL(url)
- * .hostname`), falling back to the raw `url` string if the URL fails to parse
- * (never throws). Dedupes by URL against the collection's non-tombstoned links
- * exactly like `saveTabs`: a matching live link has its `title` updated in
- * place (op enqueued) and is returned instead of a duplicate being inserted.
+ * Appends a single manually-entered link to the end of `collectionId`.
+ *
+ * The URL is run through `normalizeUrl` FIRST, so a bare domain typed as
+ * "nike.com" is stored as "https://nike.com". Storing it verbatim was issue
+ * #24: a schemeless string is a relative reference, and `chrome.tabs.create`
+ * resolves it against the extension's own origin, opening
+ * `chrome-extension://<id>/nike.com` instead of the site.
+ *
+ * When `title` is missing or empty it defaults to the NORMALIZED URL's
+ * hostname (`new URL(url).hostname`), falling back to the raw string if the
+ * URL still fails to parse (never throws) — so a bare "nike.com" titles
+ * itself "nike.com" rather than the whole "https://nike.com".
+ *
+ * Dedupes by URL against the collection's non-tombstoned links exactly like
+ * `saveTabs`, comparing NORMALIZED URLs so re-adding "nike.com" matches the
+ * "https://nike.com" row a previous add created rather than inserting a
+ * near-duplicate: a matching live link has its `title` updated in place (op
+ * enqueued) and is returned instead of a duplicate being inserted.
  *
  * Returns the resulting Link (updated live match, or the newly created row).
  */
@@ -171,10 +184,11 @@ export async function addLink(
 ): Promise<Link> {
   return db.transaction("rw", db.links, db.pendingOps, async () => {
     const now = Date.now();
-    const title = input.title || hostnameOf(input.url);
+    const url = normalizeUrl(input.url);
+    const title = input.title || hostnameOf(url);
 
     const existing = await db.links.where("collectionId").equals(collectionId).toArray();
-    const match = existing.find((l) => l.deletedAt === null && l.url === input.url);
+    const match = existing.find((l) => l.deletedAt === null && l.url === url);
     if (match) {
       const patch: Partial<Link> = { title, updatedAt: now };
       await db.links.update(match.id, patch);
@@ -185,7 +199,7 @@ export async function addLink(
     const link: Link = {
       id: crypto.randomUUID(),
       collectionId,
-      url: input.url,
+      url,
       title,
       faviconUrl: null,
       note: null,

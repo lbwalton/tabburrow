@@ -164,6 +164,34 @@ export async function readCollectionIdByName(page: Page, name: string): Promise<
   }, name);
 }
 
+/**
+ * Reads a link's stored `url` by its title, straight from IndexedDB (or
+ * `null` if absent) — same direct-access rationale as
+ * `readCollectionIdByName`. Used by r10's issue-#24 guard: what the row
+ * RENDERS ("nike.com", via `formatHost`) looks identical whether or not the
+ * scheme was normalized, so only the stored value distinguishes a fixed link
+ * from the broken one that opens `chrome-extension://<id>/nike.com`.
+ */
+export async function readLinkUrlByTitle(page: Page, title: string): Promise<string | null> {
+  return page.evaluate((linkTitle) => {
+    return new Promise<string | null>((resolve, reject) => {
+      const req = indexedDB.open("tabburrow");
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(["links"], "readonly");
+        const getAllReq = tx.objectStore("links").getAll();
+        getAllReq.onsuccess = () => {
+          db.close();
+          const rows = getAllReq.result as { title: string; url: string; deletedAt: number | null }[];
+          resolve(rows.find((r) => r.title === linkTitle && r.deletedAt === null)?.url ?? null);
+        };
+        getAllReq.onerror = () => reject(getAllReq.error);
+      };
+    });
+  }, title);
+}
+
 /** Reads a `meta` row's raw value directly from IndexedDB (or `null` if absent) — same direct-access rationale as `readCollectionIdByName`. Used to verify `lib/sync-controller.ts`'s `lastSyncAt`/`lastSyncError` writes (or lack thereof) without depending on the UI having rendered them. */
 export async function readMetaValue(page: Page, key: string): Promise<string | null> {
   return page.evaluate((metaKey) => {
