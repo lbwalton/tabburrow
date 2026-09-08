@@ -7,8 +7,19 @@ export interface SearchResults {
   links: (Link & { collectionName: string })[];
 }
 
-/** Max results returned TOTAL (collections + links combined), after score-ranking both kinds on one shared scale. */
-export const MAX_SEARCH_RESULTS = 20;
+/**
+ * Max results returned TOTAL (collections + links combined), after
+ * score-ranking both kinds on one shared scale.
+ *
+ * Raised from 20 for cross-folder open-all (#17): the driving case is "every
+ * client's Meta Business Manager link at once", and with a folder per client
+ * that set alone can pass 20. A cap that silently truncated it would make
+ * "Open all" quietly mean "open all except the clients that didn't fit" —
+ * the one failure mode this feature can't have. 100 is still low enough to
+ * keep `rankSearch` a trivial in-memory sort and the listbox scrollable
+ * rather than endless.
+ */
+export const MAX_SEARCH_RESULTS = 100;
 
 /**
  * Whether a search surface should show its "No results" message right now.
