@@ -2,7 +2,7 @@ import type { BurrowDB } from "../db";
 import { getDB } from "../db";
 import type { Link, TabInfo } from "../types";
 import { positionBetween } from "../fractional-index";
-import { normalizeUrl } from "../url";
+import { isStorableLinkUrl, normalizeUrl, UNSUPPORTED_LINK_URL_MESSAGE } from "../url";
 import { enqueueOp } from "./op-queue";
 import { maxPosition, sortByPosition } from "./util";
 
@@ -164,10 +164,14 @@ export async function overwriteTabs(
  * resolves it against the extension's own origin, opening
  * `chrome-extension://<id>/nike.com` instead of the site.
  *
+ * THROWS `UNSUPPORTED_LINK_URL_MESSAGE` when the normalized URL isn't
+ * storable (see `isStorableLinkUrl`): a scripting scheme like `javascript:`
+ * or `data:`, or free text that could never be opened. Callers surface the
+ * message directly — it's written for the user.
+ *
  * When `title` is missing or empty it defaults to the NORMALIZED URL's
- * hostname (`new URL(url).hostname`), falling back to the raw string if the
- * URL still fails to parse (never throws) — so a bare "nike.com" titles
- * itself "nike.com" rather than the whole "https://nike.com".
+ * hostname (`new URL(url).hostname`) — so a bare "nike.com" titles itself
+ * "nike.com" rather than the whole "https://nike.com".
  *
  * Dedupes by URL against the collection's non-tombstoned links exactly like
  * `saveTabs`, comparing NORMALIZED URLs so re-adding "nike.com" matches the
@@ -185,6 +189,12 @@ export async function addLink(
   return db.transaction("rw", db.links, db.pendingOps, async () => {
     const now = Date.now();
     const url = normalizeUrl(input.url);
+    // Refuse a URL that could never be opened, or whose scheme is a scripting
+    // vector once the collection is publicly shared (`javascript:`, `data:`).
+    // See `isStorableLinkUrl` — this is the input half of that defence.
+    if (!isStorableLinkUrl(url)) {
+      throw new Error(UNSUPPORTED_LINK_URL_MESSAGE);
+    }
     const title = input.title || hostnameOf(url);
 
     const existing = await db.links.where("collectionId").equals(collectionId).toArray();

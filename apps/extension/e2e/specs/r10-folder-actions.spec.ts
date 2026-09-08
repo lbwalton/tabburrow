@@ -130,6 +130,37 @@ test('"+ Add link" with a bare domain stores an absolute https URL (issue #24)',
   expect(await readLinkUrlByTitle(cleanDashboard, "Nike")).toBe("https://nike.com");
 });
 
+// Defence in depth for the share-page XSS: a `javascript:` URL is harmless
+// inside the extension (chrome.tabs.create refuses it) but becomes a scripting
+// vector the moment the collection is shared publicly, so it never gets stored.
+test('"+ Add link" refuses a javascript: URL with an inline reason and saves nothing', async ({
+  context,
+  extensionId,
+  cleanDashboard,
+}) => {
+  await seedFolder(cleanDashboard, "Coding", ["React Docs"]);
+  await cleanDashboard.reload();
+
+  const popup = await openFolderDetail(context, extensionId, "Coding", 1);
+  await popup.getByRole("button", { name: "+ Add link" }).click();
+  await popup.getByLabel("Link URL").fill("javascript:alert(document.domain)");
+  await popup.getByLabel("Link title (optional)").fill("Totally Normal Link");
+  await popup.getByRole("button", { name: "Add", exact: true }).click();
+
+  // The reason lands next to the field, not as a toast off to the side.
+  await expect(popup.getByRole("alert")).toContainText("http, https, or file");
+  // And nothing was written.
+  await expect(popup.getByText("Totally Normal Link")).toHaveCount(0);
+  expect(await readLinkUrlByTitle(cleanDashboard, "Totally Normal Link")).toBeNull();
+
+  // Correcting the field clears the error and the add then succeeds, so the
+  // guard is a speed bump rather than a dead end.
+  await popup.getByLabel("Link URL").fill("https://example.com/ok");
+  await expect(popup.getByRole("alert")).toHaveCount(0);
+  await popup.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(popup.getByText("Totally Normal Link")).toBeVisible({ timeout: 5000 });
+});
+
 test("the inline trash on a link row deletes it in one click, without opening the … menu", async ({
   context,
   extensionId,

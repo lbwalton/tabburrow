@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeUrl } from "../src/url";
+import { isStorableLinkUrl, normalizeUrl } from "../src/url";
 
 describe("normalizeUrl", () => {
   describe("bare input gains a scheme", () => {
@@ -110,5 +110,34 @@ describe("normalizeUrl", () => {
       const once = normalizeUrl(input);
       expect(normalizeUrl(once)).toBe(once);
     });
+  });
+});
+
+describe("isStorableLinkUrl", () => {
+  it.each([
+    ["https://nike.com", "an https URL"],
+    ["http://example.com", "an http URL"],
+    ["nike.com", "a bare domain (normalized to https first)"],
+    ["  nike.com  ", "a padded bare domain"],
+    ["file:///Users/me/report.html", "a local file, which tab capture already accepts"],
+  ])("accepts %s (%s)", (url) => {
+    expect(isStorableLinkUrl(url)).toBe(true);
+  });
+
+  it.each([
+    ["javascript:alert(1)", "the stored-XSS payload"],
+    ["java\nscript:alert(1)", "the newline bypass — the URL parser strips it, so a prefix check would miss this"],
+    ["JavaScript:alert(1)", "mixed case"],
+    ["  javascript:alert(1)  ", "padded"],
+    ["data:text/html,<script>alert(1)</script>", "data: executes in the page origin"],
+    ["vbscript:msgbox(1)", "the legacy equivalent"],
+    ["blob:https://tabburrow.com/abc", "blob: is same-origin scripting"],
+    ["chrome://settings", "browser-internal, not a link worth storing"],
+    ["mailto:a@b.com", "not a page"],
+    ["not a valid url", "free text could never be opened"],
+    ["", "empty"],
+    ["   ", "whitespace only"],
+  ])("rejects %s (%s)", (url) => {
+    expect(isStorableLinkUrl(url)).toBe(false);
   });
 });

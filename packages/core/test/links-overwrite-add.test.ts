@@ -235,11 +235,35 @@ describe("addLink", () => {
     expect(link.title).toBe("sub.example.com");
   });
 
-  it("falls back to the raw string as title when the URL is un-parseable and no title is given (no throw)", async () => {
+  // Was: un-parseable input was stored verbatim and titled with the raw
+  // string. It's now refused — such a row could never be opened, and the same
+  // gate is what keeps a `javascript:` URL out of a collection that might
+  // later be shared publicly (see isStorableLinkUrl).
+  it("rejects free text that could never be a URL, and stores nothing", async () => {
     const c = await createCollection("C", undefined, db);
-    const link = await addLink(c.id, { url: "not a valid url" }, db);
-    expect(link.title).toBe("not a valid url");
-    expect(link.url).toBe("not a valid url");
+    await expect(addLink(c.id, { url: "not a valid url" }, db)).rejects.toThrow(/http, https, or file/);
+    expect(await listLinks(c.id, db)).toHaveLength(0);
+  });
+
+  it.each([
+    ["javascript:alert(document.cookie)", "the stored-XSS payload"],
+    ["data:text/html,<script>alert(1)</script>", "data: executes in the page origin too"],
+    ["vbscript:msgbox(1)", "the legacy equivalent"],
+    ["blob:https://tabburrow.com/abc", "blob: is same-origin scripting"],
+  ])("refuses to store %s (%s)", async (url) => {
+    const c = await createCollection("C", undefined, db);
+    await expect(addLink(c.id, { url }, db)).rejects.toThrow(/http, https, or file/);
+    expect(await listLinks(c.id, db)).toHaveLength(0);
+    // Nothing queued for sync either — a refused link must not reach the
+    // cloud. Scoped to "links": createCollection above enqueues its own op.
+    const linkOps = (await db.pendingOps.toArray()).filter((op) => op.table === "links");
+    expect(linkOps).toHaveLength(0);
+  });
+
+  it("still accepts a file:// link (a saved local page is a legitimate bookmark)", async () => {
+    const c = await createCollection("C", undefined, db);
+    const link = await addLink(c.id, { url: "file:///Users/me/report.html" }, db);
+    expect(link.url).toBe("file:///Users/me/report.html");
   });
 
   // Issue #24: a manually-typed bare domain was stored verbatim, and a
