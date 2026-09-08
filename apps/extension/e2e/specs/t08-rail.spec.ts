@@ -50,8 +50,21 @@ test("create, inline rename, recolor, and delete-with-undo all work and persist 
   // chosen — onChoose immediately calls setAccentOpen(false) — so the only
   // thing left to assert afterward is the row's own accent dot changing,
   // not the picker's now-unmounted "pressed" swatch state)
-  const dot = dashboard.getByRole("navigation", { name: "Collections" }).locator(".rounded-full").first();
+  // Scoped to the collection's own row, and to the dot's exact shape.
+  // `.rounded-full` alone no longer identifies the dot: the rail's "Upgrade"
+  // PRO badge is a rounded-full pill inside this same nav landmark and sorts
+  // FIRST, so `.first()` was measuring the badge — permanently transparent,
+  // so "the colour changed" could never become true no matter how well
+  // recolouring worked.
+  const railRow = dashboard
+    .getByRole("navigation", { name: "Collections" })
+    .locator("li", { hasText: "Weekly Groceries" })
+    .first();
+  const dot = railRow.locator("span.h-2.w-2.rounded-full");
   const dotColorBefore = await dot.evaluate((el) => getComputedStyle(el).backgroundColor);
+  // Guard the guard: if this ever goes transparent again, the assertion below
+  // would be vacuous rather than failing honestly.
+  expect(dotColorBefore).not.toBe("rgba(0, 0, 0, 0)");
   await dashboard.getByRole("button", { name: "Choose accent" }).click();
   const swatch = dashboard.locator('[aria-label^="Accent:"]').first();
   await swatch.click();

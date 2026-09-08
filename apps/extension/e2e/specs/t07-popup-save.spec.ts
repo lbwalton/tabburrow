@@ -255,8 +255,27 @@ test("popup home is keyboard navigable with visible focus rings", async ({ conte
   await p.bringToFront();
 
   await popup.locator("body").click({ position: { x: 5, y: 5 } }); // ensure the extension page itself has focus
-  await popup.keyboard.press("Tab"); // search toggle (first focusable)
-  await popup.keyboard.press("Tab"); // "Save" main button
+
+  // Asserted as an ORDERED SEQUENCE, not "press Tab twice and hope". This
+  // test used to tab blindly to what it assumed was the second control; when
+  // the PRO badge was added ahead of the search toggle, every later position
+  // shifted by one and the failure surfaced as a bare "expected Save to be
+  // focused" with no hint that the header had simply grown a button. Naming
+  // the whole expected order means an inserted control fails HERE, saying
+  // exactly what appeared and where.
+  const focusedName = () =>
+    popup.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      return el ? (el.getAttribute("aria-label") ?? el.textContent?.trim() ?? "") : "";
+    });
+
+  const tabOrder: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    await popup.keyboard.press("Tab");
+    tabOrder.push(await focusedName());
+  }
+  expect(tabOrder).toEqual(["Upgrade to PRO", "Search collections and links", "Save"]);
+
   const saveBtn = popup.getByRole("button", { name: "Save", exact: true });
   await expect(saveBtn).toBeFocused();
   const focusStyle = await saveBtn.evaluate((el) => getComputedStyle(el).outlineStyle + getComputedStyle(el).boxShadow);
