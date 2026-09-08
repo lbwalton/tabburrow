@@ -9,7 +9,10 @@ import { formatHost } from "../../lib/links";
 import { emptyStateFor, searchAll } from "../../lib/search";
 import type { SearchResults } from "../../lib/search";
 import { nextHighlight, resolveHighlight } from "../../lib/searchNav";
-import { openFailureMessage } from "../../lib/restore";
+import { openConfirmMessage, planSearchOpen, selectLabel } from "../../lib/searchSelection";
+import { emptySelection, nextSelection, pruneSelection } from "../../lib/selection";
+import type { SelectionState } from "../../lib/selection";
+import { openFailureMessage, openLinks } from "../../lib/restore";
 import { SaveSplitButton } from "./SaveSplitButton";
 import { FolderRow } from "./FolderRow";
 import { ProBanner } from "./ProBanner";
@@ -19,8 +22,18 @@ import type { Plan } from "../../lib/auth";
 
 const EMPTY_SEARCH_RESULTS: SearchResults = { collections: [], links: [] };
 const SEARCH_DEBOUNCE_MS = 150;
-/** Compact popup body: show at most this many combined results, collections first. */
-const POPUP_SEARCH_LIMIT = 8;
+/**
+ * Show at most this many combined results, collections first.
+ *
+ * Was 8, for a deliberately compact popup body. Raised for cross-folder
+ * open-all (#17): the whole point is "every client's Meta link at once", and
+ * with a folder per client 8 rows silently hid most of them — which would
+ * make this surface's "Open all" mean something different from the same
+ * button in the dashboard. The list already scrolls (`max-h-72
+ * overflow-y-auto`), so the extra rows cost scroll, not layout. Still below
+ * `MAX_SEARCH_RESULTS` so the popup stays the lighter of the two surfaces.
+ */
+const POPUP_SEARCH_LIMIT = 50;
 
 type SortMode = "manual" | "recent" | "az";
 
@@ -107,6 +120,11 @@ export function FoldersHome(props: FoldersHomeProps) {
   const [searchResults, setSearchResults] = useState<SearchResults>(EMPTY_SEARCH_RESULTS);
   const [searchSettledQuery, setSearchSettledQuery] = useState("");
   const [searchHighlight, setSearchHighlight] = useState(-1);
+  // Ticked results for a cross-folder bulk open (#17) — same `lib/selection.ts`
+  // model as the folder-detail list, and the same inline two-step confirm as
+  // the dashboard overlay for a large batch.
+  const [searchSelection, setSearchSelection] = useState<SelectionState>(emptySelection);
+  const [confirmingOpen, setConfirmingOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -140,6 +158,38 @@ export function FoldersHome(props: FoldersHomeProps) {
   const shownLinks = searchResults.links.slice(0, Math.max(0, POPUP_SEARCH_LIMIT - shownCollections.length));
   const shownTotal = shownCollections.length + shownLinks.length;
   const searchActiveId = searchHighlight >= 0 ? `popup-search-option-${searchHighlight}` : undefined;
+  const shownLinkIds = shownLinks.map((l) => l.id);
+  // Planned off `shownLinks`, NOT `searchResults.links`: the popup slices its
+  // results, and "Open all 12" must mean the 12 rows on screen.
+  const openPlan = planSearchOpen(shownLinks, searchSelection.selected);
+
+  // A new result set replaces the rows the ticks referred to — drop the stale
+  // ones. `pruneSelection` returns the same object when nothing changed.
+  useEffect(() => {
+    setSearchSelection((s) => pruneSelection(s, shownLinks.map((l) => l.id)));
+    setConfirmingOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the results identity; shownLinks is derived from it each render
+  }, [searchResults]);
+
+  function toggleSearchSelect(id: string, shiftKey: boolean) {
+    setConfirmingOpen(false);
+    setSearchSelection((s) =>
+      nextSelection(s, shiftKey ? { type: "range", id, order: shownLinkIds } : { type: "toggle", id }),
+    );
+  }
+
+  async function runSearchOpen() {
+    if (openPlan.count === 0) return;
+    if (openPlan.needsConfirm && !confirmingOpen) {
+      setConfirmingOpen(true);
+      return;
+    }
+    setConfirmingOpen(false);
+    // Background tabs via the shared helper, so the popup stays open and the
+    // user can keep picking — same policy as the folder-detail "Open N".
+    const result = await openLinks(openPlan.urls);
+    if (result.failed > 0) onError(openFailureMessage(result.failed));
+  }
 
   function activateSearchResult(index: number) {
     const target = resolveHighlight(index, shownCollections.length);
@@ -357,30 +407,51 @@ export function FoldersHome(props: FoldersHomeProps) {
                   {shownLinks.map((l, i) => {
                     const flatIndex = shownCollections.length + i;
                     return (
-                      <ResultRow
-                        key={l.id}
-                        id={`popup-search-option-${flatIndex}`}
-                        highlighted={searchHighlight === flatIndex}
-                        onActivate={() => activateSearchResult(flatIndex)}
-                      >
-                        <img
-                          src={l.faviconUrl ?? faviconFor(l.url)}
-                          alt=""
-                          width={14}
-                          height={14}
-                          className="shrink-0 rounded-[3px]"
-                          onError={(e) => {
-                            e.currentTarget.style.visibility = "hidden";
-                          }}
+                      // Grid, not flex: ResultRow is `w-full`, which inside a
+                      // flex row would resolve to the full wrapper width and
+                      // overflow by the checkbox's width. A `minmax(0,1fr)`
+                      // track bounds it so the row truncates instead.
+                      <div key={l.id} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-1.5">
+                        {/* Sibling of the role="option" button, not a child:
+                            an interactive control inside a <button> is invalid
+                            HTML, and keeping them separate leaves the existing
+                            combobox keyboard contract untouched. */}
+                        <SelectBox
+                          checked={searchSelection.selected.has(l.id)}
+                          label={selectLabel(l.title)}
+                          onToggle={(shiftKey) => toggleSearchSelect(l.id, shiftKey)}
                         />
-                        <span className="min-w-0 flex-1 truncate">{l.title}</span>
-                        <span
-                          className="shrink-0 truncate text-xs text-[var(--text-2)]"
-                          style={{ fontFamily: "var(--font-mono)" }}
+                        <ResultRow
+                          id={`popup-search-option-${flatIndex}`}
+                          highlighted={searchHighlight === flatIndex}
+                          onActivate={() => activateSearchResult(flatIndex)}
                         >
-                          {formatHost(l.url)}
-                        </span>
-                      </ResultRow>
+                          <img
+                            src={l.faviconUrl ?? faviconFor(l.url)}
+                            alt=""
+                            width={14}
+                            height={14}
+                            className="shrink-0 rounded-[3px]"
+                            onError={(e) => {
+                              e.currentTarget.style.visibility = "hidden";
+                            }}
+                          />
+                          <span className="min-w-0 flex-1 truncate">{l.title}</span>
+                          {/* The folder/client this link lives in, ordered
+                              BEFORE the host: with one folder per client, "which
+                              client is this?" is the thing a cross-folder search
+                              can't answer from the title alone (#17). `searchAll`
+                              already attaches collectionName, so this needs no
+                              new data. Capped width so a long folder name can't
+                              crowd out the title. */}
+                          <span
+                            className="max-w-[44%] shrink truncate text-xs text-[var(--text-2)]"
+                            style={{ fontFamily: "var(--font-mono)" }}
+                          >
+                            {l.collectionName} · {formatHost(l.url)}
+                          </span>
+                        </ResultRow>
+                      </div>
                     );
                   })}
                 </ResultGroup>
@@ -391,6 +462,48 @@ export function FoldersHome(props: FoldersHomeProps) {
                   No results for &ldquo;{searchQuery.trim()}&rdquo;.
                 </p>
               ) : null}
+            </div>
+          ) : null}
+
+          {/* Outside the scrolling list, so it stays reachable no matter how
+              many folders matched. */}
+          {searchQuery.trim().length > 0 && shownLinks.length > 0 ? (
+            <div className="flex items-center gap-2 border-t border-[var(--line)] pt-2">
+              <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-2)]">
+                {confirmingOpen
+                  ? openConfirmMessage(openPlan.count)
+                  : searchSelection.selected.size > 0
+                    ? `${searchSelection.selected.size} selected`
+                    : "Tick rows, or open every match"}
+              </span>
+
+              {searchSelection.selected.size > 0 && !confirmingOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchSelection(emptySelection())}
+                  className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-xs text-[var(--text-2)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                >
+                  Clear
+                </button>
+              ) : null}
+
+              {confirmingOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingOpen(false)}
+                  className="shrink-0 rounded-[6px] px-1.5 py-0.5 text-xs text-[var(--text-2)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                >
+                  Cancel
+                </button>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => void runSearchOpen()}
+                className="shrink-0 rounded-[8px] bg-[var(--accent)] px-2.5 py-1 text-xs font-medium text-[var(--btn-fg)] hover:brightness-110 active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-ground)]"
+              >
+                {confirmingOpen ? `Open ${openPlan.count} tabs` : openPlan.label}
+              </button>
             </div>
           ) : null}
         </>
@@ -471,6 +584,52 @@ function ResultGroup({ label, children }: { label: string; children: ReactNode }
       <h2 className="px-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-2)]">{label}</h2>
       <div className="flex flex-col gap-0.5">{children}</div>
     </div>
+  );
+}
+
+/** The per-result tick. `tabIndex={-1}` keeps real focus on the search input — the combobox's arrow-key navigation dies the moment Tab can land on a row. */
+function SelectBox({
+  checked,
+  label,
+  onToggle,
+}: {
+  checked: boolean;
+  label: string;
+  onToggle: (shiftKey: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={label}
+      tabIndex={-1}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle(e.shiftKey);
+      }}
+      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
+        checked
+          ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--btn-fg)]"
+          : "border-[var(--line-hi)] bg-[var(--surface)] hover:border-[var(--accent)]"
+      }`}
+    >
+      {checked ? (
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+      ) : null}
+    </button>
   );
 }
 
