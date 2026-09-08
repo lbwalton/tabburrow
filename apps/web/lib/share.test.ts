@@ -4,9 +4,70 @@ import {
   isCssColorAccent,
   isValidShareSlug,
   resolveFaviconSrc,
+  safeLinkHref,
   sortByPosition,
   truncate,
 } from "./share";
+
+describe("safeLinkHref", () => {
+  describe("rejects everything that isn't http(s) — the stored-XSS boundary", () => {
+    it.each([
+      ["javascript:alert(document.cookie)", "the classic stored-XSS payload"],
+      ["JavaScript:alert(1)", "mixed case — protocol parsing lowercases, so this can't sneak past"],
+      ["  javascript:alert(1)  ", "padded, so a trim can't reintroduce it"],
+      ["data:text/html,<script>alert(1)</script>", "data: URLs execute in the page's origin too"],
+      ["vbscript:msgbox(1)", "the legacy equivalent"],
+      ["blob:https://tabburrow.com/abc", "blob: is same-origin scripting as well"],
+      ["file:///etc/passwd", "local file access"],
+      ["chrome://settings", "browser-internal"],
+      ["mailto:someone@example.com", "not scripting, but not a page either"],
+    ])("returns null for %s (%s)", (input) => {
+      expect(safeLinkHref(input)).toBeNull();
+    });
+
+    it("returns null for a javascript: URL disguised with whitespace inside the scheme", () => {
+      // "java\nscript:" is a real historical bypass against naive
+      // string-prefix blocklists. The URL parser strips the newline, so this
+      // MUST still be caught — which is exactly why the check allowlists the
+      // parsed protocol instead of pattern-matching the raw string.
+      expect(safeLinkHref("java\nscript:alert(1)")).toBeNull();
+    });
+
+    it("returns null for empty and whitespace-only input", () => {
+      expect(safeLinkHref("")).toBeNull();
+      expect(safeLinkHref("   ")).toBeNull();
+    });
+
+    it("returns null for free text that can't become a URL at all", () => {
+      expect(safeLinkHref("read this later")).toBeNull();
+    });
+  });
+
+  describe("passes through the URLs a shared page actually holds", () => {
+    it("returns an https URL unchanged", () => {
+      expect(safeLinkHref("https://nike.com/shoes?a=1")).toBe("https://nike.com/shoes?a=1");
+    });
+
+    it("returns an http URL unchanged", () => {
+      expect(safeLinkHref("http://example.com")).toBe("http://example.com");
+    });
+
+    it("trims surrounding whitespace", () => {
+      expect(safeLinkHref("  https://nike.com  ")).toBe("https://nike.com");
+    });
+
+    it("upgrades a schemeless bare domain to https rather than dropping the link", () => {
+      // Without this, an href of "nike.com" would resolve RELATIVE to
+      // /s/<slug> and 404. Links saved before the extension normalized on
+      // write (issue #24) are still stored this way.
+      expect(safeLinkHref("nike.com")).toBe("https://nike.com");
+    });
+
+    it("upgrades a schemeless domain with a path", () => {
+      expect(safeLinkHref("www.nike.com/shoes")).toBe("https://www.nike.com/shoes");
+    });
+  });
+});
 
 describe("isValidShareSlug", () => {
   it("accepts a 10-char lowercase alphanumeric slug", () => {

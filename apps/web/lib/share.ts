@@ -65,6 +65,59 @@ export function faviconHost(url: string): string | null {
   }
 }
 
+/** The only schemes a shared link may be rendered as a real, clickable href. */
+const LINKABLE_PROTOCOLS = new Set(["http:", "https:"]);
+
+/** A URL's protocol (e.g. "https:"), or null when it isn't an absolute URL at all. */
+function protocolOf(url: string): string | null {
+  try {
+    return new URL(url).protocol;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The href to render for a stored link URL on the PUBLIC share page, or null
+ * when that URL must not become a link.
+ *
+ * This is a security boundary, not a formatting helper. A shared collection's
+ * URLs are attacker-controlled in the relevant sense: anyone can type
+ * arbitrary text into the extension's "+ Add link" field (its `type="url"` is
+ * inert — the inputs aren't inside a `<form>`, so constraint validation never
+ * runs), or import arbitrary JSON, then share that collection publicly. Piping
+ * such a string straight into `<a href>` makes a saved `javascript:…` "link"
+ * execute on this origin the moment a visitor clicks it — stored XSS. So the
+ * scheme is allowlisted to http/https rather than blocklisted: `javascript:`
+ * is merely the obvious one, and `data:`/`vbscript:`/`blob:` are no better.
+ *
+ * Note the extension itself was never exposed to this — it opens links with
+ * `chrome.tabs.create`, which refuses `javascript:` URLs. Only this web page
+ * renders them as hrefs.
+ *
+ * A SCHEMELESS url ("nike.com") is upgraded to https rather than rejected:
+ * as an href it would otherwise resolve relative to this page
+ * (tabburrow.com/s/<slug>/nike.com) and 404. That mirrors what `normalizeUrl`
+ * does in `@tabburrow/core` for the extension (issue #24); it's re-derived
+ * here rather than imported because `apps/web` doesn't depend on that package,
+ * and adding the dependency to reach one pure function would pull Dexie into
+ * the Next.js bundle — the same "local copy beats a shared package for one
+ * small pure helper" call `isCssColorAccent` below already made.
+ */
+export function safeLinkHref(rawUrl: string): string | null {
+  const url = rawUrl.trim();
+  if (!url) return null;
+
+  const protocol = protocolOf(url);
+  if (protocol !== null) return LINKABLE_PROTOCOLS.has(protocol) ? url : null;
+
+  // Not absolute — try it as a bare domain. The result is re-checked through
+  // the same allowlist rather than trusted, so this can't become a bypass.
+  const prefixed = `https://${url}`;
+  const prefixedProtocol = protocolOf(prefixed);
+  return prefixedProtocol !== null && LINKABLE_PROTOCOLS.has(prefixedProtocol) ? prefixed : null;
+}
+
 /**
  * Favicon image source for a link row. Prefers the favicon the extension
  * captured at save time (chrome's `_favicon` API is a browser-extension-only
