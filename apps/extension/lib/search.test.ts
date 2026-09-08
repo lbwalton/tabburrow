@@ -112,18 +112,25 @@ describe("rankSearch", () => {
   });
 
   it("caps combined collection+link matches at MAX_SEARCH_RESULTS total", () => {
-    const collections = Array.from({ length: 12 }, (_, i) => coll(`c${i}`, `Widget Collection ${i}`));
-    const links = Array.from({ length: 15 }, (_, i) => link(`l${i}`, `Widget Link ${i}`, `https://x.com/${i}`));
+    // Sized off the constant, not a literal: the cap moved 20 -> 100 for
+    // cross-folder open-all (#17), and a test that has to be re-edited every
+    // time the cap moves stops proving the cap and starts tracking it.
+    const collections = Array.from({ length: MAX_SEARCH_RESULTS }, (_, i) => coll(`c${i}`, `Widget Collection ${i}`));
+    const links = Array.from({ length: MAX_SEARCH_RESULTS }, (_, i) =>
+      link(`l${i}`, `Widget Link ${i}`, `https://x.com/${i}`),
+    );
     const result = rankSearch(collections, links, "widget");
     expect(result.collections.length + result.links.length).toBe(MAX_SEARCH_RESULTS);
-    expect(MAX_SEARCH_RESULTS).toBe(20);
   });
 
   it("ranks collections and links on one shared scale — a weak collection can lose its cap slot to stronger links", () => {
     const weakCollection = coll("c-weak", "somewhat related zqx exact match text"); // loose subsequence match, lower score
-    const strongLinks = Array.from({ length: 20 }, (_, i) => link(`l${i}`, "zqxexactmatch", `https://x.com/${i}`)); // exact-string match, score 1.0
+    // Exactly enough perfect-score links to fill the cap on their own.
+    const strongLinks = Array.from({ length: MAX_SEARCH_RESULTS }, (_, i) =>
+      link(`l${i}`, "zqxexactmatch", `https://x.com/${i}`),
+    ); // exact-string match, score 1.0
     const result = rankSearch([weakCollection], strongLinks, "zqxexactmatch");
-    expect(result.collections).toEqual([]); // lost its spot: 20 stronger links already fill the cap
+    expect(result.collections).toEqual([]); // lost its spot: stronger links already fill the cap
     expect(result.links.length).toBe(MAX_SEARCH_RESULTS);
   });
 
