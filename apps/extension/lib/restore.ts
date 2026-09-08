@@ -10,6 +10,8 @@
  * `openFailureMessage` are pure and ARE test-driven (see restore.test.ts).
  */
 
+import { normalizeUrl } from "@tabburrow/core";
+
 export interface OpenLinksResult {
   opened: number;
   failed: number;
@@ -26,6 +28,16 @@ export interface OpenLinksOptions {
  * once via a single `chrome.windows.create({url: urls})` when
  * `opts.newWindow` is set.
  *
+ * Every url is passed through `normalizeUrl` on the way out. `addLink`
+ * already normalizes on the way IN, but that only protects links saved from
+ * that fix onward: a bare "nike.com" typed before it is still sitting in the
+ * database schemeless, and a schemeless string is RELATIVE — `chrome.tabs
+ * .create` resolves it against the extension's own origin and opens
+ * `chrome-extension://<id>/nike.com` (issue #24). Normalizing here repairs
+ * those existing rows at open time, without a data migration rewriting (and
+ * re-syncing) links behind the user's back. It's a no-op for the absolute
+ * URLs every tab-capture path already stores.
+ *
  * Never throws: `chrome.tabs.create`/`chrome.windows.create` can reject
  * per-call (invalid URL, window gone, permissions, etc.) — each failure is
  * counted, not propagated, so one bad link doesn't abort the rest of the
@@ -36,18 +48,20 @@ export interface OpenLinksOptions {
 export async function openLinks(urls: string[], opts?: OpenLinksOptions): Promise<OpenLinksResult> {
   if (urls.length === 0) return { opened: 0, failed: 0 };
 
+  const targets = urls.map(normalizeUrl);
+
   if (opts?.newWindow) {
     try {
-      await chrome.windows.create({ url: urls });
-      return { opened: urls.length, failed: 0 };
+      await chrome.windows.create({ url: targets });
+      return { opened: targets.length, failed: 0 };
     } catch {
-      return { opened: 0, failed: urls.length };
+      return { opened: 0, failed: targets.length };
     }
   }
 
   let opened = 0;
   let failed = 0;
-  for (const url of urls) {
+  for (const url of targets) {
     try {
       await chrome.tabs.create({ url, active: false });
       opened += 1;

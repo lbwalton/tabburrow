@@ -6,7 +6,7 @@ import type { Page } from "@playwright/test";
 import { test, expect, popupPage } from "../fixtures";
 import { seedCollectionsAndLinks, seedPosition } from "../seed";
 import type { SeedCollection, SeedLink } from "../seed";
-import { finalScreenshot } from "../test-utils";
+import { finalScreenshot, readLinkUrlByTitle } from "../test-utils";
 
 /**
  * R10 — Folder-detail actions, all local-only (Dexie; no sign-in, no Supabase
@@ -104,6 +104,30 @@ test('"+ Add link" adds a manual URL to the folder', async ({ context, extension
   await popup.getByLabel("Link title (optional)").fill("Manual Entry");
   await popup.getByRole("button", { name: "Add", exact: true }).click();
   await expect(popup.getByText("Manual Entry")).toBeVisible({ timeout: 5000 });
+});
+
+// Issue #24: typing a bare domain stored it verbatim, and a schemeless string
+// is a RELATIVE reference — chrome.tabs.create resolved it against the
+// extension's own origin, so clicking the link opened
+// chrome-extension://<id>/nike.com instead of the site. The rendered row can't
+// tell the two apart (formatHost shows "nike.com" either way), so this asserts
+// the STORED url.
+test('"+ Add link" with a bare domain stores an absolute https URL (issue #24)', async ({
+  context,
+  extensionId,
+  cleanDashboard,
+}) => {
+  await seedFolder(cleanDashboard, "Coding", ["React Docs"]);
+  await cleanDashboard.reload();
+
+  const popup = await openFolderDetail(context, extensionId, "Coding", 1);
+  await popup.getByRole("button", { name: "+ Add link" }).click();
+  await popup.getByLabel("Link URL").fill("nike.com");
+  await popup.getByLabel("Link title (optional)").fill("Nike");
+  await popup.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(popup.getByText("Nike")).toBeVisible({ timeout: 5000 });
+
+  expect(await readLinkUrlByTitle(cleanDashboard, "Nike")).toBe("https://nike.com");
 });
 
 test("the inline trash on a link row deletes it in one click, without opening the … menu", async ({
