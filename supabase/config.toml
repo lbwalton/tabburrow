@@ -212,6 +212,16 @@ otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
+# Pin the magic-link email template so the e2e sign-in specs can always read
+# the 6-digit OTP out of it. GoTrue's built-in default carried an "enter the
+# code" line historically, but it varies by image version — a newer image
+# shipping a link-only default silently breaks every sign-in spec. Owning the
+# template makes the emitted code deterministic. Local dev only; production
+# email comes from the hosted Supabase project.
+[auth.email.template.magic_link]
+subject = "Your TabBurrow sign-in code"
+content_path = "./supabase/templates/magic_link.html"
+
 # Use a production-ready SMTP server
 # [auth.email.smtp]
 # enabled = true
