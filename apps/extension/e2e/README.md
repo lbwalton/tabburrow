@@ -26,6 +26,30 @@ plain `pnpm --filter extension build` will fail every networked spec
 (t16/t18/t20/t22/t23) with MV3 blocking the extension's fetches to the local
 stack.
 
+### The local Supabase stack is now handled for you
+
+You no longer have to remember `supabase start`. `e2e/global-setup.ts` runs
+before the suite and brings the stack up if it's down (see
+`e2e/supabase-stack.ts`).
+
+If it can't — Docker isn't running, or the CLI isn't installed — it does **not**
+fail the run. The ~77 local-only specs need nothing but a built extension, so
+they still run; only the networked specs (t16/t18/t20/t22/t23) skip, and they
+say why:
+
+```
+local Supabase stack not running — start Docker, then `supabase start`
+```
+
+That skip is deliberate and loud. Before this existed, a stopped stack made
+those specs fail one at a time with symptoms that read like product bugs —
+t18's was a 25s timeout on a button click, which looks like a broken popup
+rather than "nothing is listening on :54321". Three failures like that are how
+a suite quietly stops being a gate.
+
+Set `TABBURROW_E2E_NO_SUPABASE_AUTOSTART=1` to skip the auto-start and only
+probe, if you'd rather manage the stack yourself.
+
 ## Running
 
 ```sh

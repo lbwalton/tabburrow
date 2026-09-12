@@ -1,4 +1,5 @@
 import { test, expect, signInWithEmailOtp } from "../fixtures";
+import { SKIP_REASON, supabaseUnavailable } from "../supabase-stack";
 import { loadRootEnv } from "../env";
 import { deleteAdminUser, fetchProfile, findAdminUserByEmail } from "../admin";
 import { finalScreenshot } from "../test-utils";
@@ -35,6 +36,11 @@ import { finalScreenshot } from "../test-utils";
  */
 
 const TEST_EMAIL = "e2e-auth@tabburrow.test";
+
+// Needs the LOCAL Supabase stack. `globalSetup` starts it when it can; when it
+// can't, skip with the reason instead of failing deep inside a spec with a
+// symptom that looks like a product bug (see e2e/supabase-stack.ts).
+test.skip(supabaseUnavailable(), SKIP_REASON);
 
 test("email code sign-in creates a profiles row and shows Free; sign-out returns to signed-out", async ({
   cleanDashboard,
