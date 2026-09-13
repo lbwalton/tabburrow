@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, closeExtensionContext, launchExtensionContext, signInWithEmailOtp } from "../fixtures";
+import { SKIP_REASON, supabaseUnavailable } from "../supabase-stack";
 import { loadRootEnv } from "../env";
 import { deleteAdminUser, findAdminUserByEmail } from "../admin";
 import { seedCollectionsAndLinks, seedPosition } from "../seed";
@@ -92,6 +93,11 @@ const MIXED_LINKS: Array<{ title: string; url: string }> = [
   { title: "Mechanical Keyboard - Best Buy", url: "https://www.bestbuy.com/site/keyboard/6430123.p" },
   { title: "Running Shoes - Nike.com", url: "https://www.nike.com/t/pegasus-40-running-shoes-example" },
 ];
+
+// Needs the LOCAL Supabase stack. `globalSetup` starts it when it can; when it
+// can't, skip with the reason instead of failing deep inside a spec with a
+// symptom that looks like a product bug (see e2e/supabase-stack.ts).
+test.skip(supabaseUnavailable(), SKIP_REASON);
 
 test(
   "live: organize 12 mixed links, uncheck a group, apply — rail gains the accepted groups' collections, source count drops, tags visible",

@@ -19,6 +19,10 @@ import { defineConfig } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./specs",
+  // Brings the local Supabase stack up (or reports that it couldn't) before
+  // anything runs, so the networked specs skip with a reason instead of
+  // failing one by one with symptoms that look like product bugs.
+  globalSetup: "./global-setup.ts",
   timeout: 30_000,
   expect: { timeout: 8_000 },
   retries: 0,

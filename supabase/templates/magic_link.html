@@ -1,0 +1,19 @@
+<!--
+  Local-dev magic-link email template.
+
+  Pinned deliberately: the e2e sign-in specs (t16/t18/t22/t23) read the 6-digit
+  OTP out of this email, matching the literal phrase "enter the code: <code>"
+  (see apps/extension/e2e/mail.ts's CODE_PATTERN). Supabase's built-in default
+  template used to carry that line, but it varies by GoTrue image version — a
+  newer image can ship a link-only default, which silently breaks every
+  sign-in spec with "Could not find a 6-digit code in email body". Owning the
+  template here makes the code deterministic regardless of which image is
+  pulled. This is a LOCAL template only; production email is sent by the hosted
+  Supabase project, not this file.
+-->
+<h2>Your sign-in link</h2>
+
+<p>Follow the link below to sign in:</p>
+<p><a href="{{ .ConfirmationURL }}">Sign in</a></p>
+
+<p>Alternatively, enter the code: {{ .Token }}</p>

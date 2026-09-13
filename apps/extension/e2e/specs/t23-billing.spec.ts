@@ -4,6 +4,7 @@ import type { ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import type { BrowserContext, Page } from "@playwright/test";
 import { test, expect, closeExtensionContext, launchExtensionContext, signInWithEmailOtp } from "../fixtures";
+import { SKIP_REASON, supabaseUnavailable } from "../supabase-stack";
 import { loadRootEnv } from "../env";
 import {
   deleteAdminUser,
@@ -321,6 +322,11 @@ async function completeHostedCheckout(page: Page): Promise<void> {
   }
   throw new Error(`Checkout never redirected away from checkout.stripe.com (stuck at ${page.url()})`);
 }
+
+// Needs the LOCAL Supabase stack. `globalSetup` starts it when it can; when it
+// can't, skip with the reason instead of failing deep inside a spec with a
+// symptom that looks like a product bug (see e2e/supabase-stack.ts).
+test.skip(supabaseUnavailable(), SKIP_REASON);
 
 test(
   "@live-stripe live checkout flips FREE to PRO; downgrade webhook flips back to FREE with local data untouched",

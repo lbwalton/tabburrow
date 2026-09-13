@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { APIRequestContext, BrowserContext } from "@playwright/test";
 import { test, expect, closeExtensionContext, launchExtensionContext, signInWithEmailOtp } from "../fixtures";
+import { SKIP_REASON, supabaseUnavailable } from "../supabase-stack";
 import { loadRootEnv } from "../env";
 import {
   deleteAdminUser,
@@ -227,6 +228,11 @@ async function pollUntil404(
   }
   return false;
 }
+
+// Needs the LOCAL Supabase stack. `globalSetup` starts it when it can; when it
+// can't, skip with the reason instead of failing deep inside a spec with a
+// symptom that looks like a product bug (see e2e/supabase-stack.ts).
+test.skip(supabaseUnavailable(), SKIP_REASON);
 
 test("PRO round-trip: sharing a 3-link collection serves the live public page; rotate kills the old URL and serves the new; Stop sharing 404s it; the busy state is non-dismissable", async ({
   request,
