@@ -8,19 +8,22 @@ const APEX_HOST = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://tabburrow.com")
 // Content-Security-Policy. Tuned to exactly what the site loads:
 //   - script/style 'unsafe-inline': Next's App Router hydration bootstrap and
 //     Tailwind inject inline <script>/<style>; a nonce needs middleware and would
-//     force every page dynamic, so we allow inline here (no external script hosts).
+//     force every page dynamic, so we allow inline here.
 //   - img-src https:  share pages render per-link favicons from arbitrary hosts
 //     as plain <img> (see app/s/[slug]/page.tsx).
 //   - connect-src supabase.co / wss: the browser Supabase client (auth + account).
 //   - Vercel Web Analytics is same-origin (/_vercel/insights/*), covered by 'self'.
+//   - Cloudflare Web Analytics: the beacon script loads from
+//     static.cloudflareinsights.com and reports to cloudflareinsights.com
+//     (manual-snippet setup, per Cloudflare's Web Analytics FAQ).
 //   - frame-ancestors 'none' is the CSP twin of X-Frame-Options: DENY (clickjacking).
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self'",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cloudflareinsights.com",
   "frame-src 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",

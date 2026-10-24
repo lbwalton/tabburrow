@@ -103,9 +103,10 @@ export default function PrivacyPage() {
                 TabBurrow does not run advertising, does not use advertising
                 trackers, and does not sell or rent your data to anyone. This
                 website uses only privacy-friendly, cookieless analytics
-                (Vercel Web Analytics) to count visits in aggregate: it sets
-                no cookies, does no cross-site tracking, and collects nothing
-                that identifies you. We use no advertising pixels.
+                (Vercel Web Analytics and Cloudflare Web Analytics) to count
+                visits in aggregate: they set no cookies, do no cross-site
+                tracking, and collect nothing that identifies you. We use no
+                advertising pixels.
               </p>
             </div>
 
