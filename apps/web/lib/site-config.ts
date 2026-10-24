@@ -52,9 +52,20 @@ export const PRICING = {
 /** Fixed so sitemap output is deterministic across builds; bump when content actually changes. */
 export const CONTENT_LAST_MODIFIED = "2026-07-30";
 
+/**
+ * Cloudflare Web Analytics (cookieless, no cross-site tracking) for the
+ * official site only. The beacon renders on tabburrow.com's production deploy
+ * and nowhere else, so self-hosted copies and preview builds never report to
+ * our analytics. The token is public by design: it ships in the page HTML.
+ */
+export const CF_BEACON_TOKEN =
+  process.env.VERCEL_ENV === "production" && SITE_URL === "https://tabburrow.com"
+    ? "7371edfc30904e259f259c8675fdeb16"
+    : null;
+
 // Legal-doc effective dates are kept separate so amending one document never
 // falsely re-dates the other. Bump only the one whose text actually changed.
-export const PRIVACY_EFFECTIVE_DATE = "July 15, 2026";
+export const PRIVACY_EFFECTIVE_DATE = "October 24, 2026";
 export const TERMS_EFFECTIVE_DATE = "August 3, 2026";
 
 export const marketingNavLinks = [

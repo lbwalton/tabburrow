@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { JsonLd } from "../components/JsonLd";
 import {
+  CF_BEACON_TOKEN,
   ORGANIZATION_ID,
   PUBLISHER_NAME,
   SAME_AS,
@@ -82,10 +83,18 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           }}
         />
         {children}
-        {/* Vercel Web Analytics: cookieless, no cross-site tracking, no PII;
-            visitors are counted via a per-request hash, aggregated only. See
-            the /privacy "No ads, no data sales" section, kept in sync with this. */}
+        {/* Vercel Web Analytics and Cloudflare Web Analytics: both cookieless,
+            no cross-site tracking, no PII; visits are counted in aggregate
+            only. Cloudflare's is the one Darius reads. See the /privacy "No
+            ads, no data sales" section, kept in sync with this. */}
         <Analytics />
+        {CF_BEACON_TOKEN && (
+          <script
+            type="module"
+            src="https://static.cloudflareinsights.com/beacon.min.js"
+            data-cf-beacon={JSON.stringify({ token: CF_BEACON_TOKEN })}
+          />
+        )}
       </body>
     </html>
   );
